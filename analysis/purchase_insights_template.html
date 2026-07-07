@@ -81,7 +81,8 @@ a{color:var(--s1)}
   <h2>What 13 million purchases reveal</h2>
   <p class="sub">Purchase-behaviour analysis of the Feb–Apr 2026 canteen transactions.
   <b>The data has no item names.</b> A stall gets a food category <b>only if its registered name says what it
-  sells</b> — 554 stalls, 18.5% of purchases. The other 2,074 stalls carry generic names ("Stall 1") and are
+  sells</b> — and its prices don't contradict the claim — 498 stalls, 17.2% of purchases. The other 2,130 stalls
+  give no trustworthy name (generic "Stall 1", or a bare company name like "BL Marketing Pte Ltd") and are
   reported as <b>Unclassified</b>: price facts only, never guessed (<a href="#method">method</a>).
   Vendor test terminals, maintenance flows and &gt;$200 outliers are excluded.</p>
   <div class="grid g2" id="insightCards"></div>
@@ -92,13 +93,13 @@ a{color:var(--s1)}
   <h2>What sells <span class="tag">category mix</span></h2>
   <div class="grid g2">
     <div class="card"><h3>Share of purchases — the honest picture</h3>
-      <p class="note">81.5% of purchases happen at generic-named stalls and stay <b>Unclassified</b> (grey).
+      <p class="note">82.8% of purchases happen at stalls without a trustworthy name and stay <b>Unclassified</b> (grey).
       Among the name-verified rest: cooked food leads, then drinks, then bookshops — but note the verified
       sample skews toward stall types that register real names (bookshops especially).</p>
       <div class="chart-wrap"><canvas id="mixChart"></canvas></div></div>
     <div class="card"><h3>Verified vs Unclassified — what each really is</h3>
-      <p class="note">A category row exists only because the stall names say so (554 stalls). The Unclassified
-      row is everything we refuse to guess: 2,074 stalls, median charge $1.50, 71% of purchases ≤$2.</p>
+      <p class="note">A category row exists only because the stall names say so — and the prices agree (498 stalls).
+      The Unclassified row is everything we refuse to guess: 2,130 stalls, median charge $1.50, 71% of purchases ≤$2.</p>
       <table class="t" id="coverageTable"></table></div>
   </div>
 </section>
@@ -220,10 +221,12 @@ a{color:var(--s1)}
   <div class="grid g2">
     <div class="caveat"><b>Classification policy (no SKU data exists):</b><br>
       ① A stall gets a category <b>only if its registered name says what it sells</b> — keyword match on the
-      stall name (drinks / snacks &amp; desserts / cooked food / fruits / bookshop &amp; supplies).
-      554 stalls qualify: 18.5% of purchases, 19.5% of revenue.<br>
-      ② The 2,074 generic-named stalls ("Stall N") are <b>Unclassified</b> — described by factual price
-      statistics only, never assigned a food type.<br>
+      stall name (drinks / snacks &amp; desserts / cooked food / bookshop &amp; supplies; a name covering two
+      food groups counts as <b>Mixed</b>). 498 stalls qualify: 17.2% of purchases, 18.1% of revenue.<br>
+      ② The 2,130 stalls without a trustworthy name — generic "Stall N" or bare company names
+      ("BL Marketing Pte Ltd") — are <b>Unclassified</b>: factual price statistics only, never a food type.
+      A name's category is also dropped when the stall's own prices contradict it (behavior can veto a
+      name; it never assigns one).<br>
       ③ An earlier price-profile clustering step (k-means guessing categories from price patterns) was
       <b>removed at the service team's request</b>: an estimate, however plausible, must not read as fact.</div>
     <div class="caveat"><b>Limits to keep in mind:</b><br>
@@ -265,19 +268,19 @@ function line(c,e={}){ return {borderColor:c,borderWidth:2,pointRadius:0,pointHo
 
 /* category colors: fixed identity */
 function catColor(t){ return {'Drinks':t.s[0],'Snacks & Desserts':t.s[2],'Cooked Food':t.s[4],
-  'Fruits':t.s[1],'Bookshop & Supplies':t.s[3],'Unclassified':t.muted}; }
+  'Mixed':t.s[1],'Bookshop & Supplies':t.s[3],'Unclassified':t.muted}; }
 const LVL = ['Primary','Secondary','Junior College'];
 function lvlColor(t){ return {'Primary':t.s[0],'Secondary':t.s[1],'Junior College':t.s[3],'Other/Tertiary':t.muted}; }
 
 /* ---------- insight callouts ---------- */
 const insights = [
- ['🚫 No guessing: 81.5% of purchases are at unnamed stalls','2,074 stalls are registered as "Stall 1", "Stall 8" etc. Per service-team policy they are Unclassified — we report their prices (median $1.50, 71% of purchases ≤$2) and nothing more. Every category claim below covers the 554 name-verified stalls only.'],
- ['🧾 The verified menu is three price points','Among named stalls: the $1.00 drink (138K purchases at exactly $1), the ~$1 snack, and the $2.00 cooked meal (107K at exactly $2). Modal prices, not guesses — the stall name says what it sells.'],
+ ['🚫 No guessing: 82.8% of purchases are at stalls without a trustworthy name','2,130 stalls are registered as "Stall 1" or as a bare company name ("BL Marketing Pte Ltd"). Per service-team policy they are Unclassified — we report their prices (median $1.50, 71% of purchases ≤$2) and nothing more. Every category claim below covers the 498 name-verified stalls, whose prices also corroborate their names.'],
+ ['🧾 The verified menu is three price points','Among named stalls: the $1.00 drink (97K purchases at exactly $1), the ~$1 snack, and the $2.00 cooked meal (107K at exactly $2). Modal prices, not guesses — the stall name says what it sells, and its prices agree.'],
  ['🕙 Age shifts the purchase clock','Primary schools do 59% of their buying at 9–10 am recess. Secondary spreads across 9–11 am. JC students peak at 11 am–12 pm. You can read a school\'s timetable from its payment stream. (Category-free — all 13.4M transactions.)'],
  ['💰 Age shifts the wallet','Secondary students spend $4.03 per active day vs primary\'s $2.88 — and they buy MORE often (4+ purchases on 20% of their days vs 13% at primary), not just pricier items. (Category-free.)'],
  ['🔁 Students are creatures of habit','Cards with 15+ purchases spend ~52% of them at ONE favourite stall (60% at JC). And 59% of same-day repeat purchases happen within 10 minutes — the recess double-queue. (Category-free.)'],
- ['🥤 The signature combo: meal → drink, 6 min later','Within named stalls, 100K times a student bought cooked food then a drink in the same break (median 5.8 min); repeat drink-buying is the most common named-stall pattern of all (131K pairs).'],
- ['📚 Bookshops live on term boundaries','Bookshop revenue spikes on 2 Feb and 31 Mar/1 Apr — term starts. And sales happen at recess (9–10 am), not before school. 5.1% of all transactions, $2.65 avg. (Bookshops are name-verified — they register real names.)'],
+ ['🥤 The signature combo: meal → drink, 6 min later','Within named stalls, 69K times a student bought cooked food then a drink in the same break (median 5.7 min). The most common named-stall pattern is the second cooked-food purchase (123K pairs, 8.9 min apart) — the recess double-queue.'],
+ ['📚 Bookshops live on term boundaries','Bookshop revenue spikes on 2 Feb and 31 Mar/1 Apr — term starts. And sales happen at recess (9–10 am), not before school. 4.2% of all transactions, $2.67 avg. (Bookshops are name-verified — they register real names.)'],
  ['🏫 Same level, 3× different spend','Across schools of the same level, spend per student-day ranges from ~$2 to $6.8 (category-free). High-spend outliers split into "expensive ticket" schools (bookshop-driven) vs "high frequency" schools.'],
 ];
 $('insightCards').innerHTML = insights.map(i=>`<div class="callout"><b>${i[0]}</b><p>${i[1]}</p></div>`).join('');
@@ -304,7 +307,7 @@ $('coverageTable').innerHTML = '<tr><th>Classification</th><th style="text-align
  cov.map(r=>`<tr><td>${r.cat==='Unclassified'?'◌ Unclassified (generic name)':'● '+r.cat}</td><td class="num">${fmt(r.stores)}</td><td class="num">${fmt(r.n)}</td><td class="num">$${r.med_sgd.toFixed(2)}</td><td class="num">$${r.avg_sgd.toFixed(2)}</td></tr>`).join('');
 
 const tp = D.top_prices;
-const cats = ['Drinks','Snacks & Desserts','Cooked Food','Fruits','Bookshop & Supplies'];
+const cats = ['Drinks','Snacks & Desserts','Cooked Food','Mixed','Bookshop & Supplies'];
 $('menuTable').innerHTML = '<tr><th>Category</th><th>Top price points (share of category)</th></tr>'+
  cats.map(c=>{
   const rows = tp.filter(r=>r.mcat===c);

@@ -6,9 +6,12 @@ export const C = {
     red: '#e34948', magenta: '#e87ba4', muted: '#8e8e93',
     grid: '#ececea', axis: '#c3c2b7', ink2: '#52514e',
 };
+// Taxonomy v2 (7 Jul): 'Mixed' = names naming 2+ food groups ("Hot Drinks and Snacks").
+// Pure 'Fruits' no longer occurs (every fruit stall is a combo → Mixed). Consumers
+// use CAT_COLOR[c] || C.muted, so unknown/stale categories fall back to grey.
 export const CAT_COLOR = {
     'Drinks': C.blue, 'Snacks & Desserts': C.yellow, 'Cooked Food': C.red,
-    'Fruits': C.aqua, 'Bookshop & Supplies': C.violet, 'Unclassified': C.muted,
+    'Mixed': C.aqua, 'Bookshop & Supplies': C.violet, 'Unclassified': C.muted,
 };
 export const LV_COLOR = { Primary: C.blue, Secondary: C.aqua, 'Junior College': C.violet, Other: C.muted };
 

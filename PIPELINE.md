@@ -135,15 +135,28 @@ From `txn_perf.parquet`, always guarded by `startToFinish > 0` (0/NULL = no timi
 - **Weekly by payment stack** — restricted to full weeks `txn_date BETWEEN '2026-02-02' AND '2026-04-26'` (see §5).
 - **Components** (`checkSignal, openSocket, handshake, sendToReceiveData, tapCardToFinish`) — median, ONLINE only, monthly.
 
-### 4.3 Food categories (no SKU data) — VERIFIED-NAME ONLY
-**Policy change 7 Jul 2026 (supervisor-mandated, applied to every deliverable):** a stall gets a
-food category **only if its registered name says what it sells** — regex on `storeName` →
-Drinks / Snacks & Desserts / Cooked Food / Fruits / Bookshop & Supplies (keyword lists in the
-`NAMECAT` CASE; ~550 stalls, ~18.5% of purchases). Everything else (generic "Stall N" names) is
-**`Unclassified`** — reported by factual price bands/statistics, never assigned a food type.
-The former second tier (KMeans price-archetype guessing for generic stalls) was **removed from
-all five scripts** that used it. Implementation is now one line:
-`CASE WHEN namecat = 'Generic' THEN 'Unclassified' ELSE namecat END AS mcat`.
+### 4.3 Food categories (no SKU data) — VERIFIED-NAME ONLY (v2)
+**Policy (supervisor-mandated 7 Jul 2026; tightened to v2 the same evening after auditing
+name-vs-behavior agreement — applied to every deliverable):** the classification lives in ONE
+place, **`analysis/taxonomy.py`** (`STALLCAT_SQL`, a per-stall view all five scripts import —
+never copy the rules into a script). Rules:
+1. A stall gets a food category **only if its registered name says what it sells** — food-word
+   regex groups on `storeName` → Drinks / Snacks & Desserts / Cooked Food (+ Bookshop & Supplies
+   from real book/stationery/uniform words).
+2. **Corporate suffixes are not evidence**: `pte ltd / enterprise / trading / marketing` no longer
+   imply Bookshop. Bare company names (BL Marketing ×19, Overseas Associates ×17, …44 stalls) are
+   Unclassified until STYL confirms the vendor list.
+3. Names hitting **2+ food-word groups** ("Hot Drinks and Snacks", "Fruits and Drinks") = **Mixed**
+   (23 stalls). All former Fruits stalls are combos, so **pure Fruits no longer exists**.
+4. **Behavior veto** (n≥100): a single food category is dropped to Unclassified when the stall's
+   modal price strongly contradicts it — Drinks >$2.00, Snacks >$3.50, Fruits >$3.00, Cooked
+   <$1.00 or >$8.00. Calibrated to fire on contradiction ("Hot Stall 5" modal $0.60 = a drinks
+   counter), not on premium pricing ($5 café at an independent school stays Cooked Food). Price
+   can veto a name; it never assigns one. 9 stalls vetoed in Feb.
+Validation: name-vs-modal-price agreement 93–97% per food category. Coverage: Feb 493 stalls /
+17.5% txns / 18.5% rev; quarter 498 / 17.2% / 18.1%. Everything else is **`Unclassified`** —
+price bands/statistics only, never a food type. (The 7 Jul v1 was name-keywords with a one-line
+Generic→Unclassified CASE; the original KMeans price-archetype tier was removed a step earlier.)
 Consequences to respect downstream:
 - Category shares must use **verified-only denominators** (exclude Unclassified) and be labelled
   "within name-verified volume"; the verified sample **skews toward stall types that register

@@ -12,13 +12,7 @@ t0 = time.time(); OUT = {}
 def q(s): return con.sql(s).df()
 def recs(df): return json.loads(df.to_json(orient="records"))
 
-NAMECAT = """CASE
- WHEN lower(storeName) ~ '.*(book|education|supply|supplies|marketing|stationer|uniform|pte ltd|enterprise|trading).*' THEN 'Bookshop & Supplies'
- WHEN lower(storeName) ~ '.*(fruit).*' THEN 'Fruits'
- WHEN lower(storeName) ~ '.*(drink|cool |cups|cans|juice|avalanche|beverage|bubble|milk|tea |coffee|kopi|quench|thirst|arctic|antartic|freez|expresso|espresso|chill|sip|refreshing).*' THEN 'Drinks'
- WHEN lower(storeName) ~ '.*(snack|dessert|bites|waffle|ice cream|ice-cream|icecream|muffin|bakery|bread|toast|cookie|pastr|donut|popcorn|sweet).*' THEN 'Snacks & Desserts'
- WHEN lower(storeName) ~ '.*(food|rice|noodle|mee |sushi|western|chicken|nasi|pasta|cuisine|medley|kitchen|delight|malay|halal|japanese|korean|soup|porridge|economy|vegetarian|duck|fish|laksa|wanton|ban mian|delicious|cafe|deli |wok|bowl|dim sum|grill|bento|curry|hot stall|rib).*' THEN 'Cooked Food'
- ELSE 'Generic' END"""
+from taxonomy import STALLCAT_SQL
 
 LEVEL = """CASE
  WHEN schoolId = 'NYP' OR schoolId = 'SOTA' THEN 'Other/Tertiary'
@@ -29,13 +23,14 @@ LEVEL = """CASE
 
 # base view: purchases only (exclude STYL test terminals + maintenance retrieve flows + >$200 outliers)
 con.sql(f"""CREATE OR REPLACE VIEW tx AS
-SELECT *, {NAMECAT} AS namecat, {LEVEL} AS level, extract(hour FROM txn_time) AS hh
+SELECT *, {LEVEL} AS level, extract(hour FROM txn_time) AS hh
 FROM '{PQ}/txn.parquet'
 WHERE schoolId != 'STYL' AND storeName NOT ILIKE '%retrieve%' AND amount <= 20000""")
 
-# ---------------- category = verified stall name ONLY ----------------
+# ---------------- category per STALL: taxonomy.py (name evidence + behavior veto) ----------------
+con.sql(STALLCAT_SQL)
 con.sql("""CREATE OR REPLACE VIEW txm AS
-  SELECT *, CASE WHEN namecat = 'Generic' THEN 'Unclassified' ELSE namecat END AS mcat FROM tx""")
+  SELECT tx.*, sc.mcat FROM tx JOIN stallcat sc USING (schoolId, storeId)""")
 print("taxonomy", time.time()-t0, flush=True)
 
 # coverage: verified vs unclassified, at stall and transaction level

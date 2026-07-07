@@ -42,7 +42,8 @@ export function openStallExplorer(DATA, preset = {}) {
       <div class="cap" id="st-count" style="margin:6px 0 4px"></div>
       <div id="st-list"></div>
       <div class="cap" style="margin-top:8px">No item/SKU data exists — a stall gets a category only if its
-      registered name says what it sells; generic names ("Stall 1") stay <b>Unclassified</b>, never guessed.
+      registered name says what it sells AND its prices don't contradict the claim; generic or bare
+      company names stay <b>Unclassified</b>, never guessed; two-food-group names count as <b>Mixed</b>.
       Price bands are the factual proxy for menu items.</div>`;
 
     const catsBar = body.querySelector('#st-cats');

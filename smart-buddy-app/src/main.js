@@ -19,9 +19,11 @@ let colorMode = 'level';
 const markerEls = new Map();
 
 /* ---------- views & roles ---------- */
+// Stall Explorer is SHELVED from the nav (no item/SKU data yet — revisit when a
+// menu/itemID feed exists). Per-stall detail windows stay reachable via the school
+// window, search, and #stall= deep links; openStallExplorer is kept for that day.
 const VIEWS = {
     overview: { label: 'Network Overview', open: () => openOverview(GLOBAL, SCHOOLS, open) },
-    stalls:   { label: 'Stall Explorer',   open: (p) => openStallExplorer(STALLS, p || {}) },
     eng:      { label: 'Terminal Health',  open: (p) => openEng(STALLS, p || {}) },
     feb:      { label: 'February Insights', open: (p) => openFeb(FEB, p) },
 };
@@ -132,7 +134,7 @@ renderNav();
 function open(sid) {
     const s = SCHOOLS[sid];
     if (!s) return;
-    openSchool(s, GLOBAL, GLOBAL.network_mix);
+    openSchool(s, GLOBAL, STALLS);
     markerEls.get(sid)?.classList.add('open');
 }
 

@@ -210,13 +210,7 @@ OUT["hr"] = {
 print("hr", round(time.time()-t0), "s", flush=True)
 
 # ---------------- spending: level x category (Feb only) ----------------
-NAMECAT = """CASE
- WHEN lower(storeName) ~ '.*(book|education|supply|supplies|marketing|stationer|uniform|pte ltd|enterprise|trading).*' THEN 'Bookshop & Supplies'
- WHEN lower(storeName) ~ '.*(fruit).*' THEN 'Fruits'
- WHEN lower(storeName) ~ '.*(drink|cool |cups|cans|juice|avalanche|beverage|bubble|milk|tea |coffee|kopi|quench|thirst|arctic|antartic|freez|expresso|espresso|chill|sip|refreshing).*' THEN 'Drinks'
- WHEN lower(storeName) ~ '.*(snack|dessert|bites|waffle|ice cream|ice-cream|icecream|muffin|bakery|bread|toast|cookie|pastr|donut|popcorn|sweet).*' THEN 'Snacks & Desserts'
- WHEN lower(storeName) ~ '.*(food|rice|noodle|mee |sushi|western|chicken|nasi|pasta|cuisine|medley|kitchen|delight|malay|halal|japanese|korean|soup|porridge|economy|vegetarian|duck|fish|laksa|wanton|ban mian|delicious|cafe|deli |wok|bowl|dim sum|grill|bento|curry|hot stall|rib).*' THEN 'Cooked Food'
- ELSE 'Generic' END"""
+from taxonomy import STALLCAT_SQL, CATS as TAX_CATS
 LEVEL = """CASE
  WHEN schoolId = 'NYP' OR schoolId = 'SOTA' THEN 'Other'
  WHEN schoolId LIKE '%JC' THEN 'Junior College'
@@ -225,7 +219,7 @@ LEVEL = """CASE
  ELSE 'Other' END"""
 
 con.sql(f"""CREATE OR REPLACE VIEW tx AS
-SELECT *, {NAMECAT} AS namecat, {LEVEL} AS lvl_sfx, extract(hour FROM txn_time) AS hh, txn_date AS d
+SELECT *, {LEVEL} AS lvl_sfx, extract(hour FROM txn_time) AS hh, txn_date AS d
 FROM '{PQ}/feb_txn.parquet'
 WHERE schoolId != 'STYL' AND storeName NOT ILIKE '%retrieve%' AND amount <= 20000""")
 
@@ -243,11 +237,12 @@ def eff(sid, sfx):
 lv = q("SELECT DISTINCT schoolId, lvl_sfx FROM tx")
 lv["lvl"] = [eff(s, x) for s, x in zip(lv["schoolId"], lv["lvl_sfx"])]
 con.register("lmap", lv[["schoolId","lvl"]])
+con.sql(STALLCAT_SQL)
 con.sql("""CREATE OR REPLACE VIEW txm AS
-SELECT tx.*, CASE WHEN namecat = 'Generic' THEN 'Unclassified' ELSE namecat END AS mcat, l.lvl
-FROM tx LEFT JOIN lmap l USING (schoolId)""")
+SELECT tx.*, sc.mcat, l.lvl
+FROM tx JOIN stallcat sc USING (schoolId, storeId) LEFT JOIN lmap l USING (schoolId)""")
 
-CATS = ["Drinks","Snacks & Desserts","Cooked Food","Fruits","Bookshop & Supplies","Unclassified"]
+CATS = list(TAX_CATS)  # Drinks / Snacks / Cooked / Mixed / Bookshop / Unclassified
 LVLS = ["Primary","Secondary","Junior College","Other"]
 spend = {"levels": ["All"]+LVLS, "cats": ["All"]+CATS, "daily": {}, "hourly": {}, "kpis": {}}
 feb_days = [f"2026-02-{i:02d}" for i in range(1,29)]

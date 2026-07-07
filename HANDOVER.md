@@ -27,6 +27,8 @@ adds the decisions, pipeline mechanics, and gotchas a new session needs.
 | **Service-team report from Feb 2026 data** (7 Jul): network health, speed trends, food items, spending per school, food-type trends — new report (not a rework of Purchase Insights, which has no network/speed) | `SMART_Buddy_Feb2026_Service_Report.{html,pdf}` + `analysis/{analyze_feb_service.py,feb_service_report.html,splice_feb_service.py}` → `feb_service.json` | ✅ done |
 | **De-hallucination sweep** (7 Jul, supervisor policy): remove all price-based category guessing; verified-name categories + Unclassified everywhere | All 5 taxonomy scripts + app windows + 3 reports regenerated (`Feb2026_Service_Report`, `Findings_Report.pdf`, `Purchase_Insights.{html,pdf}`); Purchase Insights template recreated (`purchase_insights_template.html` + `splice_purchase_insights.py`); quarter PDF splice scripted (`splice_pdf_report.py`); artifact redeployed same URL | ✅ done |
 | **Share the app with the team** (7 Jul): deploy off the local dev server, "app only, no database" (chosen over the full Influx/Ditto platform pattern) | `smart-buddy-app/{Dockerfile,nginx.conf,.dockerignore}` + repo-root `docker-compose.yml` + `DEPLOY.md`; static nginx site (data bundled into the build), mirrors tree-digital-twin `frontend` stripped of all backend wiring; behind shared nginx-proxy + Keycloak on the VM. Container image not built here (Docker absent on the workstation); `npm run build` verified | ✅ deploy artifacts done |
+| **Dashboard UX pass** (7 Jul, user feedback): Feb-only scope (tentative); Stall Explorer shelved (no item/SKU data); school window reworked (per-stall revenue bars + merged Terminals tab, stall-tagged, verdicts); signal 0–31 → plain-language quality bands; Food Trends → coverage strip + verified-only bars | `build_app_data.py` Feb-filtered (FEB_ALL/FEB_WK consts; `speed_components_weekly` replaces `_monthly`); `school-window.js` rewritten (2 tabs); `overview-window.js` (bands, coverage strip, Feb captions); `main.js`/`hub-window.js` (VIEWS minus stalls; F&B primary = feb); global+schools JSON regenerated — meta now matches stalls.json exactly (3,959,550 txns / $7.57M) | ✅ done, screenshots verified |
+| **Taxonomy v2** (7 Jul evening, user: "how do we know a named stall sells what the name says?"): audited name→category against price behavior, then tightened everywhere | NEW **`analysis/taxonomy.py`** (single source of truth, imported by all 5 scripts): corporate suffixes ≠ bookshop (44 stalls → Unclassified pending vendor list; 4 café misclassifications fixed), 2+ food words → **Mixed** (23 stalls), behavior **veto** on strong contradiction only (9 stalls), pure Fruits gone (all combos). `build_app_data.py --quarter` → `appdata_quarter/` for the Findings PDF (appdata/ stays Feb for the app); `splice_pdf_report.py` reads appdata_quarter. All app JSONs + all 3 reports (html+pdf) regenerated; artifact redeployed same URL (label taxonomy-v2-mixed-veto) | ✅ done, all outputs verified |
 
 “**Atlantic**” in an early request was ambiguous → clarified to mean *“app-style like
 C:\Users\STYLSG\Downloads\tree-digital-twin”* (Vite + MapLibre + draggable windows, Apple-style
@@ -72,7 +74,31 @@ theme). It is NOT a platform/library.
     **not too much for InfluxDB** (tree-twin already parks 2.7 GB+ of tilt telemetry in the shared Influx);
     Ditto is for one twin-Thing-per-entity (terminal/stall/school), NOT bulk rows. The split is fixed by
     the platform's own `ingestion/src/backfill.py`: "history → InfluxDB, current-state → Ditto".
-16. **Must NOT conflict with tree-twin-uat** (7 Jul, user): SMART Buddy is a completely separate project.
+16. **App dashboard = February 2026 only, tentative** (7 Jul, user): all app windows read the same month
+    (global/schools/stalls/feb JSON all Feb). The REPORTS keep their original scopes (Findings PDF and
+    Purchase Insights stay Feb–Apr; they were not changed). Restore the quarter in the app by widening
+    `FEB_ALL`/`FEB_WK` in `build_app_data.py` and re-running (overview sub/captions would need re-wording).
+17. **Stall Explorer shelved** (7 Jul, user): without itemID/SKU data the explorer "doesn't work" for
+    F&B questions — hidden from nav/roles (code kept: `stall-window.js` `openStallExplorer`, re-add
+    `'stalls'` to VIEWS + ROLES when a menu/itemID feed arrives). Per-stall detail windows remain
+    reachable (school-window bars, search, `#stall=` deep links). Replaced by per-school
+    revenue-by-stall bars (every store individually; grey = Unclassified, never guessed).
+18. **Taxonomy v2 — name evidence must survive a behavior cross-check** (7 Jul evening, user + audit):
+    validated the name→category rules against each stall's own price behavior (93–97% agreement for food
+    categories) and fixed what failed. Four rules, all in **`analysis/taxonomy.py`** (the ONLY place the
+    classification lives — all 5 scripts import it): ① food words beat corporate suffixes ("IFood Cafes
+    Pte Ltd" = Cooked Food, not Bookshop); ② bare company names (BL Marketing ×19, Overseas Associates ×17,
+    Print Pak, Actlink, Asencio — 44 stalls / 30k Feb txns) are **Unclassified until STYL confirms the
+    vendor list** ("pte ltd" is not evidence of goods sold; behavior sits between bookshop and food);
+    ③ names hitting 2+ food-word groups = **Mixed** (23 stalls — genuinely combo stalls; includes ALL
+    former Fruits stalls, so pure Fruits no longer exists); ④ **behavior veto**: single food category kept
+    only if the stall's modal price doesn't strongly contradict it (Drinks >$2.00, Snacks >$3.50,
+    Fruits >$3.00, Cooked <$1.00 or >$8.00; n≥100) — veto fires on contradiction ("Hot Stall 5" at $0.60
+    modal), NOT on premium pricing ($5 Pool Cafe at ACSI stays Cooked Food, else atas schools get biased
+    out). Price can veto a name, never assign one — still zero guessing. New coverage: Feb 493 stalls /
+    17.5% txns / 18.5% rev; quarter 498 / 17.2% / 18.1%. "Overseas Associates" ≠ overseas transactions —
+    the txn schema has NO country/currency/location field; every txn is at a Singapore school terminal.
+19. **Must NOT conflict with tree-twin-uat** (7 Jul, user): SMART Buddy is a completely separate project.
     Safe by construction on **data** — app-only means no connection to the shared InfluxDB bucket `rtls`,
     Ditto `org.nparks`, or Solace. Hardened on **server** co-tenancy: compose project pinned `name: smartbuddy`,
     container `smartbuddy-frontend`, host port 8088 via `SB_FRONTEND_PORT` (distinct var + default from
@@ -152,7 +178,9 @@ cd analysis
 # --- original quarter/May pipeline ---
 python convert_parquet.py                        # ~15 s; → parquet/{txn,health,heart_rate}.parquet
 python convert_txn_perf.py                       # → parquet/txn_perf.parquet (full period)
-python build_app_data.py                         # → appdata/{global,schools}.json
+# taxonomy.py = shared classification module (imported by all 5 analyze/build scripts — edit ONLY there)
+python build_app_data.py                         # → appdata/{global,schools}.json  (FEB-ONLY, for the app)
+python build_app_data.py --quarter               # → appdata_quarter/{global,schools}.json (for the Findings PDF)
 # --- Feb 2026 pipeline ---
 python convert_parquet_feb.py                    # ~12 s; → parquet/feb_*.parquet
 python convert_txn_perf.py 2026-02               # ~5 s;  → parquet/txn_perf_202602.parquet
@@ -163,8 +191,9 @@ python analyze_feb_service.py                    # → feb_service.json (Feb ser
 python splice_feb_service.py                     # → ../SMART_Buddy_Feb2026_Service_Report.html (chartjs + json)
 python analyze_purchases.py                      # → purchase_insights.json (verified-name categories)
 python splice_purchase_insights.py               # → ../SMART_Buddy_Purchase_Insights.html
-python splice_pdf_report.py                      # → pdf_report_spliced.html (print to Findings_Report.pdf)
-cp appdata/*.json ../smart-buddy-app/src/data/   # refresh the app bundle
+python splice_pdf_report.py                      # → pdf_report_spliced.html (reads appdata_quarter/; print → Findings_Report.pdf)
+cp appdata/*.json ../smart-buddy-app/src/data/   # refresh the app bundle (Feb scope)
+# NB --print-to-pdf needs an ABSOLUTE output path (relative paths fail silently, old file untouched)
 # Feb Insights HTML: splice chart.umd.min.js + feb_insights.json into feb_report_template.html
 # chart.umd.min.js source: smart-buddy-app/node_modules/chart.js/dist/ (the splice_*.py scripts read it from there)
 # PDFs: chrome --headless=new --no-pdf-header-footer --print-to-pdf=... --virtual-time-budget=15000 file:///...

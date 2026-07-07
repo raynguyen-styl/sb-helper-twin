@@ -20,6 +20,8 @@ node_modules/
 
 # ── Generated pipeline output JSON (regenerable; duplicates smart-buddy-app/src/data) ──
 /analysis/appdata/
+# build_app_data.py --quarter output (feeds the Findings PDF splice)
+/analysis/appdata_quarter/
 /analysis/insights.json
 /analysis/feb_insights.json
 /analysis/feb_service.json

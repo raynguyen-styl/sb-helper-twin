@@ -3,16 +3,18 @@
 // primary window. Persisted in localStorage; deep link #role=fnb|eng|mgmt.
 import { openWindow } from './windowing.js';
 
+// NOTE: the Stall Explorer view is shelved (no item/SKU data yet) — stall detail
+// lives inside each school window instead. Re-add 'stalls' here when it returns.
 export const ROLES = {
     fnb:  { label: 'F&B / Operations', icon: '🍜', color: '#1baf7a',
-            desc: 'Stalls, machines, what sells, price points, revenue by hour and day.',
-            views: ['stalls', 'feb'], primary: 'stalls' },
+            desc: 'What sells, price points, revenue by school, stall and hour — February insights.',
+            views: ['feb', 'overview'], primary: 'feb' },
     eng:  { label: 'Engineering', icon: '🔧', color: '#2a78d6',
             desc: 'Terminal fleet health, machine-vs-location fault diagnosis, network, speed, signal.',
             views: ['eng', 'overview', 'feb'], primary: 'eng' },
     mgmt: { label: 'Management', icon: '📊', color: '#7d5fd3',
-            desc: 'Everything — network overview, school spending, stalls, terminals, February insights.',
-            views: ['overview', 'stalls', 'eng', 'feb'], primary: 'overview' },
+            desc: 'Everything — network overview, school spending, terminals, February insights.',
+            views: ['overview', 'eng', 'feb'], primary: 'overview' },
 };
 
 export function openHub(onPick) {

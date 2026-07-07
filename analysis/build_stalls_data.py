@@ -27,14 +27,8 @@ def q(s): return con.sql(s).df()
 geo = json.load(open(os.path.join(HERE, "school_geo.json")))
 FEB_DAYS = [f"2026-02-{i:02d}" for i in range(1, 29)]
 
-# ---------------- taxonomy (same method as build_feb_app_data.py) ----------------
-NAMECAT = """CASE
- WHEN lower(storeName) ~ '.*(book|education|supply|supplies|marketing|stationer|uniform|pte ltd|enterprise|trading).*' THEN 'Bookshop & Supplies'
- WHEN lower(storeName) ~ '.*(fruit).*' THEN 'Fruits'
- WHEN lower(storeName) ~ '.*(drink|cool |cups|cans|juice|avalanche|beverage|bubble|milk|tea |coffee|kopi|quench|thirst|arctic|antartic|freez|expresso|espresso|chill|sip|refreshing).*' THEN 'Drinks'
- WHEN lower(storeName) ~ '.*(snack|dessert|bites|waffle|ice cream|ice-cream|icecream|muffin|bakery|bread|toast|cookie|pastr|donut|popcorn|sweet).*' THEN 'Snacks & Desserts'
- WHEN lower(storeName) ~ '.*(food|rice|noodle|mee |sushi|western|chicken|nasi|pasta|cuisine|medley|kitchen|delight|malay|halal|japanese|korean|soup|porridge|economy|vegetarian|duck|fish|laksa|wanton|ban mian|delicious|cafe|deli |wok|bowl|dim sum|grill|bento|curry|hot stall|rib).*' THEN 'Cooked Food'
- ELSE 'Generic' END"""
+# ---------------- taxonomy: shared module (v2: Mixed + behavior veto) ----------------
+from taxonomy import STALLCAT_SQL, CATS as TAX_CATS
 LEVEL = """CASE
  WHEN schoolId = 'NYP' OR schoolId = 'SOTA' THEN 'Other'
  WHEN schoolId LIKE '%JC' THEN 'Junior College'
@@ -43,16 +37,17 @@ LEVEL = """CASE
  ELSE 'Other' END"""
 
 con.sql(f"""CREATE OR REPLACE VIEW tx AS
-SELECT *, {NAMECAT} AS namecat, {LEVEL} AS lvl_sfx, extract(hour FROM txn_time) AS hh,
+SELECT *, {LEVEL} AS lvl_sfx, extract(hour FROM txn_time) AS hh,
   txn_date AS d,
   CASE WHEN txn_date BETWEEN DATE '2026-02-16' AND DATE '2026-02-18' THEN 'CNY'
        WHEN dayofweek(txn_date) IN (0,6) THEN 'Weekend' ELSE 'School' END AS daytype
 FROM '{PQ}/feb_txn.parquet'
 WHERE schoolId != 'STYL' AND storeName NOT ILIKE '%retrieve%' AND amount <= 20000""")
 
-# category = verified stall name ONLY; generic names stay Unclassified (no price guessing)
+# category per STALL from taxonomy.py (name evidence + behavior veto, Mixed for combos)
+con.sql(STALLCAT_SQL)
 con.sql("""CREATE OR REPLACE VIEW txm AS
-SELECT tx.*, CASE WHEN namecat = 'Generic' THEN 'Unclassified' ELSE namecat END AS mcat FROM tx""")
+SELECT tx.*, sc.mcat FROM tx JOIN stallcat sc USING (schoolId, storeId)""")
 print("taxonomy", round(time.time()-t0), "s", flush=True)
 
 lvl_geo = {sid: (g.get("level") or "").upper() for sid, g in geo.items()}
@@ -180,7 +175,7 @@ m = q("SELECT count(*) AS n, round(sum(amount)/100.0) AS rev, count(DISTINCT sch
 OUT = {"meta": {"period": "February 2026", "txns": int(m.n), "rev": int(m.rev),
                 "schools": int(m.sch), "stalls": len(stalls), "terminals": len(terminals),
                 "generated": "2026-07-06"},
-       "cats": ["Drinks", "Snacks & Desserts", "Cooked Food", "Fruits", "Bookshop & Supplies", "Unclassified"],
+       "cats": list(TAX_CATS),
        "bands": ["≤$1", "$1–2", "$2–3", ">$3"],
        "stalls": stalls, "terminals": terminals}
 

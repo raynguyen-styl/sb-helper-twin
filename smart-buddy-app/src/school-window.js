@@ -1,12 +1,17 @@
-// Per-school detail window: Spending & Food / Network / Speed tabs.
+// Per-school detail window: Stalls & Spending / Terminals tabs. February 2026.
 import { openWindow } from './windowing.js';
-import { mk, opts, ax, bar, line, C, CAT_COLOR } from './charts.js';
+import { mk, opts, ax, line, C, CAT_COLOR } from './charts.js';
+import { vchip } from './stall-window.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-SG');
-const CATS = ['Drinks', 'Snacks & Desserts', 'Cooked Food', 'Fruits', 'Bookshop & Supplies', 'Unclassified'];
+const fmt$ = (v) => v >= 1e6 ? '$' + (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? '$' + (v / 1e3).toFixed(1) + 'k' : '$' + Math.round(v);
 const LV_CHIP = { Primary: 'chip-pri', Secondary: 'chip-sec', 'Junior College': 'chip-jc', Other: 'chip-other' };
+const mach = (t) => t.length > 12 ? '…' + t.slice(-12) : t;
+// 0–31 cellular reported-signal scale (3GPP CSQ) → plain words.
+const sigQual = (v) => v == null ? null : v >= 20 ? 'Excellent' : v >= 15 ? 'Good' : v >= 10 ? 'Fair' : 'Poor';
+const SIG_STYLE = { Excellent: 'pill-good', Good: 'pill-good', Fair: 'pill-warn', Poor: 'pill-bad' };
 
-export function openSchool(s, GLOBAL, netMix) {
+export function openSchool(s, GLOBAL, STALLS) {
     const chips = [`<span class="chip ${LV_CHIP[s.level] || 'chip-other'}">${s.level}</span>`];
     if (s.moe_type === 'INDEPENDENT SCHOOL') chips.push('<span class="chip chip-indep">Independent</span>');
     if (s.ip) chips.push('<span class="chip chip-flag">IP</span>');
@@ -16,7 +21,7 @@ export function openSchool(s, GLOBAL, netMix) {
     const body = openWindow({
         id: `school-${s.id}`,
         title: s.name || s.id,
-        sub: s.name ? `${s.id}${s.area ? ' · ' + titleCase(s.area) : ''}` : 'ID not matched to MOE directory',
+        sub: `${s.name ? s.id + ' · ' : ''}${s.area ? titleCase(s.area) + ' · ' : ''}February 2026`,
         chips,
     });
     if (!body) return;
@@ -25,23 +30,17 @@ export function openSchool(s, GLOBAL, netMix) {
       <div class="stats">
         ${stat(s.spend_day != null ? '$' + s.spend_day.toFixed(2) : '–', 'spend / card·day')}
         ${stat('$' + s.avg_ticket.toFixed(2), 'avg ticket')}
-        ${stat(fmt(s.n), 'transactions')}
+        ${stat(fmt(s.n), 'Feb transactions')}
         ${stat(s.cards ? fmt(s.cards) : '–', 'cards')}
         ${stat(pctCell(s.err_pct, 5, 10), 'error rate')}
         ${stat(s.med_ms ? (s.med_ms / 1000).toFixed(1) + 's' : '–', 'median txn')}
       </div>
       <div class="tabs">
-        <button data-tab="spend" class="on">Spending &amp; Food</button>
-        <button data-tab="net">Network</button>
-        <button data-tab="speed">Speed</button>
+        <button data-tab="spend" class="on">Stalls &amp; Spending</button>
+        <button data-tab="terms">Terminals</button>
       </div>
       <div data-pane="spend"></div>
-      <div data-pane="net" style="display:none"></div>
-      <div data-pane="speed" style="display:none"></div>
-      <div class="cap" style="margin-top:10px"><a href="#" data-open-stalls>Browse this school's stalls &amp; machines →</a></div>`;
-    body.querySelector('[data-open-stalls]').addEventListener('click', (e) => {
-        e.preventDefault(); window.SB?.openStalls({ school: s.id });
-    });
+      <div data-pane="terms" style="display:none"></div>`;
 
     body.querySelectorAll('.tabs button').forEach((b) =>
         b.addEventListener('click', () => {
@@ -50,9 +49,8 @@ export function openSchool(s, GLOBAL, netMix) {
                 (p.style.display = p.dataset.pane === b.dataset.tab ? '' : 'none'));
         }));
 
-    renderSpend(body.querySelector('[data-pane="spend"]'), s, GLOBAL);
-    renderNet(body.querySelector('[data-pane="net"]'), s, GLOBAL);
-    renderSpeed(body.querySelector('[data-pane="speed"]'), s, GLOBAL, netMix);
+    renderSpend(body.querySelector('[data-pane="spend"]'), s, STALLS);
+    renderTerms(body.querySelector('[data-pane="terms"]'), s, STALLS);
 }
 
 const stat = (v, l) => `<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`;
@@ -60,79 +58,72 @@ const pctCell = (v, warn, bad) =>
     `<span class="${v >= bad ? 'pill-bad' : v >= warn ? 'pill-warn' : 'pill-good'}">${v}%</span>`;
 const titleCase = (x) => String(x || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
-function renderSpend(el, s, GLOBAL) {
+function renderSpend(el, s, STALLS) {
+    const stalls = STALLS.stalls.filter((st) => st.school === s.id).sort((a, b) => b.rev - a.rev);
+    const named = stalls.filter((st) => st.cat !== 'Unclassified');
     el.innerHTML = `
-      <h5>Weekly canteen revenue</h5><div class="cap">Total $ per week at this school.</div>
+      <h5>Weekly canteen revenue — February</h5><div class="cap">Total $ per week at this school (weeks starting Mon).</div>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>What sells here vs the network</h5>
-      <div class="cap">Categories from name-verified stalls only; generic-named stalls ("Stall 1") show as
-      Unclassified — what they sell is never guessed.</div>
-      <div class="cwrap"><canvas></canvas></div>`;
+      <h5>Revenue by stall — February</h5>
+      <div class="cap">Each bar is one store. Colour = category from the stall's registered name;
+      grey = the name gives no trustworthy category (generic "Stall 1", a bare company name, or prices
+      that contradict the name) — never guessed. Teal = a name covering two food groups (Mixed).
+      Revenue is exact either way. Click a bar to open the stall.</div>
+      <div class="cwrap" style="height:${Math.max(120, 26 + stalls.length * 21)}px"><canvas></canvas></div>
+      <div class="cap" style="margin-top:4px">${stalls.length} stalls · ${named.length} with a descriptive name.</div>`;
     const [c1, c2] = el.querySelectorAll('canvas');
     const wk = [...(s.wk_spend || [])].sort((a, b) => a.week.localeCompare(b.week));
     mk(c1, { type: 'line',
         data: { labels: wk.map((r) => r.week.slice(5, 10)), datasets: [{ ...line(C.blue), label: '$', data: wk.map((r) => r.sgd) }] },
         options: opts({ indexMode: true, tooltip: { callbacks: { label: (c) => ` $${fmt(c.parsed.y)} · ${fmt(wk[c.dataIndex].n)} txns` } },
             scales: { x: ax(), y: ax({ beginAtZero: true, ticks: { callback: (v) => '$' + (v >= 1000 ? v / 1000 + 'k' : v) } }) } }) });
-    const totalMix = {}; let tot = 0;
-    GLOBAL.food_mix.forEach((r) => { totalMix[r.mcat] = r.n; tot += r.n; });
-    mk(c2, { type: 'bar',
-        data: { labels: CATS, datasets: [
-            { ...bar(C.blue), label: s.id, data: CATS.map((c) => 100 * (s.mix[c] || 0)) },
-            { ...bar('#d3d2cd'), label: 'Network', data: CATS.map((c) => 100 * (totalMix[c] || 0) / tot) }] },
-        options: opts({ legend: true, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${c.parsed.y.toFixed(1)}%` } },
-            scales: { x: ax({ grid: { display: false }, ticks: { autoSkip: false, maxRotation: 45, font: { size: 9 } } }),
-                y: ax({ beginAtZero: true, ticks: { callback: (v) => v + '%' } }) } }) });
+    const stallChart = mk(c2, { type: 'bar',
+        data: { labels: stalls.map((st) => st.name), datasets: [{
+            label: 'Feb revenue', data: stalls.map((st) => st.rev),
+            backgroundColor: stalls.map((st) => CAT_COLOR[st.cat] || C.muted), borderRadius: 2 }] },
+        options: { ...opts({ tooltip: { callbacks: {
+                title: (i) => stalls[i[0].dataIndex].name,
+                label: (c) => { const st = stalls[c.dataIndex];
+                    return ` ${fmt$(st.rev)} · ${fmt(st.n)} txns · $${st.ticket.toFixed(2)} avg — ${st.cat}`; } } },
+            scales: { x: ax({ beginAtZero: true, ticks: { callback: (v) => fmt$(v) } }),
+                y: ax({ grid: { display: false }, ticks: { autoSkip: false, font: { size: 10 } } }) } }),
+            indexAxis: 'y',
+            onClick: (e, els) => { if (els.length) window.SB?.openStall(stalls[els[0].index].id); },
+            onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; } } });
 }
 
-function renderNet(el, s, GLOBAL) {
-    const terms = GLOBAL.terminals.filter((t) => t.school === s.id).sort((a, b) => b.err_pct - a.err_pct);
+function renderTerms(el, s, STALLS) {
+    const terms = STALLS.terminals.filter((t) => t.school === s.id)
+        .sort((a, b) => rank(b) - rank(a) || (b.err_pct ?? 0) - (a.err_pct ?? 0));
+    const nBad = terms.filter((t) => t.verdict === 'machine').length;
+    const nSite = terms.filter((t) => t.verdict === 'site').length;
     el.innerHTML = `
       <div class="stats">
-        ${stat(s.terminals, 'terminals')}
-        ${stat(s.wifi_terms || 0, 'on WiFi')}
-        ${stat(s.med_sig != null ? s.med_sig + '/31' : '–', 'median 4G signal')}
-        ${stat(pctCell(s.offline_pct, 25, 45), 'offline share')}
+        ${stat(terms.length, 'machines')}
+        ${stat(nBad ? `<span style="color:var(--bad)">${nBad}</span>` : 0, 'machine faults')}
+        ${stat(nSite ? `<span style="color:var(--warn)">${nSite}</span>` : 0, 'site issues')}
+        ${stat(s.med_sig != null ? `<span class="${SIG_STYLE[sigQual(s.med_sig)]}">${sigQual(s.med_sig)}</span>` : '–', 'typical 4G signal')}
       </div>
-      <h5>Terminals at this school</h5>
-      <div class="cap">Ranked by error rate. Signal is the 0–31 cellular scale; WiFi units show dBm instead.</div>
-      <table class="mini"><tr><th>Terminal</th><th>Net</th><th style="text-align:right">Txns</th>
-        <th style="text-align:right">Signal</th><th style="text-align:right">Median</th>
-        <th style="text-align:right">Err %</th><th style="text-align:right">Offline %</th></tr>
-        ${terms.map((t) => `<tr><td style="font-size:10.5px">…${t.terminalId.slice(-11)}</td><td>${t.net || '–'}</td>
+      <h5>Every machine, tagged to its stall</h5>
+      <div class="cap">Problem units first. Diagnosis compares each machine with its school peers —
+      machine fault = service the unit; site issue = the location (signal/network) is the problem.
+      Click a row for the full per-machine diagnostic.</div>
+      <table class="mini"><tr><th>Machine</th><th>Stall</th><th>Net</th><th>Signal</th>
+        <th style="text-align:right">Txns</th><th style="text-align:right">Median</th>
+        <th style="text-align:right">Err %</th><th>Diagnosis</th></tr>
+        ${terms.map((t) => { const q = t.net === 'WIFI' ? null : sigQual(t.sig);
+            return `<tr style="cursor:pointer" data-tid="${t.id}">
+          <td style="font-size:10.5px"><b>${mach(t.id)}</b></td>
+          <td style="font-size:11px">${t.storeName || '–'}</td><td>${t.net || '–'}</td>
+          <td>${t.net === 'WIFI' ? (t.rssi != null ? t.rssi + ' dBm' : '–')
+              : q ? `<span class="${SIG_STYLE[q]}">${q}</span>` : '–'}</td>
           <td class="num">${fmt(t.n)}</td>
-          <td class="num">${t.net === 'WIFI' ? (t.med_rssi != null ? t.med_rssi + ' dBm' : '–') : (t.med_sig != null ? t.med_sig : '–')}</td>
-          <td class="num">${(t.med_ms / 1000).toFixed(1)}s</td>
-          <td class="num">${pctCell(t.err_pct, 8, 12)}</td><td class="num">${t.offline_pct}%</td></tr>`).join('')}
+          <td class="num">${t.med_ms ? (t.med_ms / 1000).toFixed(1) + 's' : '–'}</td>
+          <td class="num">${pctCell(t.err_pct ?? 0, 8, 12)}</td><td>${vchip(t.verdict)}</td></tr>`; }).join('')}
       </table>
-      ${terms.length === 0 ? '<div class="note-box">No terminals with ≥200 transactions.</div>' : ''}`;
+      ${terms.length === 0 ? '<div class="note-box">No terminals recorded at this school in February.</div>' : ''}`;
+    el.querySelectorAll('tr[data-tid]').forEach((tr) =>
+        tr.addEventListener('click', () => window.SB?.openTerminal(tr.dataset.tid)));
 }
 
-function renderSpeed(el, s, GLOBAL, netMix) {
-    el.innerHTML = `
-      <h5>Median transaction time — weekly</h5>
-      <div class="cap">This school vs the whole network. p95 here: ${s.p95_ms ? (s.p95_ms / 1000).toFixed(1) + 's' : '–'}.</div>
-      <div class="cwrap tall"><canvas></canvas></div>
-      <div class="note-box">Network medians by connection: ${netMix.map((n) =>
-          `${n.posNetworkType} ${(n.med_ms / 1000).toFixed(1)}s`).join(' · ')}. Slow schools usually trace to
-          "3.0 ASCAN" readers or weak-signal terminals — check the Network tab.</div>`;
-    const wk = [...(s.wk_speed || [])].sort((a, b) => a.week.localeCompare(b.week));
-    const gw = {}; // network weekly median from daily data
-    GLOBAL.daily.forEach((d) => { const w = weekOf(d.date); (gw[w] ||= []).push(d.med_ms); });
-    const labels = wk.map((r) => r.week.slice(0, 10));
-    mk(el.querySelector('canvas'), { type: 'line',
-        data: { labels: labels.map((l) => l.slice(5)), datasets: [
-            { ...line(C.blue), label: s.id, data: wk.map((r) => r.med_ms / 1000) },
-            { ...line(C.muted, { borderDash: [5, 3] }), label: 'Network', data: labels.map((l) => {
-                const xs = gw[l] || []; return xs.length ? median(xs) / 1000 : null; }) }] },
-        options: opts({ legend: true, indexMode: true,
-            scales: { x: ax(), y: ax({ ticks: { callback: (v) => v + 's' } }) } }) });
-}
-
-const median = (xs) => { const a = [...xs].sort((p, q) => p - q); return a[Math.floor(a.length / 2)]; };
-function weekOf(dateStr) { // Monday of the ISO week, matching duckdb date_trunc('week')
-    const d = new Date(dateStr + 'T00:00:00');
-    const day = (d.getDay() + 6) % 7;
-    d.setDate(d.getDate() - day);
-    return d.toISOString().slice(0, 10);
-}
+const rank = (t) => t.verdict === 'machine' ? 3 : t.verdict === 'site' ? 2 : t.verdict === 'check' ? 1 : 0;

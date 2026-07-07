@@ -3,10 +3,10 @@ import { openWindow } from './windowing.js';
 import { mk, opts, ax, bar, line, C, CAT_COLOR, LV_COLOR } from './charts.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-SG');
-const CATS = ['Drinks', 'Snacks & Desserts', 'Cooked Food', 'Fruits', 'Bookshop & Supplies', 'Unclassified'];
+const CATS = ['Drinks', 'Snacks & Desserts', 'Cooked Food', 'Mixed', 'Bookshop & Supplies', 'Unclassified'];
 
 export function openOverview(GLOBAL, SCHOOLS, onOpenSchool) {
-    const body = openWindow({ id: 'overview', title: 'Network Overview', sub: 'Feb – Apr 2026', chips: [] });
+    const body = openWindow({ id: 'overview', title: 'Network Overview', sub: 'February 2026', chips: [] });
     if (!body) return;
     body.closest('.tw').style.width = '700px';
     body.closest('.tw').style.left = 'calc(100vw - 740px)';
@@ -43,15 +43,27 @@ export function openOverview(GLOBAL, SCHOOLS, onOpenSchool) {
 }
 
 function renderNet(el, G) {
-    const worst = [...G.terminals].filter((t) => t.n >= 2000).sort((a, b) => b.err_pct - a.err_pct).slice(0, 8);
+    const worst = [...G.terminals].filter((t) => t.n >= 1000).sort((a, b) => b.err_pct - a.err_pct).slice(0, 8);
+    // 0–31 reported-signal scale → plain-language quality bands (3GPP CSQ convention).
+    const BANDS = [
+        { label: 'Excellent', test: (s) => s >= 20, color: '#34c759', desc: 'strong signal — never the bottleneck' },
+        { label: 'Good', test: (s) => s >= 15 && s < 20, color: '#7fd48a', desc: 'comfortable margin' },
+        { label: 'Fair', test: (s) => s >= 10 && s < 15, color: '#ff9500', desc: 'usable, but slowdowns start here' },
+        { label: 'Poor', test: (s) => s < 10, color: '#ff3b30', desc: 'weak — expect slow or failed txns' },
+    ];
+    const sigTot = G.signal_dist.reduce((a, r) => a + r.n, 0);
+    const bands = BANDS.map((b) => ({ ...b,
+        n: G.signal_dist.filter((r) => b.test(r.sig)).reduce((a, r) => a + r.n, 0) }));
     el.innerHTML = `
-      <h5>Daily error rate &amp; offline share</h5>
-      <div class="cap">Errors hold a flat 6–9% school-day baseline; offline processing ~30%. Spikes are low-volume event days.</div>
+      <h5>Daily error rate &amp; offline share — February</h5>
+      <div class="cap">Errors hold a flat 6–9% school-day baseline; offline processing ~30%. 17–18 Feb are the CNY holidays (no school).</div>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>4G signal quality across terminals (0–31 scale)</h5>
-      <div class="cap">Distribution of reported signal on cellular terminals. 45 WiFi terminals report dBm instead (excluded).</div>
-      <div class="cwrap"><canvas></canvas></div>
-      <h5>Terminals needing attention (≥2k txns, worst error rate)</h5>
+      <h5>How good is the signal where terminals live?</h5>
+      <div class="cap">Share of February's 4G transactions by the signal quality the terminal reported at the moment
+      of payment. 45 WiFi terminals measure differently (dBm) and are excluded here.</div>
+      <div class="cwrap" style="height:130px"><canvas></canvas></div>
+      <div class="cap">${bands.map((b) => `<span style="color:${b.color}">●</span> ${b.label} — ${b.desc}`).join(' &nbsp; ')}</div>
+      <h5>Terminals needing attention (≥1k Feb txns, worst error rate)</h5>
       <table class="mini"><tr><th>Terminal</th><th>School</th><th style="text-align:right">Txns</th>
         <th style="text-align:right">Err %</th><th style="text-align:right">Median</th></tr>
         ${worst.map((t) => `<tr><td style="font-size:10.5px">…${t.terminalId.slice(-11)}</td><td><b>${t.school}</b></td>
@@ -66,20 +78,23 @@ function renderNet(el, G) {
         options: opts({ legend: true, indexMode: true,
             scales: { x: ax({ ticks: { maxTicksLimit: 7 } }), y: ax({ beginAtZero: true, ticks: { callback: (v) => v + '%' } }) } }) });
     mk(c2, { type: 'bar',
-        data: { labels: G.signal_dist.map((r) => r.sig), datasets: [{ ...bar(C.blue), label: 'Txns', data: G.signal_dist.map((r) => r.n) }] },
-        options: opts({ tooltip: { callbacks: { label: (c) => ` signal ${G.signal_dist[c.dataIndex].sig}: ${fmt(c.parsed.y)} txns` } },
-            scales: { x: ax({ grid: { display: false } }), y: ax({ beginAtZero: true, ticks: { callback: (v) => v / 1e6 + 'M' } }) } }) });
+        data: { labels: bands.map((b) => b.label), datasets: [{ label: '% of txns',
+            data: bands.map((b) => 100 * b.n / sigTot), backgroundColor: bands.map((b) => b.color), borderRadius: 3 }] },
+        options: { ...opts({ tooltip: { callbacks: { label: (c) =>
+                ` ${c.parsed.x.toFixed(1)}% of txns · ${fmt(bands[c.dataIndex].n)}` } },
+            scales: { x: ax({ beginAtZero: true, max: 100, ticks: { callback: (v) => v + '%' } }),
+                y: ax({ grid: { display: false } }) } }), indexAxis: 'y' } });
 }
 
 function renderSpeed(el, G) {
     el.innerHTML = `
-      <h5>Daily median &amp; p95 transaction time</h5>
-      <div class="cap">Stable ~2.3s median all quarter — no degradation trend. The p95 tail is where queues form.</div>
+      <h5>Daily median &amp; p95 transaction time — February</h5>
+      <div class="cap">Stable ~2.3s median all month — no degradation trend. The p95 tail is where queues form.</div>
       <div class="cwrap"><canvas></canvas></div>
       <h5>Weekly median by payment stack</h5>
       <div class="cap">The 3.0 ASCAN stack runs ~2× slower than 2.0 — consistently, not episodically.</div>
       <div class="cwrap tall"><canvas></canvas></div>
-      <h5>Where the online time goes (median ms per step, by month)</h5>
+      <h5>Where the online time goes (median ms per step, by week)</h5>
       <div class="cwrap"><canvas></canvas></div>`;
     const [c1, c2, c3] = el.querySelectorAll('canvas');
     const d = G.daily;
@@ -99,42 +114,55 @@ function renderSpeed(el, G) {
                 return r ? r.med_ms / 1000 : null; }) })) },
         options: opts({ legend: true, indexMode: true,
             scales: { x: ax(), y: ax({ ticks: { callback: (v) => v + 's' } }) } }) });
-    const comp = G.speed_components_monthly;
+    const comp = G.speed_components_weekly;
     const steps = ['checkSignal', 'openSocket', 'handshake', 'transfer'];
     mk(c3, { type: 'bar',
-        data: { labels: comp.map((r) => r.month), datasets: steps.map((s, i) => ({
+        data: { labels: comp.map((r) => 'wk ' + r.week.slice(5, 10)), datasets: steps.map((s, i) => ({
             ...bar([C.muted, C.yellow, C.violet, C.blue][i]), label: s, data: comp.map((r) => r[s]) })) },
         options: opts({ legend: true, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${c.parsed.y} ms` } },
             scales: { x: { ...ax({ grid: { display: false } }), stacked: true }, y: { ...ax({ beginAtZero: true, ticks: { callback: (v) => v + 'ms' } }), stacked: true } } }) });
 }
 
 function renderFood(el, G) {
+    const mixTot = G.food_mix.reduce((a, b) => a + b.n, 0);
+    const uncl = G.food_mix.find((r) => r.mcat === 'Unclassified');
+    const verPct = (100 * (mixTot - (uncl?.n || 0)) / mixTot);
+    const ver = G.food_mix.filter((r) => r.mcat !== 'Unclassified').sort((a, b) => b.n - a.n);
+    const verTot = ver.reduce((a, b) => a + b.n, 0);
     el.innerHTML = `
-      <h5>What sells — category share of purchases</h5>
-      <div class="cap">Categories from name-verified stalls only (no item data exists); generic-named stalls
-      show as Unclassified — what they sell is never guessed.</div>
+      <h5>How much of February is name-verified?</h5>
+      <div class="cap">No item/SKU data exists, so a stall gets a category only if its registered name says what
+      it sells, and only if its own prices don't contradict the claim (a "cooked food" name trading at a
+      $0.60 modal is not counted as cooked food). Generic names ("Stall 1") and bare company names
+      ("BL Marketing Pte Ltd") stay Unclassified — never guessed. Names naming two food groups
+      ("Hot Drinks and Snacks") count as <b>Mixed</b>. That leaves most of the volume unverified:</div>
+      <div style="display:flex;height:22px;border-radius:5px;overflow:hidden;margin:6px 0 2px;font-size:10px;color:#fff">
+        <div style="width:${verPct}%;background:${C.blue};display:flex;align-items:center;justify-content:center;white-space:nowrap">${verPct.toFixed(1)}% verified</div>
+        <div style="flex:1;background:#b9b8b3;display:flex;align-items:center;justify-content:center">${(100 - verPct).toFixed(1)}% Unclassified — category unknown</div>
+      </div>
+      <div class="cap" style="margin-bottom:8px">Everything below reads <b>within the verified ${verPct.toFixed(0)}%</b> —
+      honest about what we know, silent about what we don't.</div>
+      <h5>What sells — share within name-verified volume</h5>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>Category share by week — name-verified stalls</h5>
-      <div class="cap">Share within verified volume; stable in every teaching week. The mid-March gap is the
-      school-holiday week — named stalls barely trade, so no honest share exists.</div>
+      <h5>Category share by week — name-verified stalls, February</h5>
+      <div class="cap">Share within verified volume per week; the mix barely moves — the timetable sets demand.</div>
       <div class="cwrap tall"><canvas></canvas></div>
-      <h5>Average price by week per verified category</h5>
-      <div class="cap">Flat in term time — no canteen inflation. Low-volume weeks are gapped, not charted.</div>
+      <h5>Average price by week per verified category — February</h5>
+      <div class="cap">Flat across the month — no canteen inflation. Low-volume points are gapped, not charted.</div>
       <div class="cwrap"><canvas></canvas></div>`;
     const [c1, c2, c3] = el.querySelectorAll('canvas');
-    const mixTot = G.food_mix.reduce((a, b) => a + b.n, 0);
     mk(c1, { type: 'bar',
-        data: { labels: G.food_mix.map((r) => r.mcat), datasets: [{ ...bar(C.blue),
-            backgroundColor: G.food_mix.map((r) => CAT_COLOR[r.mcat]), label: '%',
-            data: G.food_mix.map((r) => 100 * r.n / mixTot) }] },
-        options: { ...opts({ tooltip: { callbacks: { label: (c) => { const r = G.food_mix[c.dataIndex];
+        data: { labels: ver.map((r) => r.mcat), datasets: [{ ...bar(C.blue),
+            backgroundColor: ver.map((r) => CAT_COLOR[r.mcat]), label: '%',
+            data: ver.map((r) => 100 * r.n / verTot) }] },
+        options: { ...opts({ tooltip: { callbacks: { label: (c) => { const r = ver[c.dataIndex];
             return ` ${fmt(r.n)} txns · $${fmt(r.sgd)} · avg $${r.avg_sgd.toFixed(2)}`; } } },
             scales: { x: ax({ beginAtZero: true, ticks: { callback: (v) => v + '%' } }), y: ax({ grid: { display: false } }) } }), indexAxis: 'y' } });
     // weekly shares within name-verified volume (Unclassified excluded from the denominator)
     const fwv = G.food_weekly.filter((r) => r.mcat !== 'Unclassified');
     const weeks = [...new Set(fwv.map((r) => r.week))].sort();
     const wkTot = {}; fwv.forEach((r) => { wkTot[r.week] = (wkTot[r.week] || 0) + r.n; });
-    const main3 = ['Drinks', 'Snacks & Desserts', 'Cooked Food', 'Bookshop & Supplies'];
+    const main3 = ['Drinks', 'Snacks & Desserts', 'Cooked Food', 'Mixed', 'Bookshop & Supplies'];
     mk(c2, { type: 'line',
         data: { labels: weeks.map((w) => w.slice(5, 10)), datasets: main3.map((cat) => ({
             ...line(CAT_COLOR[cat]), label: cat,

@@ -6,8 +6,10 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 tpl = open(os.path.join(HERE, "pdf_report.html"), encoding="utf-8").read()
-g = open(os.path.join(HERE, "appdata", "global.json"), encoding="utf-8").read()
-s = open(os.path.join(HERE, "appdata", "schools.json"), encoding="utf-8").read()
+# QUARTER data (appdata/ is Feb-only for the app since 7 Jul) - build with:
+#   python build_app_data.py --quarter
+g = open(os.path.join(HERE, "appdata_quarter", "global.json"), encoding="utf-8").read()
+s = open(os.path.join(HERE, "appdata_quarter", "schools.json"), encoding="utf-8").read()
 chart = open(os.path.join(ROOT, "smart-buddy-app", "node_modules", "chart.js", "dist",
                           "chart.umd.min.js"), encoding="utf-8").read()
 

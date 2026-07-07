@@ -64,8 +64,8 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
   </div>
   <h2>Key findings</h2>
   <ul class="findings" id="findings"></ul>
-  <div class="note"><b>Classification policy:</b> food categories are stated <b>only for stalls with descriptive registered names</b>
-  (546 stalls). Stalls named "Stall 1", "Stall 8" etc. (2,000 stalls, ~81% of volume) are reported as <b>Unclassified</b> and described
+  <div class="note"><b>Classification policy:</b> food categories are stated <b>only for stalls whose registered names say what they sell — and whose prices don't contradict it</b>
+  (493 stalls). The rest — generic names ("Stall 1") and bare company names (2,053 stalls, ~82% of volume) — are reported as <b>Unclassified</b> and described
   by factual price bands only — we do not guess what an unnamed stall sells. School types come from acronym-matching IDs to the
   MOE directory. Machine-vs-location verdicts compare each terminal to its own school's other terminals.</div>
 </div>
@@ -212,7 +212,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
   </ul>
   <h3>Food classification policy &amp; school inference</h3>
   <ul class="findings">
-    <li>No item/SKU column exists. A stall gets a food category <b>only if its registered name says what it sells</b> (keyword match: "…Drinks…", "…Bakery…", "…Noodle…"). 546 stalls qualify (18.7% of purchases). The 2,000 generic-named stalls ("Stall 1"…) are <b>Unclassified</b> — reported by factual price bands, never assigned a food type. An earlier price-profile clustering step (guessing categories from price patterns) has been <b>removed at the service team's request</b>.</li>
+    <li>No item/SKU column exists. A stall gets a food category <b>only if its registered name says what it sells</b> (keyword match: "…Drinks…", "…Bakery…", "…Noodle…"). 493 stalls qualify (17.5% of purchases). A category is kept only when the stall's own prices don't contradict it (a “cooked food” name trading at a $0.60 modal is not counted as cooked food); names covering two food groups (“Hot Drinks and Snacks”) count as <b>Mixed</b>; bare company names (“BL Marketing Pte Ltd”) are Unclassified until the vendor list confirms them. The remaining 2,053 stalls are <b>Unclassified</b> — reported by factual price bands, never assigned a food type. An earlier price-profile clustering step (guessing categories from price patterns) has been <b>removed at the service team's request</b>.</li>
     <li>Because bookshops and drink stalls register descriptive names more often than generic canteen stalls, the verified sample is <b>not a random sample</b> of the network — its category shares describe named stalls only.</li>
     <li>School IDs acronym-matched to the MOE School Directory (data.gov.sg). School type (Government / Government-aided / Independent) is available for matched schools only; level for the rest is inferred from ID suffixes. "Spend per student-day" covers the transactions carrying a cardId (bank-card taps are anonymous).</li>
   </ul>
@@ -233,7 +233,7 @@ Chart.defaults.responsive = false;
 Chart.defaults.devicePixelRatio = 2;
 const GRID='#ececec', BLUE='#2a78d6', AQUA='#1baf7a', YELLOW='#eda100', VIOLET='#7d5fd3',
       RED='#e34948', ORANGE='#e8590c', MUTED='#8e8e93';
-const CATC = {'Drinks':BLUE,'Snacks & Desserts':YELLOW,'Cooked Food':RED,'Fruits':AQUA,
+const CATC = {'Drinks':BLUE,'Snacks & Desserts':YELLOW,'Cooked Food':RED,'Mixed':AQUA,
   'Bookshop & Supplies':VIOLET,'Unclassified':MUTED};
 const DTC = {'School':BLUE,'Weekend':AQUA,'CNY':ORANGE};
 const ax=(e={})=>({grid:{color:GRID,drawTicks:false},border:{color:'#c7c7cc'},

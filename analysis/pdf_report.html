@@ -66,7 +66,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
     <li><b>The network is healthy and stable.</b> Transaction errors hold a flat 6–9% school-day baseline for the whole quarter with no drift; ~30% of transactions process offline by design and reconcile later. The 18–25% error spikes are confined to low-volume weekend event days.</li>
     <li><b>But a small set of hardware needs attention:</b> 12 terminals run 19–25% error rates (TKGS, ACSI, BESS…), and 45 WiFi-connected terminals report signal in dBm — corrupting signal analytics until units are normalised.</li>
     <li><b>Speed is flat, not degrading — except one stack.</b> Median transaction time stays ~2.3s across all three months. The CONCESSION/EZLINK "3.0 ASCAN" readers, however, run ~2× slower (4.5s median) than the 2.0 stack — every week, at every school where they appear.</li>
-    <li><b>Where stall names are registered (546 stalls, 18.5% of purchases), the menu is three-point:</b> the $1 drink, the $1–2 snack, and the $2 cooked meal — and that mix is stable week to week. The other ~2,000 stalls carry generic names ("Stall 1"); per service-team policy they are reported as <b>Unclassified</b> (price facts only), never guessed.</li>
+    <li><b>Where stall names are trustworthy (498 stalls, 17.2% of purchases), the menu is three-point:</b> the $1 drink, the $1–2 snack, and the $2 cooked meal — and that mix is stable week to week. The other 2,130 stalls give no trustworthy category (generic "Stall 1" or bare company names); per service-team policy they are reported as <b>Unclassified</b> (price facts only), never guessed.</li>
     <li><b>"Atas" schools do spend more.</b> Among MOE-matched schools, Independent-school students average <b>$3.84 per active day ($2.70 ticket)</b> vs <b>$3.41 ($1.93)</b> at government schools — driven by pricier purchases, not more of them. Level matters more than status: secondary students out-spend primary by 40% regardless of school type.</li>
     <li><b>Same-level schools still differ up to 3×</b> in spend per student-day ($2 → $6.8) — split between "expensive ticket" schools (bookshop-heavy) and "high frequency" schools.</li>
   </ul>
@@ -124,11 +124,11 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 <!-- ============ PAGE 4: FOOD ============ -->
 <div class="page">
   <h2>3 · What students buy — drinks, snacks, meals</h2>
-  <div class="sub">Categories from name-verified stalls only (546 stalls, 18.5% of purchases). Unnamed stalls are never guessed.</div>
+  <div class="sub">Categories from name-verified stalls only (498 stalls, 17.2% of purchases). Unnamed stalls are never guessed.</div>
   <div class="two">
     <div>
       <h3>Category share of purchases — the honest picture</h3>
-      <div class="cap">81.5% of purchases happen at generic-named stalls ("Stall 1") and stay <b>Unclassified</b>.</div>
+      <div class="cap">82.8% of purchases happen at stalls without a trustworthy name and stay <b>Unclassified</b>.</div>
       <canvas id="c_mix" width="470" height="250"></canvas>
     </div>
     <div>
@@ -180,7 +180,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
   </ul>
   <h3>Food classification policy</h3>
   <ul class="findings">
-    <li>No item/SKU column exists. A stall is categorised <b>only if its registered name says what it sells</b> (keyword match). 546 stalls qualify — 18.5% of purchase volume. Generic "Stall N" stores are <b>Unclassified</b>: reported by factual price statistics, never assigned a food type.</li>
+    <li>No item/SKU column exists. A stall is categorised <b>only if its registered name says what it sells</b> (keyword match). 498 stalls qualify — 17.2% of purchase volume. A category is kept only when the stall's own prices don't contradict it (a “cooked food” name trading at a $0.60 modal is not counted as cooked food); names covering two food groups (“Hot Drinks and Snacks”) count as <b>Mixed</b>; bare company names (“BL Marketing Pte Ltd”) are Unclassified until the vendor list confirms them. Everything else is <b>Unclassified</b>: reported by factual price statistics, never assigned a food type.</li>
     <li>An earlier price-profile clustering step (inferring categories from price patterns) was <b>removed at the service team's request</b> — an estimate, however plausible, must not read as fact. Because named stalls are not a random sample (bookshops nearly always carry real names), verified shares describe named stalls only.</li>
   </ul>
   <h3>School identity &amp; "atas" classification</h3>
@@ -208,7 +208,7 @@ Chart.defaults.responsive = false;
 Chart.defaults.devicePixelRatio = 2;
 const GRID = '#ececec', BLUE = '#2a78d6', AQUA = '#1baf7a', YELLOW = '#eda100',
       VIOLET = '#7d5fd3', RED = '#e34948', MUTED = '#8e8e93';
-const CATC = {'Drinks':BLUE,'Snacks & Desserts':YELLOW,'Cooked Food':RED,'Fruits':AQUA,
+const CATC = {'Drinks':BLUE,'Snacks & Desserts':YELLOW,'Cooked Food':RED,'Mixed':AQUA,
   'Bookshop & Supplies':VIOLET,'Unclassified':MUTED};
 const ax = (e={}) => ({grid:{color:GRID,drawTicks:false},border:{color:'#c7c7cc'},
   ticks:{maxRotation:0,font:{size:7.5},...(e.ticks||{})},...e});
