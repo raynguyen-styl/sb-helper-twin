@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SMART Buddy — Findings Report</title>
+<script>/*__CHARTJS__*/</script>
+<style>
+@page { size: A4; margin: 16mm 14mm 18mm 14mm; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font: 10.5pt/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d1d1f; }
+h1 { font-size: 22pt; letter-spacing: -0.4pt; margin-bottom: 2mm; }
+h2 { font-size: 14pt; letter-spacing: -0.3pt; margin: 0 0 2mm; padding-bottom: 1.5mm;
+     border-bottom: 2px solid #1d1d1f; }
+h3 { font-size: 10.5pt; margin: 5mm 0 1mm; }
+.sub { color: #6e6e73; font-size: 9.5pt; margin-bottom: 4mm; }
+.page { page-break-after: always; }
+.page:last-child { page-break-after: auto; }
+.cover-meta { margin: 6mm 0; padding: 4mm 5mm; background: #f5f5f7; border-radius: 3mm; font-size: 9.5pt; }
+.cover-meta b { display: inline-block; min-width: 34mm; }
+.kpis { display: flex; gap: 3mm; margin: 4mm 0; }
+.kpi { flex: 1; background: #f5f5f7; border-radius: 2.5mm; padding: 3.5mm; text-align: center; }
+.kpi .v { font-size: 15pt; font-weight: 700; letter-spacing: -0.3pt; }
+.kpi .l { font-size: 7.5pt; color: #6e6e73; text-transform: uppercase; letter-spacing: 0.3pt; }
+.two { display: flex; gap: 5mm; }
+.two > div { flex: 1; min-width: 0; }
+.cap { font-size: 8.5pt; color: #6e6e73; margin: 0.5mm 0 2mm; }
+canvas { display: block; }
+ul.findings { margin: 2mm 0 0 5mm; }
+ul.findings li { margin-bottom: 2.2mm; font-size: 9.5pt; }
+ul.findings b { color: #000; }
+table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-top: 1mm; }
+th { text-align: left; color: #6e6e73; font-weight: 600; font-size: 7.5pt; text-transform: uppercase;
+     letter-spacing: 0.3pt; padding: 1.5mm 2mm; border-bottom: 1px solid #d2d2d7; }
+td { padding: 1.4mm 2mm; border-bottom: 1px solid #ececec; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bad { color: #c4271d; font-weight: 600; }
+.note { background: #f5f5f7; border-left: 3px solid #ff9500; border-radius: 0 2mm 2mm 0;
+        padding: 3mm 4mm; font-size: 9pt; color: #3a3a3c; margin-top: 4mm; }
+.foot { position: fixed; bottom: -12mm; left: 0; right: 0; font-size: 7.5pt; color: #a1a1a6;
+        display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="foot"><span>SMART Buddy — Findings Report · STYL Solutions</span><span>Feb–Apr 2026 dataset · generated 6 Jul 2026</span></div>
+
+<!-- ============ PAGE 1: COVER + SUMMARY ============ -->
+<div class="page">
+  <div style="height:8mm"></div>
+  <h1>SMART Buddy — Findings Report</h1>
+  <div class="sub">Network health · transaction speed · food categories · school spending — from 13.4 million canteen transactions</div>
+  <div class="kpis">
+    <div class="kpi"><div class="v">$25.7M</div><div class="l">total spend</div></div>
+    <div class="kpi"><div class="v">13.4M</div><div class="l">transactions</div></div>
+    <div class="kpi"><div class="v">334</div><div class="l">schools</div></div>
+    <div class="kpi"><div class="v">2,644</div><div class="l">POS terminals</div></div>
+    <div class="kpi"><div class="v">2.3s</div><div class="l">median txn time</div></div>
+  </div>
+  <div class="cover-meta">
+    <div><b>Data period</b> 1 Feb – 30 Apr 2026 (transactions)</div>
+    <div><b>Sources</b> 16 transaction CSVs (13.4M rows); MOE School Directory (data.gov.sg); OneMap geocoding</div>
+    <div><b>Companion tools</b> Interactive map app (smart-buddy-app) · three HTML deep-dive reports</div>
+    <div><b>Exclusions</b> Vendor test terminals (STYL), maintenance flows, &gt;$200 outliers</div>
+  </div>
+  <h2>Key findings</h2>
+  <ul class="findings">
+    <li><b>The network is healthy and stable.</b> Transaction errors hold a flat 6–9% school-day baseline for the whole quarter with no drift; ~30% of transactions process offline by design and reconcile later. The 18–25% error spikes are confined to low-volume weekend event days.</li>
+    <li><b>But a small set of hardware needs attention:</b> 12 terminals run 19–25% error rates (TKGS, ACSI, BESS…), and 45 WiFi-connected terminals report signal in dBm — corrupting signal analytics until units are normalised.</li>
+    <li><b>Speed is flat, not degrading — except one stack.</b> Median transaction time stays ~2.3s across all three months. The CONCESSION/EZLINK "3.0 ASCAN" readers, however, run ~2× slower (4.5s median) than the 2.0 stack — every week, at every school where they appear.</li>
+    <li><b>Where stall names are registered (546 stalls, 18.5% of purchases), the menu is three-point:</b> the $1 drink, the $1–2 snack, and the $2 cooked meal — and that mix is stable week to week. The other ~2,000 stalls carry generic names ("Stall 1"); per service-team policy they are reported as <b>Unclassified</b> (price facts only), never guessed.</li>
+    <li><b>"Atas" schools do spend more.</b> Among MOE-matched schools, Independent-school students average <b>$3.84 per active day ($2.70 ticket)</b> vs <b>$3.41 ($1.93)</b> at government schools — driven by pricier purchases, not more of them. Level matters more than status: secondary students out-spend primary by 40% regardless of school type.</li>
+    <li><b>Same-level schools still differ up to 3×</b> in spend per student-day ($2 → $6.8) — split between "expensive ticket" schools (bookshop-heavy) and "high frequency" schools.</li>
+  </ul>
+  <div class="note"><b>Method note:</b> food categories are stated only for stalls whose registered names say what they sell;
+  generic-named stalls are <b>Unclassified</b> — no item-level SKU data exists and we do not guess. School identities/types come
+  from acronym-matching IDs to the MOE directory — 158 of 334 matched confidently; unmatched schools are included in every
+  metric but carry no map position or MOE type. All inference is flagged where used.</div>
+</div>
+
+<!-- ============ PAGE 2: NETWORK HEALTH ============ -->
+<div class="page">
+  <h2>1 · Network health for terminals</h2>
+  <div class="sub">2,644 terminals with ≥200 transactions · errors, connectivity, signal</div>
+  <div class="two">
+    <div>
+      <h3>Daily error rate &amp; offline share</h3>
+      <div class="cap">Flat baseline; spikes are weekend event days (11 &amp; 25 Apr).</div>
+      <canvas id="c_err" width="470" height="240"></canvas>
+    </div>
+    <div>
+      <h3>4G signal distribution (0–31)</h3>
+      <div class="cap">Most terminals report strong signal (30–31). The low-signal tail is small but real.</div>
+      <canvas id="c_sig" width="470" height="240"></canvas>
+    </div>
+  </div>
+  <h3>Terminals needing attention (≥2,000 txns, ranked by error rate)</h3>
+  <table id="t_terms"></table>
+  <div class="note">45 WiFi terminals (32 always) report RSSI in dBm (−70…−77) in the same column cellular units use for a 0–31
+  scale — a units mismatch, not a fault. Fixing the field definition restores signal-vs-latency analytics for WiFi sites.</div>
+</div>
+
+<!-- ============ PAGE 3: SPEED ============ -->
+<div class="page">
+  <h2>2 · Transaction speed trends</h2>
+  <div class="sub">startToFinish times, Feb–Apr · online + offline</div>
+  <div class="two">
+    <div>
+      <h3>Daily median &amp; p95</h3>
+      <div class="cap">No degradation across the quarter. The p95 tail (~5s) is where queues form.</div>
+      <canvas id="c_speed" width="470" height="240"></canvas>
+    </div>
+    <div>
+      <h3>Transaction time distribution</h3>
+      <div class="cap">The bulk completes in 1–3 s.</div>
+      <canvas id="c_shist" width="470" height="240"></canvas>
+    </div>
+  </div>
+  <h3>Weekly median by payment stack — the 3.0 problem</h3>
+  <div class="cap">3.0 ASCAN readers are consistently ~2× slower than 2.0 — a systematic stack property, not incidents.</div>
+  <canvas id="c_stack" width="960" height="260"></canvas>
+  <h3>Where online transaction time goes (median ms per step)</h3>
+  <canvas id="c_comp" width="960" height="200"></canvas>
+</div>
+
+<!-- ============ PAGE 4: FOOD ============ -->
+<div class="page">
+  <h2>3 · What students buy — drinks, snacks, meals</h2>
+  <div class="sub">Categories from name-verified stalls only (546 stalls, 18.5% of purchases). Unnamed stalls are never guessed.</div>
+  <div class="two">
+    <div>
+      <h3>Category share of purchases — the honest picture</h3>
+      <div class="cap">81.5% of purchases happen at generic-named stalls ("Stall 1") and stay <b>Unclassified</b>.</div>
+      <canvas id="c_mix" width="470" height="250"></canvas>
+    </div>
+    <div>
+      <h3>Average price per verified category by week</h3>
+      <div class="cap">Flat in every teaching week — no canteen inflation. The mid-March gap is the school-holiday
+      week: named canteen stalls barely trade (single-digit transactions), so no honest average exists.</div>
+      <canvas id="c_price" width="470" height="250"></canvas>
+    </div>
+  </div>
+  <h3>Category share by week within verified stalls — stable in term time</h3>
+  <div class="cap">Shares below are of <b>name-verified volume only</b>, and weeks with too little verified volume to chart
+  honestly are left blank. The term-time mix barely moves — the daily timetable sets demand. In the <b>mid-March school-holiday
+  week</b> the named canteen stalls essentially close, so that week is a gap, not a data point.</div>
+  <canvas id="c_foodwk" width="960" height="260"></canvas>
+  <div class="note"><b>Classification policy:</b> a stall gets a category only if its registered name says what it sells
+  ("…Drinks…", "…Bakery…", "…Noodle…"). Generic names get no category — there is no SKU data to check, so we don't guess.
+  The verified sample skews toward stall types that register real names (bookshops especially): treat shares as "among named
+  stalls", not the network. Bookshop &amp; Supplies spikes at term boundaries (2 Feb, 31 Mar/1 Apr) — back-to-school restocking.</div>
+</div>
+
+<!-- ============ PAGE 5: SCHOOLS ============ -->
+<div class="page">
+  <h2>4 · Spending per school — do "atas" schools spend more?</h2>
+  <div class="sub">School types from the MOE directory (158 of 334 schools matched); spend = canteen + bookshop via SMART Buddy</div>
+  <div class="two">
+    <div>
+      <h3>Spend per student-day by school type</h3>
+      <div class="cap">Independent schools: +13% daily spend, +40% ticket size vs government schools.</div>
+      <canvas id="c_atas" width="470" height="250"></canvas>
+    </div>
+    <div>
+      <h3>…but level matters more than status</h3>
+      <div class="cap">Avg spend per student-day by inferred school level (all 334 schools).</div>
+      <canvas id="c_level" width="470" height="250"></canvas>
+    </div>
+  </div>
+  <h3>Top schools by spend per student per active day (≥200 cards)</h3>
+  <table id="t_schools"></table>
+</div>
+
+<!-- ============ PAGE 6: METHOD ============ -->
+<div class="page">
+  <h2>Appendix · Method &amp; caveats</h2>
+  <h3>Data preparation</h3>
+  <ul class="findings">
+    <li>13,402,006 raw transactions; excluded from analysis: vendor test terminals (school code "STYL", 1-cent night traffic), "Retrieve…" card-maintenance flows, and amounts &gt;$200 (maintenance/write-off artefacts). Amounts are cents SGD (stakeholder-confirmed).</li>
+    <li>Latency uses <i>startToFinish</i> (ms); component timings (checkSignal / openSocket / handshake / transfer) from the reader telemetry. 219k rows with missing/zero duration excluded from speed stats.</li>
+    <li>Signal analytics use the 0–31 cellular scale only; WiFi dBm readings are reported separately.</li>
+  </ul>
+  <h3>Food classification policy</h3>
+  <ul class="findings">
+    <li>No item/SKU column exists. A stall is categorised <b>only if its registered name says what it sells</b> (keyword match). 546 stalls qualify — 18.5% of purchase volume. Generic "Stall N" stores are <b>Unclassified</b>: reported by factual price statistics, never assigned a food type.</li>
+    <li>An earlier price-profile clustering step (inferring categories from price patterns) was <b>removed at the service team's request</b> — an estimate, however plausible, must not read as fact. Because named stalls are not a random sample (bookshops nearly always carry real names), verified shares describe named stalls only.</li>
+  </ul>
+  <h3>School identity &amp; "atas" classification</h3>
+  <ul class="findings">
+    <li>School IDs were acronym-matched to the MOE School Directory (data.gov.sg), including pinyin-syllable and CHIJ rules; ambiguous IDs were left unmatched rather than guessed. 158/334 matched (4 hand-verified: HCI ×2, RI, RGS). Coordinates via OneMap postal-code geocoding.</li>
+    <li>School type (Government / Government-aided / Independent), IP, GEP, SAP flags come from MOE data for matched schools only. Level for unmatched schools is inferred from ID suffixes (…PS/…P primary; …SS/…GS/…HS secondary; …JC junior college).</li>
+    <li>Per-card stats cover the 73% of transactions carrying a cardId (bank-card taps are anonymous).</li>
+  </ul>
+  <h3>Deliverables</h3>
+  <ul class="findings">
+    <li><b>smart-buddy-app/</b> — interactive Singapore map (run <i>npm install &amp;&amp; npm run dev</i>): school markers colored by level/errors/speed, per-school windows (spending &amp; food, network, speed), network overview.</li>
+    <li><b>SMART_Buddy_Dashboard.html · SMART_Buddy_Anomaly_Patterns.html · SMART_Buddy_Purchase_Insights.html</b> — the three deep-dive reports (also shared as claude.ai links).</li>
+    <li><b>This PDF</b> — print summary of the four requested analyses.</li>
+  </ul>
+</div>
+
+<script>
+const G = /*__DATA__*/{};
+const S = /*__SCHOOLS__*/{};
+Chart.defaults.font.family = 'system-ui,-apple-system,"Segoe UI",sans-serif';
+Chart.defaults.font.size = 8;
+Chart.defaults.color = '#8a8a8e';
+Chart.defaults.animation = false;
+Chart.defaults.responsive = false;
+Chart.defaults.devicePixelRatio = 2;
+const GRID = '#ececec', BLUE = '#2a78d6', AQUA = '#1baf7a', YELLOW = '#eda100',
+      VIOLET = '#7d5fd3', RED = '#e34948', MUTED = '#8e8e93';
+const CATC = {'Drinks':BLUE,'Snacks & Desserts':YELLOW,'Cooked Food':RED,'Fruits':AQUA,
+  'Bookshop & Supplies':VIOLET,'Unclassified':MUTED};
+const ax = (e={}) => ({grid:{color:GRID,drawTicks:false},border:{color:'#c7c7cc'},
+  ticks:{maxRotation:0,font:{size:7.5},...(e.ticks||{})},...e});
+const line = (c,e={}) => ({borderColor:c,borderWidth:1.6,pointRadius:0,tension:0.25,fill:false,...e});
+const bar = (c) => ({backgroundColor:c,borderRadius:2,categoryPercentage:0.7,barPercentage:1});
+const noleg = {plugins:{legend:{display:false}}};
+const leg = {plugins:{legend:{position:'top',align:'end',labels:{boxWidth:10,boxHeight:6,font:{size:7.5},color:'#3a3a3c'}}}};
+const fmt = n => Number(n).toLocaleString('en-SG');
+
+const d = G.daily;
+new Chart(document.getElementById('c_err'), {type:'line',
+  data:{labels:d.map(r=>r.date), datasets:[
+    {...line(RED),label:'Error %',data:d.map(r=>r.err_pct)},
+    {...line(BLUE,{borderDash:[4,3]}),label:'Offline %',data:d.map(r=>r.offline_pct)}]},
+  options:{...leg, scales:{x:ax({ticks:{maxTicksLimit:6}}), y:ax({beginAtZero:true,ticks:{callback:v=>v+'%'}})}}});
+
+new Chart(document.getElementById('c_sig'), {type:'bar',
+  data:{labels:G.signal_dist.map(r=>r.sig), datasets:[{...bar(BLUE),data:G.signal_dist.map(r=>r.n)}]},
+  options:{...noleg, scales:{x:ax({grid:{display:false},ticks:{maxTicksLimit:16}}),
+    y:ax({beginAtZero:true,ticks:{callback:v=>v/1e6+'M'}})}}});
+
+const worst = [...G.terminals].filter(t=>t.n>=2000).sort((a,b)=>b.err_pct-a.err_pct).slice(0,10);
+document.getElementById('t_terms').innerHTML =
+  '<tr><th>Terminal</th><th>School</th><th style="text-align:right">Txns</th><th style="text-align:right">Error %</th><th style="text-align:right">Offline %</th><th style="text-align:right">Median</th><th>Net</th></tr>'+
+  worst.map(t=>`<tr><td>…${t.terminalId.slice(-12)}</td><td><b>${t.school}</b></td><td class="num">${fmt(t.n)}</td>
+    <td class="num bad">${t.err_pct}%</td><td class="num">${t.offline_pct}%</td>
+    <td class="num">${(t.med_ms/1000).toFixed(1)}s</td><td>${t.net||'–'}</td></tr>`).join('');
+
+new Chart(document.getElementById('c_speed'), {type:'line',
+  data:{labels:d.map(r=>r.date), datasets:[
+    {...line(BLUE),label:'Median',data:d.map(r=>r.med_ms/1000)},
+    {...line(VIOLET,{borderDash:[4,3]}),label:'p95',data:d.map(r=>r.p95_ms/1000)}]},
+  options:{...leg, scales:{x:ax({ticks:{maxTicksLimit:6}}), y:ax({beginAtZero:true,ticks:{callback:v=>v+'s'}})}}});
+
+new Chart(document.getElementById('c_shist'), {type:'bar',
+  data:{labels:G.speed_hist.map(r=>r.bucket), datasets:[{...bar(BLUE),data:G.speed_hist.map(r=>r.n)}]},
+  options:{...noleg, scales:{x:ax({grid:{display:false}}), y:ax({beginAtZero:true,ticks:{callback:v=>v/1e6+'M'}})}}});
+
+const stacks=[...new Set(G.speed_weekly_by_stack.map(r=>r.paymentType))];
+const weeks=[...new Set(G.speed_weekly_by_stack.map(r=>r.week))].sort();
+const SC=[BLUE,AQUA,YELLOW,RED,VIOLET,'#e87ba4'];
+new Chart(document.getElementById('c_stack'), {type:'line',
+  data:{labels:weeks.map(w=>w.slice(5,10)), datasets:stacks.map((s,i)=>({...line(SC[i%6]),label:s,
+    data:weeks.map(w=>{const r=G.speed_weekly_by_stack.find(x=>x.week===w&&x.paymentType===s);return r?r.med_ms/1000:null;})}))},
+  options:{...leg, scales:{x:ax(), y:ax({ticks:{callback:v=>v+'s'}})}}});
+
+const comp=G.speed_components_monthly, steps=['checkSignal','openSocket','handshake','transfer'];
+new Chart(document.getElementById('c_comp'), {type:'bar',
+  data:{labels:comp.map(r=>r.month), datasets:steps.map((s,i)=>({...bar([MUTED,YELLOW,VIOLET,BLUE][i]),label:s,data:comp.map(r=>r[s])}))},
+  options:{...leg, indexAxis:'y',
+    scales:{x:{...ax({beginAtZero:true,ticks:{callback:v=>v+'ms'}}),stacked:true}, y:{...ax({grid:{display:false}}),stacked:true}}}});
+
+const mixTot=G.food_mix.reduce((a,b)=>a+b.n,0);
+new Chart(document.getElementById('c_mix'), {type:'bar',
+  data:{labels:G.food_mix.map(r=>r.mcat), datasets:[{...bar(BLUE),
+    backgroundColor:G.food_mix.map(r=>CATC[r.mcat]),data:G.food_mix.map(r=>100*r.n/mixTot)}]},
+  options:{...noleg, indexAxis:'y',
+    scales:{x:ax({beginAtZero:true,ticks:{callback:v=>v+'%'}}), y:ax({grid:{display:false},ticks:{font:{size:7}}})}}});
+
+// weekly shares within name-verified volume (Unclassified excluded from the denominator)
+const fwv=G.food_weekly.filter(r=>r.mcat!=='Unclassified');
+const fweeks=[...new Set(fwv.map(r=>r.week))].sort();
+// low-sample guard: a weekly point only exists with enough verified volume behind it
+// (the March-holiday week has single-digit named-stall txns — a gap, not a data point)
+new Chart(document.getElementById('c_price'), {type:'line',
+  data:{labels:fweeks.map(w=>w.slice(5,10)), datasets:['Drinks','Snacks & Desserts','Cooked Food'].map(cat=>({
+    ...line(CATC[cat]),label:cat,
+    data:fweeks.map(w=>{const r=fwv.find(x=>x.week===w&&x.mcat===cat);return (r&&r.n>=300)?r.avg_cents/100:null;})}))},
+  options:{...leg, scales:{x:ax({ticks:{maxTicksLimit:7}}), y:ax({ticks:{callback:v=>'$'+v.toFixed(2)}})}}});
+
+const wkTot={}; fwv.forEach(r=>{wkTot[r.week]=(wkTot[r.week]||0)+r.n;});
+new Chart(document.getElementById('c_foodwk'), {type:'line',
+  data:{labels:fweeks.map(w=>w.slice(5,10)), datasets:['Drinks','Snacks & Desserts','Cooked Food','Bookshop & Supplies'].map(cat=>({
+    ...line(CATC[cat]),label:cat,
+    data:fweeks.map(w=>{if((wkTot[w]||0)<2000)return null;
+      const r=fwv.find(x=>x.week===w&&x.mcat===cat);return r?100*r.n/wkTot[w]:0;})}))},
+  options:{...leg, scales:{x:ax(), y:ax({beginAtZero:true,ticks:{callback:v=>v+'%'}})}}});
+
+new Chart(document.getElementById('c_atas'), {type:'bar',
+  data:{labels:G.atas.by_type.map(r=>r.type.replace(' SCHOOL','').replace(' SCH','')), datasets:[
+    {...bar(BLUE),label:'$ / student-day',data:G.atas.by_type.map(r=>r.spend_day)},
+    {...bar(AQUA),label:'avg ticket $',data:G.atas.by_type.map(r=>r.avg_ticket)}]},
+  options:{...leg, scales:{x:ax({grid:{display:false},ticks:{font:{size:7}}}), y:ax({beginAtZero:true,ticks:{callback:v=>'$'+v}})}}});
+
+const lv={};
+Object.values(S).forEach(s=>{ if(s.spend_day){ (lv[s.level] ||= []).push(s.spend_day); }});
+const lvRows=['Primary','Secondary','Junior College','Other'].map(k=>({k, v: lv[k] ? lv[k].reduce((a,b)=>a+b,0)/lv[k].length : 0, n: (lv[k]||[]).length}));
+new Chart(document.getElementById('c_level'), {type:'bar',
+  data:{labels:lvRows.map(r=>`${r.k} (${r.n})`), datasets:[{...bar(BLUE),
+    backgroundColor:[BLUE,AQUA,VIOLET,MUTED],data:lvRows.map(r=>r.v)}]},
+  options:{...noleg, scales:{x:ax({grid:{display:false},ticks:{font:{size:7}}}), y:ax({beginAtZero:true,ticks:{callback:v=>'$'+v}})}}});
+
+const ranked=Object.values(S).filter(s=>s.spend_day&&s.cards>=200).sort((a,b)=>b.spend_day-a.spend_day).slice(0,12);
+document.getElementById('t_schools').innerHTML =
+  '<tr><th>#</th><th>School</th><th>Level</th><th>MOE type</th><th style="text-align:right">$/student-day</th><th style="text-align:right">Avg ticket</th><th style="text-align:right">Buys/day</th></tr>'+
+  ranked.map((s,i)=>`<tr><td>${i+1}</td><td><b>${s.name||s.id}</b></td><td>${s.level}</td>
+    <td>${s.moe_type?s.moe_type.toLowerCase().replace(' school','').replace(' sch',''):'—'}</td>
+    <td class="num"><b>$${s.spend_day.toFixed(2)}</b></td><td class="num">$${s.avg_ticket.toFixed(2)}</td>
+    <td class="num">${s.txns_day}</td></tr>`).join('');
+</script>
+</body>
+</html>

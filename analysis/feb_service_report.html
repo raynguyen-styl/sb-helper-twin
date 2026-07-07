@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SMART Buddy — February 2026 Service Report</title>
+<script>/*__CHARTJS__*/</script>
+<style>
+@page { size: A4; margin: 16mm 14mm 18mm 14mm; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font: 10.5pt/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d1d1f; }
+h1 { font-size: 22pt; letter-spacing: -0.4pt; margin-bottom: 2mm; }
+h2 { font-size: 14pt; letter-spacing: -0.3pt; margin: 0 0 2mm; padding-bottom: 1.5mm; border-bottom: 2px solid #1d1d1f; }
+h3 { font-size: 10.5pt; margin: 5mm 0 1mm; }
+.sub { color: #6e6e73; font-size: 9.5pt; margin-bottom: 4mm; }
+.page { page-break-after: always; }
+.page:last-child { page-break-after: auto; }
+.cover-meta { margin: 6mm 0; padding: 4mm 5mm; background: #f5f5f7; border-radius: 3mm; font-size: 9.5pt; }
+.cover-meta b { display: inline-block; min-width: 34mm; }
+.kpis { display: flex; gap: 3mm; margin: 4mm 0; }
+.kpi { flex: 1; background: #f5f5f7; border-radius: 2.5mm; padding: 3.5mm; text-align: center; }
+.kpi .v { font-size: 15pt; font-weight: 700; letter-spacing: -0.3pt; }
+.kpi .l { font-size: 7.5pt; color: #6e6e73; text-transform: uppercase; letter-spacing: 0.3pt; }
+.two { display: flex; gap: 5mm; }
+.two > div { flex: 1; min-width: 0; }
+.cap { font-size: 8.5pt; color: #6e6e73; margin: 0.5mm 0 2mm; }
+canvas { display: block; max-width: 100%; height: auto; }
+ul.findings { margin: 2mm 0 0 5mm; }
+ul.findings li { margin-bottom: 2.2mm; font-size: 9.5pt; }
+ul.findings b { color: #000; }
+table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-top: 1mm; }
+th { text-align: left; color: #6e6e73; font-weight: 600; font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.3pt; padding: 1.5mm 2mm; border-bottom: 1px solid #d2d2d7; }
+td { padding: 1.4mm 2mm; border-bottom: 1px solid #ececec; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bad { color: #c4271d; font-weight: 600; }
+.note { background: #f5f5f7; border-left: 3px solid #ff9500; border-radius: 0 2mm 2mm 0; padding: 3mm 4mm; font-size: 9pt; color: #3a3a3c; margin-top: 4mm; }
+.cny { background: #fff4e6; border-left: 3px solid #e8590c; border-radius: 0 2mm 2mm 0; padding: 3mm 4mm; font-size: 9pt; color: #3a3a3c; margin-top: 4mm; }
+.foot { position: fixed; bottom: -12mm; left: 0; right: 0; font-size: 7.5pt; color: #a1a1a6; display: flex; justify-content: space-between; }
+.vpill { display: inline-block; padding: 0.3mm 2mm; border-radius: 6px; font-size: 7.5pt; font-weight: 600; }
+.v-machine { background: #fde2e0; color: #c4271d; }
+.v-site { background: #ffedd5; color: #b45309; }
+.v-check { background: #ececed; color: #6e6e73; }
+.v-ok { background: #dcf3e8; color: #1a7a4c; }
+.vc { display:flex; gap:3mm; margin: 3mm 0 1mm; }
+.vc > div { flex:1; text-align:center; border-radius:2.5mm; padding:3mm 2mm; }
+.vc .n { font-size:15pt; font-weight:700; }
+.vc .k { font-size:7.5pt; text-transform:uppercase; letter-spacing:.3pt; }
+</style>
+</head>
+<body>
+<div class="foot"><span>SMART Buddy — February 2026 Service Report · STYL Solutions</span><span>Feb 2026 dataset · generated 6 Jul 2026</span></div>
+
+<!-- ===================== PAGE 1: COVER + SUMMARY ===================== -->
+<div class="page">
+  <div style="height:8mm"></div>
+  <h1>SMART Buddy — February 2026 Service Report</h1>
+  <div class="sub">Network health · transaction speed · food categories · spending per school — a single-month view for the service team</div>
+  <div class="kpis" id="kpis"></div>
+  <div class="cover-meta">
+    <div><b>Data period</b> 1–28 February 2026 (canteen transactions)</div>
+    <div><b>Prepared for</b> Service-team supervisor — terminal health &amp; transaction operations</div>
+    <div><b>Sources</b> feb_txn.parquet (3.96M rows) + txn_perf_202602.parquet (reader telemetry); MOE School Directory</div>
+    <div><b>Exclusions</b> Vendor test terminals (STYL), "Retrieve…" maintenance flows, &gt;$200 outliers</div>
+    <div><b>Note</b> February contains Chinese New Year (17–18 Feb public holidays) — flagged wherever it moves the numbers</div>
+  </div>
+  <h2>Key findings</h2>
+  <ul class="findings" id="findings"></ul>
+  <div class="note"><b>Classification policy:</b> food categories are stated <b>only for stalls with descriptive registered names</b>
+  (546 stalls). Stalls named "Stall 1", "Stall 8" etc. (2,000 stalls, ~81% of volume) are reported as <b>Unclassified</b> and described
+  by factual price bands only — we do not guess what an unnamed stall sells. School types come from acronym-matching IDs to the
+  MOE directory. Machine-vs-location verdicts compare each terminal to its own school's other terminals.</div>
+</div>
+
+<!-- ===================== PAGE 2: NETWORK HEALTH ===================== -->
+<div class="page">
+  <h2>1 · Network health for terminals</h2>
+  <div class="sub" id="net_sub"></div>
+  <div class="two">
+    <div>
+      <h3>Daily error rate &amp; offline share</h3>
+      <div class="cap">Flat baseline. Gaps at 17–18 Feb = CNY public holidays (schools shut, $0).</div>
+      <canvas id="c_err" width="470" height="230"></canvas>
+    </div>
+    <div>
+      <h3>4G signal distribution (0–31)</h3>
+      <div class="cap">Most terminals report strong signal (30–31); the low-signal tail is small but real.</div>
+      <canvas id="c_sig" width="470" height="230"></canvas>
+    </div>
+  </div>
+  <h3>Is it the machine or the location? — fault verdicts</h3>
+  <div class="cap">Each terminal compared to its school's other terminals. A bad unit whose peers are healthy is a
+  <b>machine</b> fault (service the unit); a bad unit whose peers also struggle is a <b>site</b> issue (network/location — swapping the unit won't help).</div>
+  <div class="vc" id="verdicts"></div>
+  <div class="cap" id="sites"></div>
+  <h3>Terminals needing attention (≥1,000 txns, ranked by error rate)</h3>
+  <table id="t_terms"></table>
+</div>
+
+<!-- ===================== PAGE 3: SPEED ===================== -->
+<div class="page">
+  <h2>2 · Transaction speed trends</h2>
+  <div class="sub" id="speed_sub"></div>
+  <div class="two">
+    <div>
+      <h3>Daily median &amp; p95</h3>
+      <div class="cap">Stable across the month. The p95 tail is where queues form.</div>
+      <canvas id="c_speed" width="470" height="230"></canvas>
+    </div>
+    <div>
+      <h3>Transaction time distribution</h3>
+      <div class="cap">The bulk completes in 1–3 s.</div>
+      <canvas id="c_shist" width="470" height="230"></canvas>
+    </div>
+  </div>
+  <h3>Weekly median by payment stack — the 3.0 problem</h3>
+  <div class="cap">The CONCESSION/EZLINK "3.0 ASCAN" readers run consistently slower than the 2.0 stack — a systematic property, every week.</div>
+  <canvas id="c_stack" width="960" height="250"></canvas>
+  <h3>Where an online transaction's time goes (median ms per step)</h3>
+  <canvas id="c_comp" width="960" height="150"></canvas>
+</div>
+
+<!-- ===================== PAGE 4: FOOD ITEMS ===================== -->
+<div class="page">
+  <h2>3 · What students buy — drinks, snacks, meals</h2>
+  <div class="sub" id="food_sub"></div>
+  <div class="two">
+    <div>
+      <h3>Category share — name-verified stalls only</h3>
+      <div class="cap" id="mix_cap"></div>
+      <canvas id="c_mix" width="470" height="250"></canvas>
+    </div>
+    <div>
+      <h3>Price ladder — where each verified category sits</h3>
+      <div class="cap">Share of each category's transactions by price band.</div>
+      <canvas id="c_ladder" width="470" height="250"></canvas>
+    </div>
+  </div>
+  <h3>The three-point menu (verified stalls)</h3>
+  <div class="cap">The single most-common price paid in each verified category.</div>
+  <div class="kpis" id="menu"></div>
+  <h3 id="un_head"></h3>
+  <div class="two">
+    <div>
+      <div class="cap">What we <b>can</b> say about unnamed stalls: where their prices sit. No food type is claimed.</div>
+      <canvas id="c_unbands" width="470" height="180"></canvas>
+    </div>
+    <div>
+      <div class="cap" id="un_txt" style="font-size:9pt;color:#3a3a3c"></div>
+    </div>
+  </div>
+  <div class="note"><b>Why so many unclassified:</b> most canteen stalls are registered as "Stall <i>N</i>" with no descriptive
+  name, and the transaction feed has no item/SKU column. Per service-team policy we do not infer what an unnamed stall sells.
+  Note the verified sample <b>skews toward stall types that register real names</b> (bookshops especially) — treat its category
+  shares as "among named stalls", not the whole network. Fix at source: have operators register descriptive stall names.</div>
+</div>
+
+<!-- ===================== PAGE 5: FOOD TRENDS + CNY ===================== -->
+<div class="page">
+  <h2>4 · Trends in food types</h2>
+  <div class="sub">How the verified-stall menu mix moves week to week, by day type, and across Chinese New Year</div>
+  <div class="two">
+    <div>
+      <h3>Category share by week — verified stalls</h3>
+      <div class="cap">Share within name-verified volume. Term-time mix is stable; the CNY week (from 16 Feb) is the exception.</div>
+      <canvas id="c_foodwk" width="470" height="240"></canvas>
+    </div>
+    <div>
+      <h3>Price-band mix by day type — all stalls</h3>
+      <div class="cap" id="dt_cap">Factual price bands, no category claims — the verified sample is too small
+      off school days to chart by category.</div>
+      <canvas id="c_daytype" width="470" height="240"></canvas>
+    </div>
+  </div>
+  <h3>Daily canteen revenue — the CNY dip</h3>
+  <div class="cap">Bars coloured by day type. 17–18 Feb are public holidays ($0).</div>
+  <canvas id="c_cny" width="960" height="220"></canvas>
+  <div class="cny" id="cny_note"></div>
+</div>
+
+<!-- ===================== PAGE 6: SPENDING PER SCHOOL ===================== -->
+<div class="page">
+  <h2>5 · Spending per school — do "atas" schools spend more?</h2>
+  <div class="sub" id="atas_sub"></div>
+  <div class="two">
+    <div>
+      <h3>Spend per student-day by school type</h3>
+      <div class="cap">Independent schools: pricier tickets, similar frequency.</div>
+      <canvas id="c_atas" width="470" height="250"></canvas>
+    </div>
+    <div>
+      <h3>…but level matters more than status</h3>
+      <div class="cap">Avg spend per student-day by inferred school level (all schools with card data).</div>
+      <canvas id="c_level" width="470" height="250"></canvas>
+    </div>
+  </div>
+  <h3>Top schools by spend per student per active day (≥150 cards)</h3>
+  <table id="t_schools"></table>
+</div>
+
+<!-- ===================== PAGE 7: METHOD ===================== -->
+<div class="page">
+  <h2>Appendix · Method &amp; caveats</h2>
+  <h3>Data preparation</h3>
+  <ul class="findings">
+    <li>3.96M February transactions after excluding vendor test terminals (school code "STYL"), "Retrieve…" card-maintenance flows, and amounts &gt;$200. Amounts are cents SGD (stakeholder-confirmed).</li>
+    <li>Speed uses <i>startToFinish</i> (ms) from reader telemetry; component timings (checkSignal / openSocket / handshake / transfer) are medians over online transactions. Zero/negative durations excluded.</li>
+    <li>4G signal analytics use the 0–31 cellular scale; WiFi terminals report RSSI in dBm in the same field — reported separately, not mixed in.</li>
+  </ul>
+  <h3>Machine-vs-location verdict</h3>
+  <ul class="findings">
+    <li>A terminal is flagged <b>bad</b> if its error rate ≥10% (with ≥300 txns) or its median transaction ≥4 s. It is then compared to its school peers (other terminals, ≥300 txns, ≥2 peers): healthy peers ⇒ <b>machine</b> fault; peers also bad (peer-median error ≥8% or ≥4 s) ⇒ <b>site</b> issue; no peers to compare ⇒ <b>check</b>.</li>
+    <li>The interactive app's <b>Terminal Health</b> window lets the team browse every unit and its verdict, with per-day error/speed vs the school baseline.</li>
+  </ul>
+  <h3>Food classification policy &amp; school inference</h3>
+  <ul class="findings">
+    <li>No item/SKU column exists. A stall gets a food category <b>only if its registered name says what it sells</b> (keyword match: "…Drinks…", "…Bakery…", "…Noodle…"). 546 stalls qualify (18.7% of purchases). The 2,000 generic-named stalls ("Stall 1"…) are <b>Unclassified</b> — reported by factual price bands, never assigned a food type. An earlier price-profile clustering step (guessing categories from price patterns) has been <b>removed at the service team's request</b>.</li>
+    <li>Because bookshops and drink stalls register descriptive names more often than generic canteen stalls, the verified sample is <b>not a random sample</b> of the network — its category shares describe named stalls only.</li>
+    <li>School IDs acronym-matched to the MOE School Directory (data.gov.sg). School type (Government / Government-aided / Independent) is available for matched schools only; level for the rest is inferred from ID suffixes. "Spend per student-day" covers the transactions carrying a cardId (bank-card taps are anonymous).</li>
+  </ul>
+  <h3>Chinese New Year</h3>
+  <ul class="findings">
+    <li>CNY window = 16–18 Feb; 17–18 Feb are public holidays with $0 canteen revenue. Every spending/food figure includes the whole month, with the CNY effect flagged rather than removed — the "school-day" mix on page 4 already excludes weekends and CNY for the clean term-time picture.</li>
+  </ul>
+  <div class="note">Companion tools: the interactive <b>smart-buddy-app</b> (role hub → Terminal Health, Stall Explorer, February Insights) and the standalone <b>SMART_Buddy_Feb2026_Insights.html</b> report cover the wearable-vs-transaction overlap in more depth.</div>
+</div>
+
+<script>
+const D = /*__DATA__*/{};
+Chart.defaults.font.family = 'system-ui,-apple-system,"Segoe UI",sans-serif';
+Chart.defaults.font.size = 8;
+Chart.defaults.color = '#8a8a8e';
+Chart.defaults.animation = false;
+Chart.defaults.responsive = false;
+Chart.defaults.devicePixelRatio = 2;
+const GRID='#ececec', BLUE='#2a78d6', AQUA='#1baf7a', YELLOW='#eda100', VIOLET='#7d5fd3',
+      RED='#e34948', ORANGE='#e8590c', MUTED='#8e8e93';
+const CATC = {'Drinks':BLUE,'Snacks & Desserts':YELLOW,'Cooked Food':RED,'Fruits':AQUA,
+  'Bookshop & Supplies':VIOLET,'Unclassified':MUTED};
+const DTC = {'School':BLUE,'Weekend':AQUA,'CNY':ORANGE};
+const ax=(e={})=>({grid:{color:GRID,drawTicks:false},border:{color:'#c7c7cc'},
+  ticks:{maxRotation:0,font:{size:7.5},...(e.ticks||{})},...e});
+const line=(c,e={})=>({borderColor:c,borderWidth:1.6,pointRadius:0,tension:0.25,fill:false,...e});
+const bar=(c)=>({backgroundColor:c,borderRadius:2,categoryPercentage:0.7,barPercentage:1});
+const noleg={plugins:{legend:{display:false}}};
+const leg={plugins:{legend:{position:'top',align:'end',labels:{boxWidth:10,boxHeight:6,font:{size:7.5},color:'#3a3a3c'}}}};
+const fmt=n=>Number(n).toLocaleString('en-SG');
+const md=w=>w.slice(5,10); // 'MM-DD' from 'YYYY-MM-DD' or 'YYYY-MM-DD 00:00:00'
+const wl=w=>'wk '+w.slice(5,10); // week label from date_trunc timestamp string
+
+// ---------- COVER ----------
+const M = D.meta;
+document.getElementById('kpis').innerHTML = [
+  ['$'+(M.rev/1e6).toFixed(2)+'M','canteen spend'],['3.96M','transactions'],
+  [fmt(M.schools),'schools'],[fmt(M.terminals),'POS terminals'],
+  [(M.med_ms/1000).toFixed(1)+'s','median txn']
+].map(k=>`<div class="kpi"><div class="v">${k[0]}</div><div class="l">${k[1]}</div></div>`).join('');
+
+const at = D.schools.atas_by_type, byType={};
+at.forEach(r=>byType[r.type.replace(' SCHOOL','').replace(' SCH','')]=r);
+const indep=byType['INDEPENDENT']||{spend_day:0,avg_ticket:0}, gov=byType['GOVERNMENT']||{spend_day:0,avg_ticket:0};
+const vc=D.network.verdict_counts;
+const cny=D.cny.windows;
+const before=cny.find(w=>w.window[0]==='1'), during=cny.find(w=>w.window[0]==='2');
+const cnyDrop=before&&during?Math.round(100*(1-during.sgd_per_day/before.sgd_per_day)):0;
+const stackSlow=[...D.speed.stack_summary].filter(s=>/3\.0/.test(s.paymentType))[0];
+const stackFast=[...D.speed.stack_summary].filter(s=>/2\.0/.test(s.paymentType)).sort((a,b)=>a.med_ms-b.med_ms)[0];
+const secLvl=D.schools.by_level.find(l=>l.level==='Secondary'), priLvl=D.schools.by_level.find(l=>l.level==='Primary');
+document.getElementById('findings').innerHTML = [
+  `<b>The network is healthy and stable.</b> February holds a flat ~${M.err_pct}% error baseline with no drift; ${M.offline_pct}% of transactions process offline by design and reconcile later. Median transaction time is ${(M.med_ms/1000).toFixed(1)}s (p95 ${(M.p95_ms/1000).toFixed(1)}s).`,
+  `<b>But ${vc.machine} terminals are machine-level faults</b> — service those units. A further <b>${vc.site} terminals across ${D.network.worst_sites.length>0?'multiple schools':'several schools'} are site-level issues</b> where peers struggle too, so a unit swap won't help — treat those as network/location problems.`,
+  `<b>Speed is flat, not degrading — except one stack.</b> ${stackSlow?`The "${stackSlow.paymentType}" readers run ${stackFast?(stackSlow.med_ms/stackFast.med_ms).toFixed(1)+'×':'markedly'} slower (${(stackSlow.med_ms/1000).toFixed(1)}s median) than the 2.0 stack`:'The 3.0 ASCAN readers run markedly slower than 2.0'} — every week.`,
+  `<b>Where stall names are registered (${fmt(D.food.coverage.named_stalls)} stalls, ${D.food.coverage.named_txn_pct}% of purchases), the menu is three-point:</b> the $1 drink, the $1 snack, and the $2 cooked meal. The other ${fmt(D.food.coverage.unnamed_stalls)} stalls carry generic names ("Stall 1") — we report those by price band only (${D.food.unclassified.bands[0]}% ≤$1 · ${D.food.unclassified.bands[1]}% $1–2 · median $${D.food.unclassified.med_sgd.toFixed(2)}) rather than guess what they sell.`,
+  `<b>"Atas" schools do spend more.</b> Independent-school students average <b>$${indep.spend_day.toFixed(2)}/student-day ($${indep.avg_ticket.toFixed(2)} ticket)</b> vs <b>$${gov.spend_day.toFixed(2)} ($${gov.avg_ticket.toFixed(2)})</b> at government schools — pricier purchases, not more of them. Level matters more: secondary ($${secLvl.spend_day.toFixed(2)}) out-spends primary ($${priLvl.spend_day.toFixed(2)}) by ${Math.round(100*(secLvl.spend_day/priLvl.spend_day-1))}%.`,
+  `<b>Chinese New Year is the month's one big swing.</b> Per trading day, canteen revenue in CNY week ran <b>${cnyDrop}% below</b> the week before (17–18 Feb were $0 holidays), and the week after had still not fully recovered.`,
+].map(t=>`<li>${t}</li>`).join('');
+
+// ---------- PAGE 2: NETWORK ----------
+document.getElementById('net_sub').textContent =
+  `${fmt(M.terminals)} terminals · ${M.err_pct}% error baseline · ${M.offline_pct}% offline · ${D.network.wifi_terms} on WiFi (dBm signal)`;
+const nd = D.network.daily;
+new Chart(document.getElementById('c_err'), {type:'line',
+  data:{labels:nd.map(r=>md(r.date)), datasets:[
+    {...line(RED),label:'Error %',data:nd.map(r=>r.err_pct)},
+    {...line(BLUE,{borderDash:[4,3]}),label:'Offline %',data:nd.map(r=>r.offline_pct)}]},
+  options:{...leg, scales:{x:ax({ticks:{maxTicksLimit:8}}), y:ax({beginAtZero:true,ticks:{callback:v=>v+'%'}})}}});
+new Chart(document.getElementById('c_sig'), {type:'bar',
+  data:{labels:D.network.signal_dist.map(r=>r.sig), datasets:[{...bar(BLUE),data:D.network.signal_dist.map(r=>r.n)}]},
+  options:{...noleg, scales:{x:ax({grid:{display:false},ticks:{maxTicksLimit:16}}),
+    y:ax({beginAtZero:true,ticks:{callback:v=>(v/1e6).toFixed(1)+'M'}})}}});
+
+document.getElementById('verdicts').innerHTML = [
+  ['machine',vc.machine,'Machine fault','service the unit'],
+  ['site',vc.site,'Site issue','network / location'],
+  ['check',vc.check,'Needs a look','no peers to compare'],
+  ['ok',vc.ok,'Healthy','within norms'],
+].map(v=>`<div class="v-${v[0]}"><div class="n">${fmt(v[1])}</div><div class="k">${v[2]}</div><div class="k">${v[3]}</div></div>`).join('');
+const ws=D.network.worst_sites;
+document.getElementById('sites').innerHTML = ws.length
+  ? '<b>Worst site clusters</b> (schools with the most site-level terminals): ' +
+    ws.map(s=>`${s.school} (${s.bad_terms})`).join(' · ')
+  : '';
+
+const VN={machine:'v-machine',site:'v-site',check:'v-check',ok:'v-ok'};
+const VL={machine:'Machine',site:'Site',check:'Check',ok:'OK'};
+document.getElementById('t_terms').innerHTML =
+  '<tr><th>Terminal</th><th>School</th><th style="text-align:right">Txns</th><th style="text-align:right">Error %</th><th style="text-align:right">Offline %</th><th style="text-align:right">Median</th><th>Net</th><th>Verdict</th></tr>'+
+  D.network.worst_terminals.map(t=>`<tr><td>…${t.terminalId.slice(-11)}</td><td><b>${t.school}</b></td>
+    <td class="num">${fmt(t.n)}</td><td class="num bad">${t.err_pct}%</td><td class="num">${t.off_pct}%</td>
+    <td class="num">${t.med_ms?(t.med_ms/1000).toFixed(1)+'s':'–'}</td><td>${t.net||'–'}</td>
+    <td><span class="vpill ${VN[t.verdict]}">${VL[t.verdict]}</span></td></tr>`).join('');
+
+// ---------- PAGE 3: SPEED ----------
+document.getElementById('speed_sub').textContent =
+  `startToFinish times · median ${(M.med_ms/1000).toFixed(1)}s · p95 ${(M.p95_ms/1000).toFixed(1)}s · online + offline`;
+const sd=D.speed.daily;
+new Chart(document.getElementById('c_speed'), {type:'line',
+  data:{labels:sd.map(r=>md(r.date)), datasets:[
+    {...line(BLUE),label:'Median',data:sd.map(r=>r.med_ms/1000)},
+    {...line(VIOLET,{borderDash:[4,3]}),label:'p95',data:sd.map(r=>r.p95_ms/1000)}]},
+  options:{...leg, scales:{x:ax({ticks:{maxTicksLimit:8}}), y:ax({beginAtZero:true,ticks:{callback:v=>v+'s'}})}}});
+new Chart(document.getElementById('c_shist'), {type:'bar',
+  data:{labels:D.speed.hist.map(r=>r.bucket), datasets:[{...bar(BLUE),data:D.speed.hist.map(r=>r.n)}]},
+  options:{...noleg, scales:{x:ax({grid:{display:false}}), y:ax({beginAtZero:true,ticks:{callback:v=>(v/1e6).toFixed(1)+'M'}})}}});
+
+const sw=D.speed.weekly_by_stack;
+const stacks=[...new Set(sw.map(r=>r.paymentType))];
+const weeks=[...new Set(sw.map(r=>r.week))].sort();
+const SC=[BLUE,AQUA,YELLOW,RED,VIOLET,'#e87ba4'];
+new Chart(document.getElementById('c_stack'), {type:'line',
+  data:{labels:weeks.map(wl), datasets:stacks.map((s,i)=>({...line(SC[i%6]),label:s,
+    data:weeks.map(w=>{const r=sw.find(x=>x.week===w&&x.paymentType===s);return r?r.med_ms/1000:null;}),spanGaps:true}))},
+  options:{...leg, scales:{x:ax(), y:ax({beginAtZero:true,ticks:{callback:v=>v+'s'}})}}});
+
+const comp=D.speed.components;
+new Chart(document.getElementById('c_comp'), {type:'bar',
+  data:{labels:['online txn'], datasets:comp.map((c,i)=>({...bar([MUTED,YELLOW,VIOLET,BLUE][i]),label:c.step,data:[c.ms]}))},
+  options:{...leg, indexAxis:'y',
+    scales:{x:{...ax({beginAtZero:true,ticks:{callback:v=>v+'ms'}}),stacked:true}, y:{...ax({grid:{display:false}}),stacked:true}}}});
+
+// ---------- PAGE 4: FOOD ITEMS ----------
+const FC=D.food.coverage, FU=D.food.unclassified;
+document.getElementById('food_sub').textContent =
+  `Categories from name-verified stalls only (${fmt(FC.named_stalls)} stalls · ${FC.named_txn_pct}% of purchases · ${FC.named_rev_pct}% of revenue). Unnamed stalls are never guessed.`;
+document.getElementById('mix_cap').textContent =
+  `School-day transactions at the ${fmt(FC.named_stalls)} stalls whose names say what they sell.`;
+const mix=D.food.school_mix, mixTot=mix.reduce((a,b)=>a+b.n,0);
+new Chart(document.getElementById('c_mix'), {type:'bar',
+  data:{labels:mix.map(r=>r.mcat), datasets:[{...bar(BLUE),
+    backgroundColor:mix.map(r=>CATC[r.mcat]),data:mix.map(r=>100*r.n/mixTot)}]},
+  options:{...noleg, indexAxis:'y',
+    scales:{x:ax({beginAtZero:true,ticks:{callback:v=>v+'%'}}), y:ax({grid:{display:false},ticks:{font:{size:7.5}}})}}});
+
+const lad=D.food.price_ladder, LC=['≤$1','$1–2','$2–3','>$3'], LCOL=[AQUA,BLUE,YELLOW,RED];
+new Chart(document.getElementById('c_ladder'), {type:'bar',
+  data:{labels:lad.map(r=>r.mcat), datasets:LC.map((b,i)=>({...bar(LCOL[i]),label:b,
+    data:lad.map(r=>[r.b1,r.b2,r.b3,r.b4][i])}))},
+  options:{...leg, indexAxis:'y',
+    scales:{x:{...ax({beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}),stacked:true},
+      y:{...ax({grid:{display:false},ticks:{font:{size:7.5}}}),stacked:true}}}});
+
+const mp={}; D.food.modal_price.forEach(r=>mp[r.mcat]=r.amount);
+document.getElementById('menu').innerHTML = [
+  ['Drinks','Drinks'],['Snacks & Desserts','Snacks'],['Cooked Food','Cooked meal']
+].map(k=>`<div class="kpi"><div class="v">$${((mp[k[0]]||0)/100).toFixed(2)}</div><div class="l">${k[1]} — modal price</div></div>`).join('');
+
+// unnamed stalls: price bands only, no category claim
+document.getElementById('un_head').textContent =
+  `The unnamed ${fmt(FC.unnamed_stalls)} stalls — ${(100-FC.named_txn_pct).toFixed(1)}% of purchases, reported by price only`;
+new Chart(document.getElementById('c_unbands'), {type:'bar',
+  data:{labels:['≤$1','$1–2','$2–3','>$3'], datasets:[{...bar(MUTED),data:FU.bands}]},
+  options:{...noleg, scales:{x:ax({grid:{display:false}}), y:ax({beginAtZero:true,ticks:{callback:v=>v+'%'}})}}});
+document.getElementById('un_txt').innerHTML =
+  `These stalls are registered as "Stall 1", "Stall 8" etc. — the name carries no information about what they sell, ` +
+  `and there is no item/SKU field to check. Their <b>${fmt(FU.n)}</b> February transactions total <b>$${(FU.rev/1e6).toFixed(2)}M</b> ` +
+  `with a median charge of <b>$${FU.med_sgd.toFixed(2)}</b>. ${FU.bands[0]+FU.bands[1]}% of their purchases are $2 or less — ` +
+  `consistent with ordinary canteen fare, but we make no claim beyond the prices.`;
+
+// ---------- PAGE 5: FOOD TRENDS + CNY ----------
+// verified stalls only: Unclassified is excluded from both numerator and denominator
+const fw=D.food.weekly.filter(r=>r.mcat!=='Unclassified');
+// drop the lone-Sunday lead-in bucket (week of 26 Jan holds only 1 Feb) — start at the first full week
+const fweeks=[...new Set(fw.map(r=>r.week))].filter(w=>w.slice(0,10)>='2026-02-02').sort();
+const wkTot={}; fw.forEach(r=>{wkTot[r.week]=(wkTot[r.week]||0)+r.n;});
+const foodCats=['Drinks','Snacks & Desserts','Cooked Food','Bookshop & Supplies'];
+new Chart(document.getElementById('c_foodwk'), {type:'line',
+  data:{labels:fweeks.map(wl), datasets:foodCats.map(cat=>({...line(CATC[cat]),label:cat,
+    data:fweeks.map(w=>{const r=fw.find(x=>x.week===w&&x.mcat===cat);return r?100*r.n/wkTot[w]:0;})}))},
+  options:{...leg, scales:{x:ax(), y:ax({beginAtZero:true,ticks:{callback:v=>v+'%'}})}}});
+
+// price bands by day type over ALL stalls — factual, no category inference
+const bd=D.food.bands_by_daytype, DTs=['School','Weekend','CNY'];
+const BANDS=['≤$1','$1–2','$2–3','>$3'];
+new Chart(document.getElementById('c_daytype'), {type:'bar',
+  data:{labels:BANDS, datasets:DTs.map(d=>{const r=bd.find(x=>x.daytype===d);
+    return {...bar(DTC[d]),label:`${d} (${fmt(r?r.n:0)} txns)`,data:r?r.bands||[r.b1,r.b2,r.b3,r.b4]:[0,0,0,0]};})},
+  options:{...leg, scales:{x:ax({grid:{display:false}}),
+    y:ax({beginAtZero:true,ticks:{callback:v=>v+'%'}})}}});
+
+const cd=D.cny.daily_rev;
+new Chart(document.getElementById('c_cny'), {type:'bar',
+  data:{labels:cd.map(r=>md(r.date)), datasets:[{...bar(BLUE),
+    backgroundColor:cd.map(r=>DTC[r.daytype]||MUTED),data:cd.map(r=>r.sgd)}]},
+  options:{...noleg, scales:{x:ax({grid:{display:false},ticks:{maxTicksLimit:14}}),
+    y:ax({beginAtZero:true,ticks:{callback:v=>'$'+(v/1000)+'k'}})}}});
+document.getElementById('cny_note').innerHTML =
+  `<b>CNY impact (per trading day):</b> ` + cny.map(w=>`${w.window.slice(2)} — $${fmt(w.sgd_per_day)}/day (${w.days} school days)`).join(' · ') +
+  `. Even excluding the two $0 holidays, spending on the CNY-week school days ran ${cnyDrop}% below the prior week, and the following week had not fully rebounded — a slower recovery in spend than in the students' step counts (see the February Insights report).`;
+
+// ---------- PAGE 6: SCHOOLS ----------
+document.getElementById('atas_sub').textContent =
+  `School types from the MOE directory (${D.schools.coverage.matched} of ${D.schools.coverage.total} schools matched); spend = canteen + bookshop via SMART Buddy`;
+new Chart(document.getElementById('c_atas'), {type:'bar',
+  data:{labels:at.map(r=>r.type.replace(' SCHOOL','').replace(' SCH','')), datasets:[
+    {...bar(BLUE),label:'$ / student-day',data:at.map(r=>r.spend_day)},
+    {...bar(AQUA),label:'avg ticket $',data:at.map(r=>r.avg_ticket)}]},
+  options:{...leg, scales:{x:ax({grid:{display:false},ticks:{font:{size:7}}}), y:ax({beginAtZero:true,ticks:{callback:v=>'$'+v}})}}});
+
+const lv=D.schools.by_level.filter(l=>['Primary','Secondary','Junior College','Other'].includes(l.level))
+  .sort((a,b)=>['Primary','Secondary','Junior College','Other'].indexOf(a.level)-['Primary','Secondary','Junior College','Other'].indexOf(b.level));
+new Chart(document.getElementById('c_level'), {type:'bar',
+  data:{labels:lv.map(r=>`${r.level} (${r.schools})`), datasets:[{...bar(BLUE),
+    backgroundColor:[BLUE,AQUA,VIOLET,MUTED],data:lv.map(r=>r.spend_day)}]},
+  options:{...noleg, scales:{x:ax({grid:{display:false},ticks:{font:{size:7}}}), y:ax({beginAtZero:true,ticks:{callback:v=>'$'+v}})}}});
+
+document.getElementById('t_schools').innerHTML =
+  '<tr><th>#</th><th>School</th><th>Level</th><th>MOE type</th><th style="text-align:right">$/student-day</th><th style="text-align:right">Avg ticket</th><th style="text-align:right">Buys/day</th></tr>'+
+  D.schools.top.map((s,i)=>`<tr><td>${i+1}</td><td><b>${s.name||s.id}</b></td><td>${s.level}</td>
+    <td>${s.moe_type?s.moe_type.toLowerCase().replace(' school','').replace(' sch',''):'—'}</td>
+    <td class="num"><b>$${s.spend_day.toFixed(2)}</b></td><td class="num">$${s.avg_ticket.toFixed(2)}</td>
+    <td class="num">${s.txns_day?s.txns_day.toFixed(1):'–'}</td></tr>`).join('');
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+# ── Raw data drops (multi-GB + contain real card/device/user IDs) — NEVER commit ──
+/txn/
+/health data/
+
+# ── Regenerable DuckDB parquet (rebuilt by analysis/convert_*.py) ──
+/analysis/parquet/
+
+# ── Python caches ──
+__pycache__/
+*.pyc
+
+# ── Node / Vite build output ──
+node_modules/
+/smart-buddy-app/dist/
+
+# ── Generated reports — embed real sample card/device/user IDs; kept out per repo scope ──
+/SMART_Buddy_*.html
+/SMART_Buddy_*.pdf
+/analysis/*_spliced.html
+
+# ── Generated pipeline output JSON (regenerable; duplicates smart-buddy-app/src/data) ──
+/analysis/appdata/
+/analysis/insights.json
+/analysis/feb_insights.json
+/analysis/feb_service.json
+/analysis/purchase_insights.json
+/analysis/anomaly_patterns.json
+
+# ── OS / editor cruft ──
+.DS_Store
+Thumbs.db
+*.swp

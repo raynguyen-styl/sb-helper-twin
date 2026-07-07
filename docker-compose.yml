@@ -1,0 +1,45 @@
+# (C) Copyright 2008 STYL Solutions Pte. Ltd., All rights reserved.
+# This source code and any compilation or derivative thereof is the sole property of STYL Solutions Pte. Ltd.
+# and is provided pursuant to a Software License Agreement. This code is the proprietary information of
+# STYL Solutions Pte. Ltd. and is confidential in nature. Its use and dissemination by any party other than
+# STYL Solutions Pte. Ltd. is strictly limited by the confidential information provisions of the Agreement
+# referenced above.
+#
+# SMART Buddy dashboard — static frontend only (no backend, no database).
+# COMPLETELY SEPARATE from the tree-digital-twin / tree-twin-uat project. This stack
+# connects to NONE of the shared platform stores (InfluxDB bucket `rtls`, Ditto
+# namespace `org.nparks`, Solace) — the app bundles its data into the build, so there
+# is nothing to query at runtime and no way for it to touch tree-twin's data.
+#
+#   docker compose up -d --build      # build + serve on host ${SB_FRONTEND_PORT:-8088}
+#   docker compose down               # stop
+#
+# Isolation choices baked in here (see DEPLOY.md "Deploy brief" for the full rationale):
+#   • explicit project name `smartbuddy`  → its own network/volume namespace, not tied to the dir name
+#   • container `smartbuddy-frontend`      → does not collide with `nparks-frontend`
+#   • host port 8088 via SB_FRONTEND_PORT  → distinct var + default from tree-twin's FRONTEND_PORT (8087)
+#   • private bridge network `sb-net`      → does NOT join tree-twin's shared `backend` network by default
+
+name: smartbuddy
+
+networks:
+  sb-net:
+    driver: bridge
+  # OPT-IN ONLY — uncomment (and the matching `networks:` line on the service) if the
+  # colleague chooses to co-host on the shared VM and route via the platform nginx-proxy.
+  # backend:
+  #   external: true
+  #   name: ${BACKEND_NETWORK:-solace-pubsub-geo-filtering_backend}
+
+services:
+  frontend:
+    build:
+      context: ./smart-buddy-app
+    container_name: smartbuddy-frontend
+    restart: always
+    ports:
+      - "${SB_FRONTEND_PORT:-8088}:8080"   # 8088 avoids tree-twin's frontend (8087)
+    networks: [sb-net]
+    # networks: [sb-net, backend]          # use instead when joining the shared proxy
+    deploy: { resources: { limits: { memory: 64m } } }
+    logging: { options: { max-size: 10m } }
