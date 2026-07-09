@@ -1,7 +1,12 @@
 # PIPELINE — SMART Buddy Dashboard data pipeline
 
-Engineer-facing reference for the analysis pipeline: how raw CSVs become the
-dashboards, reports, PDF, and map app, and how every headline metric is computed.
+**Scope: February 2026 only.** March/April transactions and the May health drop were
+removed from disk on 8 Jul 2026 (see §5). Everything below describes the Feb-only pipeline
+as it stands now; the historical quarter/May steps are noted where they used to run but can
+no longer be re-executed without re-downloading the source drops.
+
+Engineer-facing reference for the analysis pipeline: how the raw Feb CSVs become the
+reports and map app, and how every headline metric is computed.
 
 - **Run instructions & environment** → see [HANDOVER.md](HANDOVER.md) §4.
 - **Data dictionary, units & established data facts** → see [README.md](README.md)
@@ -18,100 +23,106 @@ Timezone is pinned to `Asia/Singapore` in every script.
 ## 1 · Architecture
 
 ```
- RAW CSVs (source of truth, ~4.5 GB)
- ├─ txn/txn_*.csv .................. 16 files, comma-sep,  Feb–Apr 2026, 'NULL' strings
- └─ health data/*.csv ............. 2 files,  TAB-sep,    May 2026,     'NULL' strings
-        │
-        │  convert_parquet.py           (+ two supplementary builds — see §5 gotcha)
+ RAW CSVs (source of truth, Feb-2026 only, ~1.4 GB, gitignored — real IDs)
+ ├─ txn/txn_*.csv .................. 5 files (part001–005), comma-sep, Feb 2026, 'NULL' strings
+ │                                   ⚠ filename still says "…to_Apr…"; parts 006–016 removed
+ └─ health data/*_202602_part*.csv  6+6 files, comma fully-quoted, Feb 2026, 'NULL' strings
+        │                            (the May TAB-sep drop was removed — see §5)
+        │  convert_parquet_feb.py + convert_txn_perf.py 2026-02
         ▼
  PARQUET (fast columnar working set, in analysis/parquet/)
- ├─ txn.parquet ................... transactions (typed)
- ├─ health.parquet ............... activity intervals (steps/cal/distance + raw JSON extract)
- ├─ heart_rate.parquet ........... hourly HR summaries (bpm_number + raw JSON: low/high/avg)
- ├─ txn_perf.parquet ⚠ ........... per-txn speed components (built by ad-hoc snippet)
- └─ hr_fw.parquet    ⚠ ........... HR rows + firmware_version (built by ad-hoc snippet)
+ ├─ feb_txn.parquet ............... transactions (typed)          3,977,666 rows
+ ├─ feb_health.parquet ........... activity intervals (steps/cal/distance + raw JSON extract)
+ ├─ feb_heart_rate.parquet ....... hourly HR summaries (bpm_number + raw JSON: low/high/avg)
+ └─ txn_perf_202602.parquet ...... per-txn speed components + signal/network (Feb)
+   (txn.parquet / txn_perf.parquet also present, rebuilt Feb-only = same rows as the feb_* pair)
         │
-        ├──────────────┬───────────────┬────────────────────┐
-        ▼              ▼               ▼                    ▼
-   analyze.py   analyze_anomalies  analyze_purchases   build_app_data.py
-        │            .py                 .py                 │  (+ school_geo.json
-        ▼             │                   │                  │     from geocode_retry.py)
-  insights.json       ▼                   ▼                  ▼
-        │       anomaly_patterns    purchase_insights   appdata/global.json
-        │            .json               .json          appdata/schools.json
-        │             │                   │                  │
-        │  ┌──────────┘                   │        ┌─────────┴──────────┐
-        ▼  ▼                              ▼        ▼                    ▼
-  SMART_Buddy_Dashboard   SMART_Buddy_Anomaly_    smart-buddy-app/    pdf_report.html
-       .html              Patterns.html           (Vite + MapLibre)         │
-                          + _Health_ subset       SMART_Buddy_Purchase_     ▼
-                                                  Insights.html      SMART_Buddy_
-                                                                     Findings_Report.pdf
+        ├───────────────┬────────────────────┬───────────────────┐
+        ▼               ▼                    ▼                   ▼
+  analyze_feb.py   analyze_feb_service  analyze_purchases   build_feb_app_data.py
+        │              .py                  .py              build_stalls_data.py
+        ▼               │                    │                   │  (+ school_geo.json
+  feb_insights.json     ▼                    ▼                   │     from geocode_retry.py)
+        │        feb_service.json    purchase_insights.json      ▼
+        │              │                    │            appdata/{feb,stalls}.json
+        ▼              ▼                    ▼                    │
+ SMART_Buddy_    SMART_Buddy_Feb2026_  SMART_Buddy_Purchase_    ▼
+ Feb2026_        Service_Report        Insights.html      smart-buddy-app/
+ Insights.html   .{html,pdf}                              (Vite + MapLibre)
 ```
 
 **Stages**
 
-1. **Convert** — `convert_parquet.py` reads the raw CSVs and writes typed, ZSTD-compressed
-   Parquet. It extracts nested JSON fields from the `raw` column at this stage
-   (HR `date/hour/lowest_bpm/highest_bpm/avg_bpm`; health `active_time`) so downstream SQL
-   never re-parses JSON. **Two extra parquets (`txn_perf`, `hr_fw`) are required by
-   downstream scripts but are NOT produced here** — see §5.
-2. **Analyse** — three independent DuckDB scripts each read Parquet and emit one JSON
-   payload (aggregates only; no row-level PII beyond IDs that already exist in the data).
-3. **Build app data** — `build_app_data.py` produces the per-school / per-terminal / global
-   JSON for the map app and the PDF, joining in `school_geo.json` (MOE identity + coordinates).
+1. **Convert** — `convert_parquet_feb.py` reads the raw Feb CSVs and writes typed,
+   ZSTD-compressed Parquet; `convert_txn_perf.py 2026-02` builds the speed components.
+   JSON fields are extracted from the `raw` column at this stage (HR
+   `date/hour/lowest_bpm/highest_bpm/avg_bpm` incl. `firmware_version`; health `active_time`)
+   so downstream SQL never re-parses JSON.
+2. **Analyse** — independent DuckDB scripts each read Parquet and emit one JSON payload
+   (aggregates only; no row-level PII beyond IDs that already exist in the data).
+3. **Build app data** — `build_feb_app_data.py` + `build_stalls_data.py` produce the
+   per-school / per-terminal / stall JSON for the map app, joining in `school_geo.json`
+   (MOE identity + coordinates).
 4. **Render** — JSON payloads are spliced into HTML templates (Chart.js embedded) to make the
-   self-contained reports; `appdata/*.json` is bundled into the Vite app; `pdf_report.html`
-   is printed to PDF via headless Chrome. See [HANDOVER.md](HANDOVER.md) §4–5 for the exact
-   render/splice commands.
+   self-contained reports; `appdata/*.json` is bundled into the Vite app. See
+   [HANDOVER.md](HANDOVER.md) §4–5 for the exact render/splice commands.
 
 ---
 
 ## 2 · Scripts
 
+**Active (Feb-only) scripts — these run against the data on disk today:**
+
 | Script | Reads | Writes | Purpose |
 |---|---|---|---|
-| `convert_parquet.py` | raw `txn/` + `health data/` CSVs | `parquet/{txn,health,heart_rate}.parquet` | one-time CSV→Parquet + JSON field extraction |
-| `convert_txn_perf.py` | raw `txn/` CSVs | `parquet/txn_perf[_YYYYMM].parquet` | per-txn speed components + signal/network (optional month arg) |
-| *(ad-hoc snippet)* ⚠ | raw HR CSV | `parquet/hr_fw.parquet` | HR rows + `firmware_version` from raw JSON |
-| `analyze.py` | txn, health, heart_rate | `insights.json` | KPIs, quality audit, txn/activity/HR insights, clusters, correlations |
-| `analyze_anomalies.py` | txn, health, hr_fw | `anomaly_patterns.json` | anomaly root-cause drill-down (payments + wearables + HR) |
-| `analyze_purchases.py` | txn | `purchase_insights.json` | food taxonomy, price points, school/time/habit differentiators |
-| `build_app_data.py` | txn, txn_perf, + `school_geo.json` | `appdata/{global,schools}.json` | map-app + PDF dataset (per-school, per-terminal, atas) |
-| `geocode_retry.py` | `moe_schools.json` | `school_geo.json` | OneMap postal→lat/lng with backoff (rate-limited) |
-| `convert_parquet_feb.py` | `health data/{health_data,heart_rate}_202602_part*.csv` + raw `txn/` | `parquet/feb_{health,heart_rate,txn}.parquet` | Feb-2026 drop (comma-quoted CSVs, unlike May's TABs); txn filtered to Feb |
-| `analyze_feb.py` | feb_health, feb_heart_rate, feb_txn | `feb_insights.json` | day-aligned Feb health×txn insights (first overlap month) |
+| `convert_parquet_feb.py` | `health data/*_202602_part*.csv` + raw Feb `txn/` | `parquet/feb_{health,heart_rate,txn}.parquet` | Feb drop (comma fully-quoted CSVs); txn filtered to Feb; extracts JSON incl. `firmware_version` |
+| `convert_txn_perf.py 2026-02` | raw Feb `txn/` CSVs | `parquet/txn_perf_202602.parquet` | per-txn speed components + signal/network (Feb) |
+| `analyze_feb.py` | feb_health, feb_heart_rate, feb_txn | `feb_insights.json` | day-aligned Feb health×txn insights (the overlap month) |
+| `analyze_feb_service.py` | feb_txn, txn_perf_202602, `school_geo.json` | `feb_service.json` | Feb service-report data: network health + fault verdicts, speed, food, spending-per-school, CNY windows |
+| `analyze_purchases.py` | feb_txn (now Feb-only) | `purchase_insights.json` | food taxonomy, price points, school/time/habit differentiators |
 | `build_feb_app_data.py` | feb parquets + `school_geo.json` | `appdata/feb.json` | precomputed filter slices for the app's February Insights window |
-| `build_stalls_data.py` | feb_txn, txn_perf_202602, `school_geo.json` | `appdata/stalls.json` | per-stall + per-machine data for Stall Explorer & Terminal Health (incl. machine-vs-site verdicts) |
-| `analyze_feb_service.py` | feb_txn, txn_perf_202602, `school_geo.json` | `feb_service.json` | Feb-only service-report data: network health + fault verdicts, speed, food, spending-per-school, CNY windows |
-| `splice_feb_service.py` | `feb_service.json` + `chart.umd.min.js` + `feb_service_report.html` | `../SMART_Buddy_Feb2026_Service_Report.html` | splices the self-contained report; then print to PDF via headless Chrome |
+| `build_stalls_data.py` | feb_txn, txn_perf_202602, `school_geo.json` | `appdata/stalls.json` | per-stall + per-machine data (incl. machine-vs-site verdicts) |
+| `splice_feb_service.py` | `feb_service.json` + `chart.umd.min.js` + `feb_service_report.html` | `../SMART_Buddy_Feb2026_Service_Report.html` | splices the self-contained report; then print to PDF |
+| `splice_purchase_insights.py` | `purchase_insights.json` + template | `../SMART_Buddy_Purchase_Insights.html` | splices the self-contained report |
+| `geocode_retry.py` | `moe_schools.json` | `school_geo.json` | OneMap postal→lat/lng with backoff (rate-limited); reuse `school_geo.json`, don't regenerate |
 
-⚠ = reproducibility gap, see §5.
+**Historical scripts — kept on disk but NOT runnable** (their source data was removed in
+the Feb-only purge, §5): `convert_parquet.py` (needed the May health drop + Feb–Apr txn),
+`analyze.py` → `insights.json`, `analyze_anomalies.py` → `anomaly_patterns.json` (needed
+`hr_fw.parquet` from the May HR file), `build_app_data.py` (Feb-app + `--quarter` PDF dataset).
+The reports they produced still exist as shipped files; only regeneration is blocked.
 
 ---
 
 ## 3 · Output catalog
 
+**Current Feb-only deliverables — regenerable from the data on disk:**
+
 | Deliverable | Emitting script → data | Notes |
 |---|---|---|
-| `SMART_Buddy_Dashboard.html` | `analyze.py` → `insights.json` | main insights + 26-type data-quality report |
-| `SMART_Buddy_Anomaly_Patterns.html` | `analyze_anomalies.py` → `anomaly_patterns.json` | full root-cause report (payments + health) |
-| `SMART_Buddy_Health_Anomaly_Patterns.html` / `.pdf` | hand-derived **subset** of the above | wearable + HR sections only (payment content stripped) |
-| `SMART_Buddy_Purchase_Insights.html` | `analyze_purchases.py` → `purchase_insights.json` → `purchase_insights_template.html` (splice_purchase_insights.py) | what students buy — verified-name categories only |
-| `SMART_Buddy_Findings_Report.pdf` | `build_app_data.py` → `appdata/*.json` → `pdf_report.html` | network/speed/food/atas print report (whole Feb–Apr quarter) |
-| `SMART_Buddy_Feb2026_Service_Report.{html,pdf}` | `analyze_feb_service.py` → `feb_service.json` → `feb_service_report.html` (splice) | **Feb-only** service-team report: network health w/ machine-vs-location verdicts, speed, food items, spending-per-school, food-type trends, CNY impact |
-| `smart-buddy-app/` | `build_app_data.py` → `appdata/*.json` (bundled to `src/data/`) | interactive map app |
+| `SMART_Buddy_Feb2026_Service_Report.{html,pdf}` | `analyze_feb_service.py` → `feb_service.json` → `feb_service_report.html` (splice) | Feb service-team report: network health w/ machine-vs-location verdicts, speed, food items, spending-per-school, food-type trends, CNY impact |
 | `SMART_Buddy_Feb2026_Insights.html` | `analyze_feb.py` → `feb_insights.json` → `feb_report_template.html` | static Feb report (health×txn overlap month) |
+| `SMART_Buddy_Purchase_Insights.{html,pdf}` | `analyze_purchases.py` → `purchase_insights.json` → `purchase_insights_template.html` (`splice_purchase_insights.py`) | what students buy — verified-name categories only; Feb-only now that txn is Feb-only |
+| `smart-buddy-app/` | `build_feb_app_data.py` + `build_stalls_data.py` → `appdata/{feb,stalls}.json` (bundled to `src/data/`) | interactive map app (Feb scope) |
 | map app "February Insights" window | `build_feb_app_data.py` → `appdata/feb.json` → `src/data/feb.json` | clickable filters (day-type × segment, firmware × day-type, level × category) + CNY story; deep link `#feb` or `#feb=hr` |
-| map app "Stall Explorer" + "Terminal Health" windows | `build_stalls_data.py` → `appdata/stalls.json` → `src/data/stalls.json` | stall/machine browser (category + price-band filters) & fleet diagnostics (machine-vs-site verdicts vs school peers); role hub `#role=fnb\|eng\|mgmt`, deep links `#stall=`, `#terminal=` |
-| `*.pdf` of the three HTML reports | headless-Chrome print of the HTML | for email sharing; charts flatten to images |
+| map app "Terminal Health" window | `build_stalls_data.py` → `appdata/stalls.json` → `src/data/stalls.json` | fleet diagnostics (machine-vs-site verdicts vs school peers); role hub `#role=fnb\|eng\|mgmt`, deep links `#stall=`, `#terminal=` (Stall Explorer shelved from nav — no SKU data) |
 
-The Dashboard and Anomaly report HTML files are the **source of truth** for those two reports
-(templates were session-temporary) — edit in place. **Purchase Insights has a template again**
-(`purchase_insights_template.html`, recreated 7 Jul 2026 during the verified-only rework):
-edit the template + `splice_purchase_insights.py`, never the shipped HTML. The Feb reports and
-the quarter PDF also build from templates (`feb_report_template.html`, `feb_service_report.html`,
-`pdf_report.html` + `splice_pdf_report.py`).
+Feb deliverables build from templates in `analysis/` (`feb_report_template.html`,
+`feb_service_report.html`, `purchase_insights_template.html`) — edit the **template** + its
+`splice_*.py`, never the shipped HTML. PDFs are headless-Chrome prints of the HTML (charts
+flatten to images).
+
+**Shipped but NO LONGER regenerable** (frozen files remain; source data removed in the
+Feb-only purge, §5 — regeneration would need re-downloading the Feb–Apr txn / May health drops):
+
+| Frozen deliverable | Was built from | Why frozen |
+|---|---|---|
+| `SMART_Buddy_Dashboard.html` | `analyze.py` → `insights.json` | main insights + 26-type quality report — needed May health + Feb–Apr txn |
+| `SMART_Buddy_Anomaly_Patterns.html` (+ `Health_` subset / `.pdf`) | `analyze_anomalies.py` → `anomaly_patterns.json` | needed `hr_fw.parquet` from the May HR file |
+| `SMART_Buddy_Findings_Report.pdf` | `build_app_data.py --quarter` → `appdata_quarter/*.json` → `pdf_report.html` | whole Feb–Apr quarter network/speed/food/atas print report |
+
+The Dashboard and Anomaly HTML files were their own source of truth (no template); since they
+can't be regenerated, treat them as read-only historical artifacts.
 
 ---
 
@@ -130,10 +141,10 @@ WHERE schoolId != 'STYL'                 -- vendor bench-test terminals
 `errorCode IS NOT NULL AND errorCode != '0'`. Offline share = `paymentMode = 'OFFLINE'`.
 
 ### 4.2 Transaction speed
-From `txn_perf.parquet`, always guarded by `startToFinish > 0` (0/NULL = no timing captured):
+From `txn_perf_202602.parquet`, always guarded by `startToFinish > 0` (0/NULL = no timing captured):
 - **Median / p95** of `startToFinish` (ms) overall, by `posNetworkType`, by signal bucket, per school, per terminal.
-- **Weekly by payment stack** — restricted to full weeks `txn_date BETWEEN '2026-02-02' AND '2026-04-26'` (see §5).
-- **Components** (`checkSignal, openSocket, handshake, sendToReceiveData, tapCardToFinish`) — median, ONLINE only, monthly.
+- **Weekly by payment stack** — restricted to full Feb weeks `txn_date BETWEEN '2026-02-02' AND '2026-02-28'` (drops the single-day `2026-01-26` week bucket; see §5).
+- **Components** (`checkSignal, openSocket, handshake, sendToReceiveData, tapCardToFinish`) — median, ONLINE only (Feb).
 
 ### 4.3 Food categories (no SKU data) — VERIFIED-NAME ONLY (v2)
 **Policy (supervisor-mandated 7 Jul 2026; tightened to v2 the same evening after auditing
@@ -153,8 +164,8 @@ never copy the rules into a script). Rules:
    <$1.00 or >$8.00. Calibrated to fire on contradiction ("Hot Stall 5" modal $0.60 = a drinks
    counter), not on premium pricing ($5 café at an independent school stays Cooked Food). Price
    can veto a name; it never assigns one. 9 stalls vetoed in Feb.
-Validation: name-vs-modal-price agreement 93–97% per food category. Coverage: Feb 493 stalls /
-17.5% txns / 18.5% rev; quarter 498 / 17.2% / 18.1%. Everything else is **`Unclassified`** —
+Validation: name-vs-modal-price agreement 93–97% per food category. Coverage (Feb): 493 stalls /
+17.5% of txns / 18.5% of revenue (Mixed 23, vetoed 9). Everything else is **`Unclassified`** —
 price bands/statistics only, never a food type. (The 7 Jul v1 was name-keywords with a one-line
 Generic→Unclassified CASE; the original KMeans price-archetype tier was removed a step earlier.)
 Consequences to respect downstream:
@@ -162,9 +173,8 @@ Consequences to respect downstream:
   "within name-verified volume"; the verified sample **skews toward stall types that register
   real names** (bookshops especially) — it is not a random sample of the network.
 - **Low-sample guard**: weekly/day-type category charts blank out slices with too little verified
-  volume (e.g. the March-holiday week has n=494 verified txns; Feb weekends n=183). Without the
-  guard, single stalls dominate and averages are artifacts (a 2-txn $41 cafe made "holiday cooked
-  food" look like $22).
+  volume (e.g. Feb weekends n=183). Without the guard, single stalls dominate and averages become
+  artifacts (a 2-txn $41 cafe can make a day-type "cooked food avg" look like $22).
 - Two old findings did NOT survive the switch (they were artifacts of price-inferred categories):
   "JC canteens are priced lower" (verified says the opposite) and "afternoon is snack o'clock"
   (only 15 named snack stalls exist).
@@ -180,7 +190,10 @@ Consequences to respect downstream:
 - **spend_day** = per card, `total_amount / distinct_active_days`, averaged across cards
   (cards with ≥ some floor per aggregate). This is spend per *active* student-day, not per calendar day.
 
-### 4.5 Card & user clusters (`analyze.py`)
+### 4.5 Card & user clusters
+*(Method reference. The card/user clusters below ran in the now-frozen `analyze.py`;
+`analyze_feb.py` applies the same profile-labelled KMeans to Feb wearer segments —
+School-day actives / Everyday / Occasional / Barely used.)*
 - **Cards** (spending segments): KMeans(k=4) on
   `[log(n_txns), log1p(avg_sgd), morning_ratio, log1p(active_days)]` for cards with ≥ 3 txns
   (single-touch cards excluded). Persona names ("Morning Snackers" etc.) assigned by cluster
@@ -189,36 +202,45 @@ Consequences to respect downstream:
   with both step and HR data (~6,561). Same profile-based labelling.
 
 ### 4.6 Activity (health) metrics
-Cleaned view `hclean` (`analyze.py`):
+Feb activity comes from `feb_health.parquet` (`analyze_feb.py`); the cleaning gate is:
 ```sql
 WHERE data_type IN (0,1) AND calories <= 500000 AND steps <= 4000
-  AND recorded_time < 2026-06-01   -- drop post-May stragglers
+  AND recorded_time IN February 2026   -- Feb drop only (May pipeline dropped post-May stragglers)
 ```
 Units: `calories` is **millical** → `/1000` = kcal; `distances` is **cm** → `/100000` = km;
 health rows are **30-min incremental intervals** so daily totals are **sums** (`hdaily`).
 Daily step curves additionally cap `steps <= 80000` per user-day to drop implausible days.
+*(The identical gate ran in the now-frozen `analyze.py` over the May drop, with
+`recorded_time < 2026-06-01` to drop post-May stragglers.)*
 
 ### 4.7 Heart-rate averages  ← (the supplier-Q&A metric)
 Each HR row is an **hourly summary the wearable itself produced**; the table's `bpm_number`
-column **equals** the device's `avg_bpm` in the raw JSON (verified: 0 mismatches in 1,771,398 rows).
-The reported average HR is the mean of `bpm_number` over the cleaned set (`analyze.py` `rclean`,
-mirrored in `analyze_anomalies.py`):
+column **equals** the device's `avg_bpm` in the raw JSON (verified). The reported average HR is
+the mean of `bpm_number` over the cleaned set. For Feb (`analyze_feb.py`, `feb_heart_rate`) the
+gate is:
 ```sql
 WHERE bpm_number BETWEEN 30 AND 220                       -- valid physiological range
-  AND TRY_CAST(hr_date AS DATE) BETWEEN '2026-05-01' AND '2026-05-31'  -- real May dates only
+  AND TRY_CAST(hr_date AS DATE) IN February 2026          -- real Feb dates only (drops ~40% backfill)
 ```
-→ 1,050,510 readings from 8,273 users, mean **81.8 bpm**. Consequences:
-- **255 is excluded** (255 > 220). All 381 `bpm_number = 255` rows are whole-record sensor
-  errors (`lowest = highest = avg = 255`); they never enter any average. Avg with them left in
-  would be 81.83 vs 81.78.
+Consequences (the logic is unchanged from the May supplier-Q&A analysis):
+- **255 is excluded** (255 > 220). `bpm_number = 255` rows are whole-record sensor errors
+  (`lowest = highest = avg = 255`); they never enter any average.
 - **Resting HR** uses a different field: per user-day `min(lowest_bpm)` (range 30–150), averaged.
-- Per-day / per-hour / per-weekday HR curves use the same `rclean` gate.
-- The 255 value is used **only** as an error *count* in `analyze_anomalies.py` (rate per 10k, to
-  attribute the fault to firmware 1.1.9.0.0), never as a heart rate.
+- Per-day / per-hour / per-weekday HR curves use the same gate; the 23:00 spike is a
+  sparse-sampling artifact (reproduces in Feb: 90.3 bpm).
+- The 255 value is used **only** as an error *count* (rate per 10k, to attribute the fault to
+  firmware 1.1.9.0.0), never as a heart rate.
+
+*Historical (May, now frozen — computed by `analyze.py`/`analyze_anomalies.py` before the purge):*
+the May window `hr_date BETWEEN '2026-05-01' AND '2026-05-31'` gave 1,050,510 readings from
+8,273 users, mean **81.8 bpm** (0 mismatches in 1,771,398 rows; avg with the 381 sentinel-255
+rows left in would have been 81.83 vs 81.78). Feb replicates the same firmware signature.
 
 ### 4.8 Correlations
-Pearson `r` on per-user aggregates: steps↔resting HR (r = −0.36), steps↔avg HR (r = −0.24),
-txn frequency↔avg ticket. Computed in `analyze.py` over users present in both step and HR data.
+Pearson `r` on per-user aggregates over users present in both step and HR data. **Feb
+(`analyze_feb.py`): steps↔HR r = −0.297 (n=6,991).** *(Historical May, frozen `analyze.py`:
+steps↔resting HR r = −0.36, steps↔avg HR r = −0.24 — the negative fitness signal replicates
+across both months.)*
 
 ---
 
@@ -230,25 +252,27 @@ txn frequency↔avg ticket. Computed in `analyze.py` over users present in both 
 |---|---|---|
 | Transactions | exclude `STYL`, `%retrieve%`, `amount > 20000c` | vendor test rigs, maintenance flows, $200+ outliers |
 | Txn speed | `startToFinish > 0` | 0/NULL = timing not captured |
-| Weekly series | `txn_date BETWEEN 2026-02-02 AND 2026-04-26` | quarter starts Sun 1 Feb → the `date_trunc('week')` bucket `2026-01-26` holds a single day; also trims a partial tail week |
-| Activity | `data_type IN (0,1)`, `calories ≤ 500000`, `steps ≤ 4000/interval`, pre-June | drops sentinel/corrupt packets and post-period stragglers |
-| Heart rate | `bpm_number BETWEEN 30 AND 220`, `hr_date` in May | drops 255 sentinel + <30 lows + 41% backfill |
+| Weekly series | `txn_date BETWEEN 2026-02-02 AND 2026-02-28` | Feb starts Sun 1 Feb → the `date_trunc('week')` bucket `2026-01-26` holds a single day; this drops it |
+| Activity | `data_type IN (0,1)`, `calories ≤ 500000`, `steps ≤ 4000/interval`, Feb dates | drops sentinel/corrupt packets and non-Feb stragglers |
+| Heart rate | `bpm_number BETWEEN 30 AND 220`, `hr_date` in Feb | drops 255 sentinel + <30 lows + ~40% pre-Feb backfill |
 
-**Anomaly root-causes the pipeline accounts for** (detailed in the anomaly report):
-firmware `1.1.9.0.0` → 100% of 255-bpm + 88% of <40-bpm; `UNKNOWN` paymentType ≈ error path
-(type never written when a txn fails early); night 1¢ txns = `STYL` test terminals; `$9,999.90`
-= maintenance flows; negative `posSignalStrength` = WiFi **RSSI in dBm** (unit mix vs the 0–31
-cellular scale); 18 gen-0 wearables emit power-of-two sentinel calories/distances; HR file is
-**keyed by sync time** (41% backfill, dedup by latest `sync_id`).
+**Anomaly root-causes the pipeline accounts for** (Feb data; the same signatures were detailed
+in the now-frozen anomaly report from the May drop): firmware `1.1.9.0.0` → 100% of 255-bpm +
+88% of <40-bpm (Feb: 373 err-255 + 176 sub-40, all from 1.1.9.0.0 → fault predates May);
+`UNKNOWN` paymentType ≈ error path (type never written when a txn fails early); night 1¢ txns =
+`STYL` test terminals; `$9,999.90` = maintenance flows; negative `posSignalStrength` = WiFi
+**RSSI in dBm** (unit mix vs the 0–31 cellular scale); 18 gen-0 wearables emit power-of-two
+sentinel calories/distances; HR file is **keyed by sync time** (40.3% backfill in Feb, dedup by
+latest `sync_id`).
 
 **Reproducibility gotchas**
 
-1. ✅→⚠ **`txn_perf.parquet` now has a proper script** — `convert_txn_perf.py` (full period, or
-   `python convert_txn_perf.py 2026-02` for one month → `txn_perf_202602.parquet`). `hr_fw.parquet`
-   is still ad-hoc (`analyze_anomalies.py` needs HR fields + `firmware_version` from the raw JSON;
-   note `convert_parquet_feb.py` DOES extract firmware for the Feb HR drop). **Remaining TODO:
-   script `hr_fw` for the May file.**
-2. **Health CSVs are TAB-separated**, txn CSVs comma — always pass `nullstr='NULL'`.
+1. **`txn_perf` has a proper script** — `python convert_txn_perf.py 2026-02` →
+   `txn_perf_202602.parquet` (the Feb build). The old ad-hoc `hr_fw.parquet` (May HR +
+   `firmware_version` for `analyze_anomalies.py`) is now moot — the May HR file was removed in the
+   purge (§5); `convert_parquet_feb.py` already extracts `firmware_version` for the Feb HR drop.
+2. **Feb health CSVs are comma-separated, fully quoted** (6 part files each; the removed May drop
+   was TAB-separated); txn CSVs comma — always pass `nullstr='NULL'`.
 3. DuckDB `read_csv` on txn needs explicit `types=` for `errorCode`/`cardId`/`amount`/… (16-file
    sampling otherwise mistypes columns).
 4. **KMeans cluster indices are unstable across refits** — always assign persona labels by cluster
@@ -261,5 +285,12 @@ cellular scale); 18 gen-0 wearables emit power-of-two sentinel calories/distance
 
 ---
 
-*Companion docs: [README.md](README.md) (deliverables + data facts) ·
-[HANDOVER.md](HANDOVER.md) (run order, decisions, full gotcha list). Last updated 6 Jul 2026.*
+**Feb-only purge (8 Jul 2026):** March/April `txn` parts 006–016, the May health drop
+(`*_May2026.csv`), the May `health.parquet`/`heart_rate.parquet`, and `analysis/appdata_quarter/`
+were deleted from disk. Consequence: the Dashboard, anomaly/health reports, and the quarter
+Findings PDF can no longer be regenerated (shipped files unaffected). Feb exports live in
+`feb_data/` (gitignored). Full detail: [DATA_PIPELINE.md](DATA_PIPELINE.md) §7.
+
+*Companion docs: [DATA_PIPELINE.md](DATA_PIPELINE.md) (overview / task-map + "where tasks run") ·
+[README.md](README.md) (deliverables + data facts) · [HANDOVER.md](HANDOVER.md) (run order,
+decisions, full gotcha list). Last updated 8 Jul 2026 (Feb-only).*
