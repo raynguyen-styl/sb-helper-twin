@@ -8,18 +8,17 @@ stores — history as downsampled Influx points, latest-state as one Ditto Thing
 Source: feb_data/*.csv (RAW ids). Personal ids (cardId, user_id, sync_id) are HASHED at
 ingest (salted, ephemeral salt) so the shared stores never see real ids — plan §8.
 
-DRY-RUN by default: computes + validates the Influx line-protocol and Ditto Thing JSON and
-writes samples to ./out/, WITHOUT touching any store. `--write` (Influx/Ditto creds) is the
-live path and is intentionally gated off until those creds exist.
-
-Run:  python sb_backfill.py            # dry-run, writes ./out/
-      python sb_backfill.py --full     # dry-run but emit every line (large files)
+Mandatory 3-step safety flow (mirrors tree-twin — never jump straight to --write):
+  python sb_backfill.py --check    # 1. READ-ONLY: is the shared target space empty (additive-safe)?
+  python sb_backfill.py            # 2. DRY RUN (default): writes ./out/ samples, no store touched
+  python sb_backfill.py --write    # 3. LIVE write to Influx + Ditto (run only after --check = SAFE)
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import secrets
 import sys
 from pathlib import Path
@@ -48,6 +47,11 @@ def _hash(col: str) -> str:
 
 # transaction base filter (the analysis gate — must match the pipeline)
 TX_FILTER = "schoolId <> 'STYL' AND storeName NOT ILIKE '%retrieve%' AND amount <= 20000"
+
+# Ditto thing-ids must be sanitised (strip anything outside [A-Za-z0-9._-], incl. spaces);
+# the RAW id is kept in the thing's attributes for joins/queries (mirrors tree-twin safe_id()).
+def safe_id(s) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]", "", str(s))
 
 # ── InfluxDB line-protocol formatting ───────────────────────────────────────────
 def _esc_tag(v) -> str:
@@ -238,7 +242,7 @@ def ditto_things(con: duckdb.DuckDBPyConnection) -> list[dict]:
                CAST(median(t.startToFinish) FILTER (WHERE t.startToFinish>0) AS BIGINT) AS median_speed
         FROM tx t LEFT JOIN schools s USING (schoolId) GROUP BY t.schoolId
     """).fetchall():
-        things.append({"thingId": f"org.smartbuddy:school-{r[0]}",
+        things.append({"thingId": f"org.smartbuddy:school-{safe_id(r[0])}",
             "attributes": {"schoolId": r[0], "name": r[1], "moe_type": r[2], "level": r[3],
                            "zone": r[4], "lat": r[5], "lng": r[6]},
             "features": {"spend": {"properties": {"total_sgd": r[7], "avg_ticket": r[8], "distinct_cards": int(r[9])}},
@@ -252,11 +256,78 @@ def ditto_things(con: duckdb.DuckDBPyConnection) -> list[dict]:
                     WHEN median(startToFinish) FILTER (WHERE startToFinish>0)>=4000 THEN 'slow' ELSE 'ok' END AS flag
         FROM tx GROUP BY terminalId
     """).fetchall():
-        things.append({"thingId": f"org.smartbuddy:terminal-{r[0]}",
+        things.append({"thingId": f"org.smartbuddy:terminal-{safe_id(r[0])}",
             "attributes": {"terminalId": r[0], "schoolId": r[1], "network_type": r[2]},
             "features": {"health": {"properties": {"txns": int(r[3]), "err_pct": r[4],
                           "median_speed_ms": r[5], "p95_speed_ms": r[6], "flag": r[7]}}}})
     return things
+
+
+# ── read-only preflight (tree-twin's --check step) ──────────────────────────────
+def check_stores() -> int:
+    """Is the shared target space empty → additive-safe? Any existing sb_* points or
+    org.smartbuddy twins => STOP (a --write would add to / overwrite live data)."""
+    influx_url = os.environ.get("INFLUX_URL", "").rstrip("/")
+    token = os.environ.get("INFLUX_TOKEN", "")
+    org = os.environ.get("INFLUX_ORG", "styl")
+    bucket = os.environ.get("INFLUX_BUCKET", "rtls")
+    dbase = os.environ.get("DITTO_BASE_URL", "").rstrip("/")
+    duser = os.environ.get("DITTO_USERNAME", "ditto")
+    dpass = os.environ.get("DITTO_PASSWORD", "")
+    dns = os.environ.get("DITTO_NAMESPACE", "org.smartbuddy")
+    if not influx_url or not token:
+        raise SystemExit("--check needs INFLUX_URL + INFLUX_TOKEN (read access is enough)")
+
+    print("=== --check (READ-ONLY): is the shared target space empty / additive-safe? ===")
+    present = False
+
+    # Ditto — count things in our namespace (one search, not per-twin)
+    if dbase and dpass:
+        import httpx
+        filt = f'like(thingId,"{dns}:*")'
+        with httpx.Client(auth=(duser, dpass), timeout=30) as dc:
+            n = None
+            try:
+                r = dc.get(f"{dbase}/api/2/search/things/count", params={"filter": filt})
+                n = int(r.text.strip()) if r.status_code == 200 else None
+            except Exception:
+                n = None
+            if n is None:  # fallback: existence via size(1)
+                try:
+                    r = dc.get(f"{dbase}/api/2/search/things",
+                               params={"filter": filt, "option": "size(1)", "fields": "thingId"})
+                    n = len((r.json() or {}).get("items", [])) if r.status_code == 200 else -1
+                except Exception:
+                    n = -1
+            state = "ABSENT (safe)" if n == 0 else ("PRESENT -> STOP" if n and n > 0 else "unknown")
+            print(f"  Ditto  {dns}:*  things = {n}   {state}")
+            present = present or bool(n and n > 0)
+    else:
+        print("  Ditto  skipped (set DITTO_BASE_URL + DITTO_PASSWORD)")
+
+    # Influx — record count per sb_* measurement
+    from influxdb_client import InfluxDBClient
+    with InfluxDBClient(url=influx_url, token=token, org=org) as client:
+        q = client.query_api()
+        for meas in MEAS:
+            flux = (f'from(bucket:"{bucket}") |> range(start: 0) '
+                    f'|> filter(fn:(r)=> r._measurement=="{meas}") |> group() |> count()')
+            try:
+                tables = q.query(flux)
+                cnt = sum(rec.get_value() for tb in tables for rec in tb.records) or 0
+            except Exception as e:
+                print(f"  Influx {meas:20s} query error: {str(e)[:70]}")
+                continue
+            print(f"  Influx {meas:20s} records = {cnt:>10,}   {'ABSENT (safe)' if cnt == 0 else 'PRESENT -> STOP'}")
+            present = present or cnt > 0
+
+    print()
+    if present:
+        print("STOP: existing SMART Buddy data in the shared stores — a --write would add to/overwrite it.")
+        print("      Clear it first (SB_DEPLOY.md §9) or confirm intent before running --write.")
+        return 3
+    print("SAFE: target space is empty — --write is purely additive. Proceed: dry-run, then --write.")
+    return 0
 
 
 # ── live write path (mirrors tree-digital-twin/ingestion/src/backfill.py) ───────
@@ -294,11 +365,19 @@ def write_stores(con: duckdb.DuckDBPyConnection) -> None:
         ok = err = 0
         with httpx.Client(auth=(duser, dpass), timeout=30) as dc:
             for t in things:
-                body = {"attributes": {k: v for k, v in t["attributes"].items() if v is not None},
-                        "features": t["features"]}
+                our = {k: v for k, v in t["attributes"].items() if v is not None}
+                url = f"{dbase}/api/2/things/{quote(t['thingId'], safe='')}"
+                # A whole-thing PUT REPLACES attributes, so carry forward any existing attributes we
+                # don't set (e.g. shared prefs) — a re-backfill must never clobber them. Mirrors how
+                # tree-twin preserves attributes/tim.
+                try:
+                    g = dc.get(f"{url}/attributes")
+                    existing = g.json() if (g.status_code == 200 and isinstance(g.json(), dict)) else {}
+                except Exception:
+                    existing = {}
+                body = {"attributes": {**existing, **our}, "features": t["features"]}
                 if dpolicy:
                     body["policyId"] = dpolicy
-                url = f"{dbase}/api/2/things/{quote(t['thingId'], safe='')}"
                 try:
                     r = dc.put(url, json=body)
                     if r.status_code in (200, 201, 204):
@@ -316,9 +395,13 @@ def write_stores(con: duckdb.DuckDBPyConnection) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--check", action="store_true", help="READ-ONLY preflight: is the shared target space empty? run before --write")
     ap.add_argument("--write", action="store_true", help="push to Influx/Ditto (needs INFLUX_URL/TOKEN [+ DITTO_* ] env)")
     ap.add_argument("--full", action="store_true", help="emit every line (large files) instead of a sample")
     args = ap.parse_args()
+
+    if args.check:
+        return check_stores()   # remote-only; needs no local feb_data
 
     for p in [FEB / "feb_transactions.csv", FEB / "feb_health_data.csv", FEB / "feb_heart_rate.csv", SCHOOL_GEO]:
         if not p.exists():

@@ -27,8 +27,8 @@ the first live run happens here.
 ## 2 · Prerequisites (platform owner)
 - **InfluxDB**: a **write** token (ingestion) + a **read** token (sb-api) for bucket `rtls`; bucket
   retention **infinite** (data is months in the past). URL e.g. `https://iot-uat.styl.solutions/influx`.
-- **Ditto**: write creds (`/ditto-raw` basic auth) + the shared policy id (`user:default-policy`) for
-  ingestion; read creds for sb-api. URL e.g. `https://iot-uat.styl.solutions/ditto`.
+- **Ditto**: ingestion writes over **`/ditto-raw`** (basic auth, bypasses Keycloak) + the shared
+  policy id (`user:default-policy`); sb-api reads over `/ditto`. Base e.g. `https://iot-uat.styl.solutions`.
 - Shared platform up; the external `backend` network reachable.
 - `IOT_UAT_MCP`'s `execute_flux_query` allowed to read the `sb_*` measurements (same bucket).
 - **`feb_data/`** + **`analysis/`** present on the VM build host (gitignored — copy them over).
@@ -43,9 +43,16 @@ cp smart-buddy-agent/sb-api/.env.example  .env                                 #
 
 cd smart-buddy-agent
 
-# 3a. Backfill — load Feb into the shared stores (one-shot). Dry-run first (no --write) to sanity check.
-docker compose -f docker-compose.sb.yml run --rm ingestion            # runs sb_backfill.py --write
+# 3a. Backfill — MANDATORY 3-step safety flow (mirrors tree-twin; never jump to --write):
+docker compose -f docker-compose.sb.yml run --rm ingestion python sb_backfill.py --check   # 1. READ-ONLY preflight
+#   expect "SAFE: target space is empty". If "STOP" → sb_* data / org.smartbuddy twins already
+#   exist; clear them (§9) or confirm intent before writing.
+docker compose -f docker-compose.sb.yml run --rm ingestion python sb_backfill.py            # 2. DRY RUN (no store touched)
+docker compose -f docker-compose.sb.yml run --rm ingestion python sb_backfill.py --write    # 3. LIVE write
+#   (the image CMD defaults to --write, so `run --rm ingestion` alone also does step 3)
 #   expect: "InfluxDB done — ~1.77M points", "Ditto done — 2937 things"
+#   Ditto write preserves any existing attributes per twin (re-backfill won't clobber shared prefs);
+#   thing-ids are sanitised (safe_id); ingestion uses the /ditto-raw basic-auth path.
 
 # 3b. Verify the data landed
 #   Influx (Flux): sb_school revenue by school → PBS should top ~ $321,334
