@@ -32,11 +32,16 @@ all data is bundled locally in `src/data/`.
 
 ## Data
 
-Precomputed from the Feb–Apr 2026 transaction CSVs (13.4M rows) — see
-`SMART_Buddy_Findings_Report.pdf` (project root) for the findings and full method/caveats.
+Precomputed from the **February 2026** transaction CSVs (~4.0M rows) — the project was
+narrowed to Feb only (March/April + the May health drop were removed 8 Jul 2026; see
+`../DATA_PIPELINE.md` §7). For findings and full method/caveats see the Feb reports in the
+project root (`SMART_Buddy_Feb2026_Service_Report.pdf`, `SMART_Buddy_Feb2026_Insights.html`).
 Exclusions: STYL vendor test terminals, "Retrieve…" maintenance flows, amounts >$200.
 School names/types: MOE School Directory (data.gov.sg), acronym-matched (158/334, 4 hand-verified);
-coordinates via OneMap postal-code geocoding. Food categories inferred from stall names +
-price profiles (no item-level SKU data exists).
+coordinates via OneMap postal-code geocoding. **Food categories use verified stall names only**
+(taxonomy v2) — a stall is classified only when its registered name says what it sells and its
+own prices don't contradict it; generic-named stalls are **Unclassified** (price bands only).
+No price-based category guessing, and no item-level SKU data exists.
 
-To regenerate `src/data/*.json`, rerun `build_app_data.py` (analysis pipeline; ask Gideon).
+To regenerate `src/data/*.json`, rerun `build_feb_app_data.py` + `build_stalls_data.py`
+(analysis pipeline; ask Gideon).

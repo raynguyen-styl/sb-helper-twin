@@ -12,6 +12,10 @@ import { openFeb } from './feb-window.js';
 import { openStallExplorer, openStall } from './stall-window.js';
 import { openEng, openTerminal } from './eng-window.js';
 import { openHub, ROLES } from './hub-window.js';
+import { openPlayback } from './playback-window.js';
+import { initSolace } from './solace/solace.js';
+import { initSam } from './sam/samClient.js';
+import { initSamPanel } from './sam/samPanel.js';
 
 const LV_COLOR = { Primary: '#2a78d6', Secondary: '#1baf7a', 'Junior College': '#7d5fd3', Other: '#8e8e93' };
 const HEALTH = (v, warn, bad) => (v >= bad ? '#ff3b30' : v >= warn ? '#ff9500' : '#34c759');
@@ -26,6 +30,7 @@ const VIEWS = {
     overview: { label: 'Network Overview', open: () => openOverview(GLOBAL, SCHOOLS, open) },
     eng:      { label: 'Terminal Health',  open: (p) => openEng(STALLS, p || {}) },
     feb:      { label: 'February Insights', open: (p) => openFeb(FEB, p) },
+    playback: { label: 'Playback',         open: (p) => openPlayback(p || {}) },
 };
 let role = localStorage.getItem('sb-role') || null;
 
@@ -37,7 +42,8 @@ function setRole(r, openPrimary = true) {
 }
 function renderNav() {
     const nv = document.getElementById('nav-views');
-    const keys = role ? ROLES[role].views : Object.keys(VIEWS);
+    const keys = [...(role ? ROLES[role].views : Object.keys(VIEWS))];
+    if (!keys.includes('playback')) keys.push('playback');  // Playback available in every workspace
     nv.innerHTML = keys.map((k) => `<button class="nav-btn" data-view="${k}">${VIEWS[k].label}</button>`).join('') +
         `<button class="nav-role" id="role-btn" title="Switch workspace">${role ? ROLES[role].icon + ' ' + ROLES[role].label : '☰ All views'} ▾</button>`;
     nv.querySelectorAll('[data-view]').forEach((b) =>
@@ -45,13 +51,29 @@ function renderNav() {
     nv.querySelector('#role-btn').addEventListener('click', () => openHub(setRole));
 }
 
-/* ---------- cross-window API (used by stall/eng/school windows) ---------- */
+/* ---------- cross-window API (used by stall/eng/school windows + SAM actions) ---------- */
+// samActive tracks the last thing the user opened so buildSamContext() can tell
+// the agent what's on screen (a hint only — the agent answers from the DB).
+const samActive = { school: null, stall: null, terminal: null };
 window.SB = {
-    openSchool: (sid) => open(sid),
-    openStall: (id) => openStall(STALLS, id),
-    openTerminal: (tid) => openTerminal(STALLS, tid),
+    openSchool: (sid) => { samActive.school = sid; return open(sid); },
+    openStall: (id) => { samActive.stall = id; return openStall(STALLS, id); },
+    openTerminal: (tid) => { samActive.terminal = tid; return openTerminal(STALLS, tid); },
     openStalls: (preset) => openStallExplorer(STALLS, preset),
+    openFeb: (tab) => openFeb(FEB, tab),
+    openPlayback: (preset) => openPlayback(preset || {}),
 };
+
+// Snapshot of dashboard state sent with each SAM query (role + what's open).
+function buildSamContext() {
+    return {
+        source: 'smart-buddy-frontend',
+        scope: 'February 2026',
+        role: role || 'all',
+        viewing: { school: samActive.school, stall: samActive.stall, terminal: samActive.terminal },
+        hash: location.hash || null,
+    };
+}
 
 /* ---------- map ---------- */
 let map = null;
@@ -119,12 +141,14 @@ renderNav();
     const mStall = h.match(/stall=([\w.]+)/);
     const mTerm = h.match(/terminal=([\w-]+)/);
     const mFeb = h.match(/feb(?:=(\w+))?/);
+    const mPlay = h.match(/playback/);
     if (mRole && ROLES[mRole[1]]) setRole(mRole[1]);
     if (mSchool) open(mSchool[1].toUpperCase());
     if (mStall) openStall(STALLS, mStall[1]);
     if (mTerm) openTerminal(STALLS, mTerm[1]);
     if (mFeb) openFeb(FEB, mFeb[1]);
-    const openedByLink = mSchool || mStall || mTerm || mFeb || mRole;
+    if (mPlay) openPlayback({});
+    const openedByLink = mSchool || mStall || mTerm || mFeb || mRole || mPlay;
     if (!openedByLink) {
         if (role) { renderNav(); VIEWS[ROLES[role].primary].open(); }
         else openHub(setRole);          // first visit: pick a workspace
@@ -186,6 +210,13 @@ function openUnmapped() {
             tr.addEventListener('click', () => open(tr.dataset.sid)));
     });
 }
+
+/* ---------- SAM data assistant (chat over the Feb DuckDB, via the mesh) ---------- */
+// Additive + fully optional: with no VITE_SOLACE_*/VITE_SAM_* env set, the panel
+// renders and simply shows "offline" — the rest of the app is unaffected.
+initSolace();
+initSam();
+initSamPanel(buildSamContext);
 
 /* ---------- unified search: schools + stalls + machines ---------- */
 const searchEl = document.getElementById('search');

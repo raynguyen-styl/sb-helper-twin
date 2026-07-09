@@ -17,6 +17,19 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+# Optional build-time config — Vite bakes import.meta.env.VITE_* at build. ALL optional:
+# with none set, Playback uses built-in demo data and the chat panel shows "offline"; the
+# rest of the dashboard is unchanged (still reads its bundled JSON).
+ARG VITE_SB_API_URL=
+ARG VITE_SOLACE_URL=
+ARG VITE_SOLACE_VPN=
+ARG VITE_SOLACE_USER=
+ARG VITE_SOLACE_PASSWORD=
+ENV VITE_SB_API_URL=$VITE_SB_API_URL \
+    VITE_SOLACE_URL=$VITE_SOLACE_URL \
+    VITE_SOLACE_VPN=$VITE_SOLACE_VPN \
+    VITE_SOLACE_USER=$VITE_SOLACE_USER \
+    VITE_SOLACE_PASSWORD=$VITE_SOLACE_PASSWORD
 RUN npm run build
 
 FROM nginx:1.27-alpine

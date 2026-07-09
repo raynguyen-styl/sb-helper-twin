@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "chart.js": "^4.4.7",
-    "maplibre-gl": "^4.7.1"
+    "maplibre-gl": "^4.7.1",
+    "solclientjs": "^10.17.0"
   },
   "devDependencies": {
     "vite": "^6.0.7"
