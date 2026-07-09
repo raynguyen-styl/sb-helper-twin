@@ -47,6 +47,25 @@ private `sb-net` network — none of which collide with tree-twin's `nparks-*` /
 Placement, hostname, and auth are handled by the deploying engineer — full brief (incl. the exact
 tree-twin values to avoid and the basemap-egress caveat) in **DEPLOY.md**.
 
+## Live playback + data assistant (new — InfluxDB + Ditto, `tree-digital-twin` style)
+
+Beyond the static dashboard above, the project now has a **time-playback** layer and a **chat data
+assistant**, built on the shared IoT platform (InfluxDB + Eclipse Ditto), modelled on
+`tree-digital-twin`. **All built and pushed; the first live run happens on the VM** (needs Docker +
+platform Influx/Ditto creds). Design: **PLAN_PLAYBACK_MIGRATION.md** · deploy: **SB_DEPLOY.md**.
+
+- **Ingestion** (`smart-buddy-agent/ingestion/sb_backfill.py`): loads the Feb data into InfluxDB
+  (`sb_*` measurements = history) + Ditto (`org.smartbuddy` twins = current state). Personal ids are
+  hashed at ingest; safety flow is `--check` → dry-run → `--write` (mirrors tree-twin).
+- **Read API** (`smart-buddy-agent/sb-api/`): serves playback series (Flux) + map markers (Ditto).
+- **Playback window** (in `smart-buddy-app/`): scrub / play the February timeline — watch recess
+  spikes, the CNY drop, terminal faults, and wearable activity evolve. Additive — the existing
+  windows are unchanged; with no `VITE_SB_API_URL` set it uses built-in demo data.
+- **Data assistant** (the in-app chat panel): a **SAM agent** answers natural-language questions by
+  running Flux over the **same `sb_*` InfluxDB measurements**, via the existing `IOT_UAT_MCP`
+  connector — see `smart-buddy-agent/sam-agent-instructions.md`. So the chat and the playback read
+  the one store; the classic windows read their bundled JSON.
+
 ## Headline findings
 
 > **February 2026 is the live scope.** The "Quarter" block below is **historical** — it

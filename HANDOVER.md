@@ -1,15 +1,32 @@
 # HANDOVER — SMART Buddy Dashboard project
 
-Context file for a new Claude session / after context compaction. State as of **8 Jul 2026**.
+Context file for a new Claude session / after context compaction. State as of **9 Jul 2026**.
 User: Gideon Seck (gideon.seck@styl.solutions). Everything in README.md is current; this file
 adds the decisions, pipeline mechanics, and gotchas a new session needs.
 
-> **8 Jul 2026 — two big changes since the 7 Jul body below:** (1) the project was **narrowed
-> to February 2026 only** — Mar/Apr txn + the May health drop were deleted from disk (see §1
-> "Feb-only purge" row, decision #20, and DATA_PIPELINE.md §7); several reports are now frozen
-> historical artifacts. (2) A **SAM agent + VM-deploy plan** was written (`PLAN_SAM_AGENT.md`,
-> planning only — nothing built). Read those two first; the sections below are otherwise current
-> except where a ⧗/purge note flags a superseded detail.
+> **⭐ 9 Jul 2026 — BIG PIVOT: live playback on InfluxDB + Ditto (tree-twin architecture).**
+> The project moved from static/DuckDB serving to a **time-playback** system: ingest the Feb data
+> into **InfluxDB** (history) + **Eclipse Ditto** (current-state twins), modelled on
+> `tree-digital-twin`, so the dashboard can scrub the February timeline. **All 6 phases built +
+> pushed to `origin/main`; first live run happens on the VM** (needs Docker + platform Influx/Ditto
+> creds — this workstation has neither). Read **`PLAN_PLAYBACK_MIGRATION.md`** (design) and
+> **`SB_DEPLOY.md`** (VM runbook) first, plus memory `playback-migration-plan.md`.
+> - **Ingestion:** `smart-buddy-agent/ingestion/sb_backfill.py` — `feb_data` CSVs → Influx `sb_*`
+>   measurements + `org.smartbuddy` Ditto twins; PII hashed at ingest; tree-twin write path +
+>   safety flow (`--check` → dry-run → `--write`, `safe_id`, attribute-preserve, `/ditto-raw`).
+> - **Backend:** `smart-buddy-agent/sb-api/` (Node) — Flux playback series + Ditto markers.
+> - **Frontend:** `smart-buddy-app/` gained a **Playback** window (scrub/play the timeline; reads
+>   sb-api, demo-data fallback offline) — ADDITIVE: the existing windows still read bundled JSON.
+> - **Data assistant (chat):** the SAM agent now answers by querying the **`sb_*` Influx
+>   measurements via the existing `IOT_UAT_MCP` connector's `execute_flux_query`** (see
+>   `smart-buddy-agent/sam-agent-instructions.md`) — NOT DuckDB/artifact (those were superseded).
+> Decisions #22–24 below.
+
+> **8 Jul 2026 — two changes:** (1) the project was **narrowed to February 2026 only** — Mar/Apr
+> txn + the May health drop were deleted from disk (see §1 "Feb-only purge" row, decision #20, and
+> DATA_PIPELINE.md §7); several reports are now frozen historical artifacts. (2) A **SAM agent +
+> VM-deploy plan** was written (`PLAN_SAM_AGENT.md`). ⚠ The DuckDB/MCP approach in that plan was
+> **superseded** by the 9 Jul Influx/Ditto pivot above (DuckDB is now ingest-time compute only).
 
 ---
 
@@ -138,7 +155,26 @@ theme). It is NOT a platform/library.
     (e) MCP in **Node**, agent model **claude-opus-4-8**. Clone-and-adapt from reference repos cloned to
     `Downloads/{iot-platform,htx-pilot}` (mcp-rtls-server → smartbuddy-mcp; htx-pilot sam/ → FE panel).
     **Nothing is built.** Await the user's go-ahead before Phase 1 (build `feb.duckdb`). Memory pointer:
-    `sam-agent-plan.md`.
+    `sam-agent-plan.md`. **⚠ SUPERSEDED by #22 — the DuckDB/MCP design was replaced by Influx/Ditto.**
+22. **STORAGE PIVOT → InfluxDB + Ditto with time PLAYBACK** (9 Jul, user: "we're using influxdb and
+    ditto as we want playback… redo the docker system referring to tree-digital-twin"). Playback is a
+    genuine time-series/state-at-time use case → Influx (history) + Ditto (current state), the
+    tree-twin model. **Full replace** of the *serving* layer (not the app windows — see #23); **Feb
+    2026 only**; **all three** playback subjects (schools+terminals on the map, wearables/health,
+    individual card/user). History → shared `rtls` bucket, new `sb_*` measurements; twins → Ditto
+    namespace `org.smartbuddy`. Design in `PLAN_PLAYBACK_MIGRATION.md`; deploy in `SB_DEPLOY.md`.
+    Built + pushed; first live run on the VM.
+23. **Additive cutover + compute-at-ingest** (9 Jul). The existing analytical windows KEEP their
+    precomputed bundled JSON (they never queried a runtime engine); Playback + the data assistant are
+    the new live Influx/Ditto layer. **DuckDB survives only as an ingest-time compute step** (like
+    tree-twin's `backfill.py` computes in pandas) — the `sb_*` aggregates + taxonomy are computed in
+    `sb_backfill.py`, then written to the stores. No runtime DuckDB. Cardinality: `cardId` (179K) is a
+    FIELD not a tag → individual-CARD lookup is on-demand/deferred; per-USER wearable works (13.6K tag).
+24. **Data assistant reads Influx, not DuckDB/artifact** (9 Jul). The SAM agent answers by running
+    Flux over the `sb_*` measurements via the **existing `IOT_UAT_MCP` connector** (`execute_flux_query`
+    + `get_server_time` + `resolve_time_range`) — see `smart-buddy-agent/sam-agent-instructions.md`.
+    This supersedes both earlier attempts (the `smartbuddy-mcp` DuckDB server SAM couldn't attach, and
+    the "Data Analysis over an uploaded artifact" Path A). Text-in / text-out; same store as Playback.
 
 ## 3 · Repo layout
 
@@ -339,9 +375,16 @@ err ≥10% & n≥300 (or med ≥4s); peers bad if peer-median err ≥8% or med �
 
 ## 8 · Open items / natural next steps
 
-- **⭐ SAM agent + VM deploy — PLAN written, awaiting go-ahead** (`PLAN_SAM_AGENT.md`, decision #21).
-  Nothing built. When approved, Phase 1 = build `feb.duckdb` (local, safe). Reference repos cloned
-  to `Downloads/{iot-platform,htx-pilot}`. Memory pointer: `sam-agent-plan.md`.
+- **⭐ InfluxDB/Ditto playback + data assistant — ALL BUILT + PUSHED, awaiting VM deploy**
+  (`PLAN_PLAYBACK_MIGRATION.md` design · `SB_DEPLOY.md` runbook · memory `playback-migration-plan.md`).
+  Ingestion (`sb_backfill.py`), `sb-api`, the Playback window, and the Flux-based agent instructions
+  are done. **Remaining is the VM deploy** (needs Docker + platform Influx write/read tokens + Ditto
+  creds): run the 3-step backfill (`--check`→dry-run→`--write`), `docker compose -f
+  docker-compose.sb.yml up`, add `nginx-smartbuddy.conf`, create the SAM agent on `IOT_UAT_MCP`.
+  The workstation can't run it (no Docker; Ditto has no non-Docker option). Reference repos at
+  `Downloads/{iot-platform,htx-pilot,tree-digital-twin}`.
+- *(superseded)* The earlier `PLAN_SAM_AGENT.md` DuckDB/`smartbuddy-mcp` approach — kept in the repo
+  but the Influx/Ditto pivot replaced it; `feb.duckdb` is now an ingest-time compute helper only.
 - **App deployment (artifacts done, 7 Jul; deploy owned by a colleague)**: containerized as a static nginx
   site — `smart-buddy-app/{Dockerfile,nginx.conf,.dockerignore}` + repo-root `docker-compose.yml`. **DEPLOY.md
   is the colleague's brief** (isolation guarantees vs tree-twin-uat, exact values to avoid, the 3 decisions
