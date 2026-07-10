@@ -378,7 +378,7 @@ if __name__ == "__main__":   # CLI: python ingest_core.py <dataset> <month> <fil
         print("usage: ingest_core.py <dataset> <YYYY-MM> <file.parquet|csv> [replace|append] [rebuild 0/1]",
               file=sys.stderr)
         raise SystemExit(2)
-    _mode = sys.argv[4] if len(sys.argv) > 4 else "replace"
-    _rebuild = (sys.argv[5] != "0") if len(sys.argv) > 5 else True
-    out = load_dataset(sys.argv[3], sys.argv[1], sys.argv[2], mode=_mode, rebuild=_rebuild)
+    _md = sys.argv[4] if len(sys.argv) > 4 else "replace"
+    _rb = (sys.argv[5] != "0") if len(sys.argv) > 5 else True   # NOT _rebuild — that's a module fn
+    out = load_dataset(sys.argv[3], sys.argv[1], sys.argv[2], mode=_md, rebuild=_rb)
     print(out)
