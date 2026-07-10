@@ -107,17 +107,19 @@ function mobilePanelHeightPx() { return Math.min(Math.round(window.innerHeight *
 
 function applyPanelState(panel) {
   const mobile = isMobilePanel();
-  const toggleBtn = document.getElementById("sam-toggle");
   panel.classList.toggle("sam-collapsed", !panelExpanded);
   panel.classList.toggle("sam-mobile", mobile);
+  const body = document.getElementById("sam-body");
   if (mobile) {
-    const h = panelExpanded ? mobilePanelHeightPx() : 52;
+    const h = panelExpanded ? mobilePanelHeightPx() : 56;
     Object.assign(panel.style, { width: "100%", height: `${h}px`, top: "auto", bottom: "0", left: "0", right: "0" });
+    if (body) body.style.width = "";
   } else {
-    const w = panelExpanded ? panelWidthPx() : 46;
+    const w = panelExpanded ? panelWidthPx() : 48;
     Object.assign(panel.style, { width: `${w}px`, height: "auto", top: "44px", bottom: "0", left: "auto", right: "0" });
+    // content keeps its EXPANDED width even while collapsed (it's clipped) → no reflow on toggle
+    if (body) body.style.width = `${panelWidthPx()}px`;
   }
-  if (toggleBtn) toggleBtn.textContent = panelExpanded ? "›" : "‹";
   if (panelExpanded && isDesktopPanel()) requestAnimationFrame(() => focusSamInput());
 }
 
@@ -129,6 +131,12 @@ export function initSamPanel(getContext) {
   panel.id = "sam-panel";
 
   panel.innerHTML = `
+    <button type="button" class="sam-rail" id="sam-rail" aria-label="Open SAM assistant" title="Open SAM">
+      <img class="sam-rail-av" src="${AVATAR}" alt="" />
+      <span class="sam-rail-label">SAM</span>
+      <span class="sam-rail-chev" aria-hidden="true">‹</span>
+    </button>
+    <div class="sam-body" id="sam-body">
     <div id="sam-header" class="sam-header">
       <div class="sam-header-left">
         <img class="sam-brand-av" src="${AVATAR}" alt="" />
@@ -164,6 +172,7 @@ export function initSamPanel(getContext) {
         <button type="button" id="sam-send" class="sam-send" aria-label="Send" title="Send">↑</button>
       </div>
       <div class="sam-hint">Enter to send · Shift+Enter for a new line</div>
+    </div>
     </div>`;
 
   const style = document.createElement("style");
@@ -241,12 +250,30 @@ export function initSamPanel(getContext) {
     .sam-send:disabled { opacity: .45; cursor: not-allowed; }
     .sam-hint { font-size: 10.5px; color: var(--ink-muted-48); text-align: center; margin-top: 6px; }
 
-    #sam-panel.sam-collapsed .sam-header-left, #sam-panel.sam-collapsed .sam-offline-badge,
-    #sam-panel.sam-collapsed .sam-new-chat, #sam-panel.sam-collapsed .sam-thread,
-    #sam-panel.sam-collapsed .sam-footer { display: none !important; }
-    #sam-panel.sam-collapsed .sam-header { justify-content: center; padding: 10px 4px; background: var(--canvas); border-bottom: none; }
+    /* content block keeps a FIXED width (set by JS) so nothing reflows when the panel
+       collapses/expands — only the panel's own width animates (content is just clipped). */
+    .sam-body { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+    #sam-panel.sam-collapsed .sam-body { display: none; }
+    #sam-panel.sam-collapsed .sam-rail { display: flex; }
+
+    /* collapsed rail — the WHOLE strip is the open button */
+    .sam-rail { display: none; flex: 1 1 auto; width: 100%; flex-direction: column; align-items: center;
+      gap: 12px; padding: 14px 0; border: none; background: var(--canvas); cursor: pointer;
+      font-family: inherit; transition: background .14s; }
+    .sam-rail:hover { background: #f0f6ff; }
+    .sam-rail-av { width: 26px; height: 26px; border-radius: 7px; object-fit: cover; flex: none; }
+    .sam-rail-label { writing-mode: vertical-rl; text-orientation: upright; letter-spacing: 2px; flex: 1;
+      display: flex; align-items: center; font-family: var(--font-display); font-weight: 650;
+      font-size: 12px; color: var(--ink-muted-48); }
+    .sam-rail-chev { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+      background: var(--parchment); color: var(--primary); font-size: 16px; line-height: 1; flex: none; transition: background .14s; }
+    .sam-rail:hover .sam-rail-chev { background: #e2edff; }
+
     #sam-panel.sam-mobile { border-left: none; border-top: 1px solid var(--hairline); border-radius: 16px 16px 0 0; box-shadow: 0 -12px 34px rgba(0,0,0,.14); }
     #sam-panel.sam-mobile .sam-input { font-size: 16px; }
+    #sam-panel.sam-mobile .sam-rail { flex-direction: row; justify-content: center; gap: 10px; padding: 0 16px; }
+    #sam-panel.sam-mobile .sam-rail-label { writing-mode: horizontal-tb; text-orientation: mixed; flex: none; }
+    #sam-panel.sam-mobile .sam-rail-chev { transform: rotate(90deg); }
   `;
   document.head.appendChild(style);
   document.body.appendChild(panel);
@@ -261,6 +288,7 @@ export function initSamPanel(getContext) {
   updateEmptyState(thread);
   window.addEventListener("resize", () => applyPanelState(panel));
   toggleBtn.addEventListener("click", () => { panelExpanded = !panelExpanded; applyPanelState(panel); });
+  document.getElementById("sam-rail")?.addEventListener("click", () => { panelExpanded = true; applyPanelState(panel); });
   newChatBtn?.addEventListener("click", () => { resetChatThread(thread, input); setOffline(false, input); focusSamInput(); });
   document.addEventListener("smartbuddy:solace-status", (e) => { if (!e.detail?.connected) setOffline(true, input); });
   if (panelExpanded && isDesktopPanel()) requestAnimationFrame(() => focusSamInput());
