@@ -71,9 +71,10 @@ def register_facts(con, client, month: str) -> None:
     """Pull the month's txn + txn_perf as Arrow and register them + the tx/stallcat/txm views."""
     keep_txn = ("id, schoolId, storeId, storeName, terminalId, amount, txn_date, txn_time, cardId, "
                 "paymentMode, paymentType, errorCode")
-    con.register("txn", client.query_arrow(
+    # query_df (pandas) → DuckDB register. Avoids the optional pyarrow dep; DuckDB queries the frame.
+    con.register("txn", client.query_df(
         f"SELECT {keep_txn} FROM {CH_DB}.txn WHERE month = %(m)s", parameters={"m": month}))
-    con.register("txn_perf", client.query_arrow(
+    con.register("txn_perf", client.query_df(
         f"SELECT * FROM {CH_DB}.txn_perf WHERE month = %(m)s", parameters={"m": month}))
     con.execute("SET timezone='Asia/Singapore'")
     # tx: student-traffic working set + derived cols both build sections use
