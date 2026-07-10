@@ -44,3 +44,6 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.swp
+
+# CLI upload auth (local only, never commit)
+/scripts/.sb-auth.json
