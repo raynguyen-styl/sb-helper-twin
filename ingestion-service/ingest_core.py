@@ -219,8 +219,10 @@ def load_dataset(file_path: str, dataset: str, month: str, *, client=None,
     # memory on the shared VM. temp_directory sits next to the assembled upload.
     con.execute(f"SET memory_limit='{os.environ.get('SB_DUCKDB_MEMORY', '512MB')}'")
     con.execute(f"SET temp_directory='{Path(file_path).resolve().parent.as_posix()}'")
-    reader = "read_parquet(?)" if ext == ".parquet" else "read_csv_auto(?, sample_size=-1)"
-    con.execute(f"CREATE VIEW src AS SELECT * FROM {reader}", [file_path])
+    # inline the path (DuckDB can't bind a parameter inside CREATE VIEW / a table function in DDL)
+    fp = str(file_path).replace("'", "''")
+    reader = f"read_parquet('{fp}')" if ext == ".parquet" else f"read_csv_auto('{fp}', sample_size=-1)"
+    con.execute(f"CREATE OR REPLACE VIEW src AS SELECT * FROM {reader}")
     src_cols = [r[0] for r in con.execute("DESCRIBE src").fetchall()]
 
     loaded = []
