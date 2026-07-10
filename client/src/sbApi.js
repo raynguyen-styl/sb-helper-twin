@@ -7,6 +7,12 @@ import { authReady, authToken } from './auth.js';
 const BASE = (import.meta.env.VITE_SB_API_URL || '').replace(/\/$/, '');
 export const isLive = () => !!BASE;
 
+// The dashboard's selected data month (set by main.js). Appended to every playback query so the
+// server reads the right month's pb_* partition; empty → the server defaults to its newest month.
+let MONTH = '';
+export function setMonth(m) { MONTH = m || ''; }
+const mq = () => (MONTH ? `?month=${encodeURIComponent(MONTH)}` : '');
+
 async function get(path) {
   await authReady;
   const headers = {};
@@ -19,15 +25,15 @@ async function get(path) {
 
 export async function schools() {
   if (!BASE) return DEMO_SCHOOLS;
-  try { return await get('/api/schools'); } catch { return DEMO_SCHOOLS; }
+  try { return await get(`/api/schools${mq()}`); } catch { return DEMO_SCHOOLS; }
 }
 export async function schoolSeries(id) {
   if (!BASE) return demoSchoolDaily(id);
-  try { return await get(`/api/schools/${encodeURIComponent(id)}/playback`); } catch { return demoSchoolDaily(id); }
+  try { return await get(`/api/schools/${encodeURIComponent(id)}/playback${mq()}`); } catch { return demoSchoolDaily(id); }
 }
 export async function wearableCohort() {
   if (!BASE) return demoWearable();
-  try { return await get('/api/wearable/playback'); } catch { return demoWearable(); }
+  try { return await get(`/api/wearable/playback${mq()}`); } catch { return demoWearable(); }
 }
 
 // ── demo data (deterministic; illustrates the weekday rhythm + the CNY 16–18 Feb drop) ───────────

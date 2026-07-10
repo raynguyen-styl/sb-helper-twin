@@ -2,17 +2,16 @@
 // Roles filter the top bar to each team's views (F&B / Engineering / Management);
 // everything is deep-linkable and cross-linked (school ↔ stall ↔ machine).
 import maplibregl from 'maplibre-gl';
-import GLOBAL from './data/global.json';
-import SCHOOLS from './data/schools.json';
-import FEB from './data/feb.json';
-import STALLS from './data/stalls.json';
+import { fetchMonths, fetchBundle } from './sbData.js';
 import { openSchool } from './school-window.js';
 import { openOverview } from './overview-window.js';
 import { openFeb } from './feb-window.js';
 import { openStallExplorer, openStall } from './stall-window.js';
 import { openEng, openTerminal } from './eng-window.js';
+import { openItems } from './items-window.js';
+import { openSavings } from './savings-window.js';
 import { openHub, ROLES } from './hub-window.js';
-import { openPlayback } from './playback-window.js';
+import { openPlayback, setPlaybackMonth } from './playback-window.js';
 import { openUpload } from './upload-window.js';
 import { initAuth, authReady, authRoles, logout } from './auth.js';
 import { initSolace } from './solace/solace.js';
@@ -30,36 +29,85 @@ const LV_COLOR = { Primary: '#2a78d6', Secondary: '#1baf7a', 'Junior College': '
 const HEALTH = (v, warn, bad) => (v >= bad ? '#ff3b30' : v >= warn ? '#ff9500' : '#34c759');
 let colorMode = 'level';
 const markerEls = new Map();
+const markers = new Map();
+let mapReady = false;
+
+/* ---------- per-month data (fetched from the ClickHouse-backed read API) ---------- */
+// These start empty and are (re)filled by loadMonth() from the insight bundles. Windows receive
+// them as arguments at open time, so switching month + reopening a view shows the new month.
+let GLOBAL = {}, SCHOOLS = {}, FEB = null, STALLS = { stalls: [], terminals: [] }, ITEMS = null, SAVINGS = null;
+let MONTHS = [];                 // [{month, kinds}]
+let curMonth = null, curKinds = [];
 
 /* ---------- views & roles ---------- */
-// Stall Explorer is SHELVED from the nav (no item/SKU data yet — revisit when a
-// menu/itemID feed exists). Per-stall detail windows stay reachable via the school
-// window, search, and #stall= deep links; openStallExplorer is kept for that day.
+// Each view maps to an insight-bundle kind; renderNav only shows the ones the current month has
+// (Feb → wearable; March → items/savings). Playback + Upload are always available.
 const VIEWS = {
-    overview: { label: 'Network Overview', open: () => openOverview(GLOBAL, SCHOOLS, open) },
-    eng:      { label: 'Terminal Health',  open: (p) => openEng(STALLS, p || {}) },
-    feb:      { label: 'February Insights', open: (p) => openFeb(FEB, p) },
-    playback: { label: 'Playback',         open: (p) => openPlayback(p || {}) },
-    upload:   { label: '⬆ Upload data',    open: () => openUpload() },
+    overview: { label: 'Network Overview',      kind: 'global',   open: () => openOverview(GLOBAL, SCHOOLS, open) },
+    eng:      { label: 'Terminal Health',       kind: 'stalls',   open: (p) => openEng(STALLS, p || {}) },
+    feb:      { label: 'Wearables & Health',    kind: 'wearable', open: (p) => openFeb(FEB, p) },
+    items:    { label: 'Purchases & Nutrition', kind: 'items',    open: (p) => openItems(ITEMS, p) },
+    savings:  { label: 'Saving vs Spending',    kind: 'savings',  open: (p) => openSavings(SAVINGS, p) },
+    playback: { label: 'Playback',              kind: null,       open: (p) => openPlayback(p || {}) },
+    upload:   { label: '⬆ Upload data',         kind: null,       open: () => openUpload(onUploaded) },
 };
+const viewAvailable = (k) => VIEWS[k].kind == null || curKinds.includes(VIEWS[k].kind);
 let role = localStorage.getItem('sb-role') || null;
 
 function setRole(r, openPrimary = true) {
     role = r;
     localStorage.setItem('sb-role', r);
     renderNav();
-    if (openPrimary) VIEWS[ROLES[r].primary].open();
+    if (openPrimary) openFirstAvailable(r);
+}
+// Open a role's primary view, or the first available one if the primary isn't in this month.
+function openFirstAvailable(r) {
+    const wanted = r ? [ROLES[r].primary, ...ROLES[r].views] : Object.keys(VIEWS);
+    const k = wanted.find((v) => VIEWS[v] && viewAvailable(v)) || 'playback';
+    VIEWS[k].open();
 }
 function renderNav() {
     const nv = document.getElementById('nav-views');
-    const keys = [...(role ? ROLES[role].views : Object.keys(VIEWS))];
-    if (!keys.includes('playback')) keys.push('playback');  // Playback available in every workspace
-    if (!keys.includes('upload')) keys.push('upload');      // Upload data available in every workspace
+    let keys = [...(role ? ROLES[role].views : Object.keys(VIEWS))].filter((k) => VIEWS[k] && viewAvailable(k));
+    if (!keys.includes('playback')) keys.push('playback');  // always
+    if (!keys.includes('upload')) keys.push('upload');      // always
     nv.innerHTML = keys.map((k) => `<button class="nav-btn" data-view="${k}">${VIEWS[k].label}</button>`).join('') +
         `<button class="nav-role" id="role-btn" title="Switch workspace">${role ? ROLES[role].icon + ' ' + ROLES[role].label : '☰ All views'} ▾</button>`;
     nv.querySelectorAll('[data-view]').forEach((b) =>
         b.addEventListener('click', () => VIEWS[b.dataset.view].open()));
     nv.querySelector('#role-btn').addEventListener('click', () => openHub(setRole));
+    renderMonthPicker();
+}
+
+// Month picker in the top-right nav. Hidden until ≥1 month exists.
+function renderMonthPicker() {
+    const right = document.querySelector('.nav-right');
+    if (!right) return;
+    let sel = document.getElementById('month-picker');
+    if (!MONTHS.length) { sel?.remove(); return; }
+    if (!sel) {
+        sel = document.createElement('select');
+        sel.id = 'month-picker'; sel.className = 'month-picker'; sel.title = 'Data month';
+        right.insertBefore(sel, right.firstChild);
+        sel.addEventListener('change', () => switchMonth(sel.value));
+    }
+    const fmt = (m) => { const [y, mo] = m.split('-'); return `${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo]} ${y}`; };
+    sel.innerHTML = MONTHS.map((m) => `<option value="${m.month}"${m.month === curMonth ? ' selected' : ''}>${fmt(m.month)}</option>`).join('');
+}
+
+async function switchMonth(m) {
+    if (m === curMonth) return;
+    await loadMonth(m);
+    renderNav();
+    openFirstAvailable(role);
+}
+
+// Called by the upload window after a successful load — refresh months + current data.
+async function onUploaded() {
+    MONTHS = await fetchMonths().catch(() => MONTHS);
+    if (!MONTHS.find((x) => x.month === curMonth) && MONTHS.length) curMonth = MONTHS.at(-1).month;
+    await loadMonth(curMonth);
+    renderNav();
 }
 
 // User badge + logout in the top-right nav (only when Keycloak is enabled → username present).
@@ -95,7 +143,7 @@ window.SB = {
 function buildSamContext() {
     return {
         source: 'smart-buddy-frontend',
-        scope: 'February 2026',
+        scope: curMonth ? `month ${curMonth}` : 'no data loaded',
         role: role || 'all',
         viewing: { school: samActive.school, stall: samActive.stall, terminal: samActive.terminal },
         hash: location.hash || null,
@@ -143,7 +191,15 @@ function paintMarkers() {
     renderLegend();
 }
 
-if (map) map.on('load', () => {
+if (map) map.on('load', () => { mapReady = true; rebuildMap(); });
+else renderLegend();
+
+// (Re)draw the school markers for the current month's SCHOOLS — called on load + on month switch.
+function rebuildMap() {
+    renderLegend();
+    if (!map || !mapReady) return;
+    for (const mk of markers.values()) mk.remove();
+    markers.clear(); markerEls.clear();
     for (const s of Object.values(SCHOOLS)) {
         if (s.lat == null) continue;
         const el = document.createElement('div');
@@ -152,16 +208,42 @@ if (map) map.on('load', () => {
         el.style.cssText = `width:${d}px;height:${d}px;background:${markerColor(s)}`;
         el.title = `${s.name || s.id} — $${s.spend_day ?? '?'} /day`;
         el.addEventListener('click', (e) => { e.stopPropagation(); open(s.id); });
-        new maplibregl.Marker({ element: el }).setLngLat([s.lng, s.lat]).addTo(map);
-        markerEls.set(s.id, el);
+        const mk = new maplibregl.Marker({ element: el }).setLngLat([s.lng, s.lat]).addTo(map);
+        markers.set(s.id, mk); markerEls.set(s.id, el);
     }
-    renderLegend();
-});
-else renderLegend();
+}
 
-/* ---------- boot: role + deep links ---------- */
-renderNav();
-{
+/* ---------- per-month data loading ---------- */
+async function loadMonth(m) {
+    curMonth = m;
+    if (!m) {
+        GLOBAL = {}; SCHOOLS = {}; STALLS = { stalls: [], terminals: [] };
+        FEB = ITEMS = SAVINGS = null; curKinds = [];
+        rebuildMap(); return;
+    }
+    localStorage.setItem('sb-month', m);
+    curKinds = MONTHS.find((x) => x.month === m)?.kinds || [];
+    setPlaybackMonth(m);
+    const [g, sc, st] = await Promise.all([
+        fetchBundle(m, 'global').catch(() => ({})),
+        fetchBundle(m, 'schools').catch(() => ({ schools: {} })),
+        fetchBundle(m, 'stalls').catch(() => ({ stalls: [], terminals: [] })),
+    ]);
+    GLOBAL = g || {}; SCHOOLS = (sc && sc.schools) || {}; STALLS = st || { stalls: [], terminals: [] };
+    FEB = curKinds.includes('wearable') ? await fetchBundle(m, 'wearable').catch(() => null) : null;
+    ITEMS = curKinds.includes('items') ? await fetchBundle(m, 'items').catch(() => null) : null;
+    SAVINGS = curKinds.includes('savings') ? await fetchBundle(m, 'savings').catch(() => null) : null;
+    rebuildMap();
+}
+
+/* ---------- boot: months → data → role + deep links ---------- */
+async function boot() {
+    MONTHS = await fetchMonths().catch(() => []);
+    const saved = localStorage.getItem('sb-month');
+    curMonth = MONTHS.find((x) => x.month === saved)?.month || MONTHS.at(-1)?.month || null;
+    await loadMonth(curMonth);
+    renderNav();
+
     const h = location.hash;
     const mRole = h.match(/role=(\w+)/);
     const mSchool = h.match(/school=([A-Za-z]+)/);
@@ -173,14 +255,16 @@ renderNav();
     if (mSchool) open(mSchool[1].toUpperCase());
     if (mStall) openStall(STALLS, mStall[1]);
     if (mTerm) openTerminal(STALLS, mTerm[1]);
-    if (mFeb) openFeb(FEB, mFeb[1]);
+    if (mFeb && viewAvailable('feb')) openFeb(FEB, mFeb[1]);
     if (mPlay) openPlayback({});
-    const openedByLink = mSchool || mStall || mTerm || mFeb || mRole || mPlay;
+    const openedByLink = mSchool || mStall || mTerm || (mFeb && viewAvailable('feb')) || mRole || mPlay;
     if (!openedByLink) {
-        if (role) { renderNav(); VIEWS[ROLES[role].primary].open(); }
-        else openHub(setRole);          // first visit: pick a workspace
+        if (!MONTHS.length) openUpload(onUploaded);   // fresh deploy, nothing uploaded yet → go upload
+        else if (role) openFirstAvailable(role);
+        else openHub(setRole);                        // pick a workspace
     }
 }
+boot();
 
 function open(sid) {
     const s = SCHOOLS[sid];

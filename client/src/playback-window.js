@@ -5,7 +5,10 @@
 import { openWindow } from './windowing.js';
 import { mk, opts, ax, line, C } from './charts.js';
 import { createPlaybar } from './playback.js';
-import { schools, schoolSeries, wearableCohort, isLive } from './sbApi.js';
+import { schools, schoolSeries, wearableCohort, isLive, setMonth } from './sbApi.js';
+
+// main.js sets the active month here so playback reads the matching pb_* partition.
+export function setPlaybackMonth(m) { setMonth(m); }
 
 const METRICS = {
   school: [['revenueSgd', 'Revenue (S$)'], ['txns', 'Transactions']],

@@ -22,6 +22,10 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 600; }
 .nav .brand { font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .brand-logo { height: 20px; width: 20px; border-radius: 5px; object-fit: cover; flex: none; }
 .nav-right { display: flex; align-items: center; gap: 14px; }
+.month-picker { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.22);
+  border-radius: 7px; padding: 5px 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.month-picker option { color: #1d1d1f; }
+.up-files { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .nav .period { color: rgba(255,255,255,.55); font-size: 12px; }
 .search { width: 260px; height: 28px; border-radius: var(--r-pill); border: none;
     background: rgba(255,255,255,.14); color: #fff; padding: 0 14px; font-size: 12.5px; outline: none; }
