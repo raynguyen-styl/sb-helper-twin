@@ -418,14 +418,12 @@ def build_savings(client, month: str) -> dict:
     return OUT
 
 
-def main() -> int:
-    month = os.environ.get("SB_MONTH") or (sys.argv[1] if len(sys.argv) > 1 else "")
-    if not (len(month) == 7 and month[4] == '-' and month[:4].isdigit() and month[5:].isdigit()):
-        print("ERROR: set SB_MONTH=YYYY-MM (e.g. 2026-03).", file=sys.stderr)
-        return 1
+def run(month: str, client=None) -> list:
+    """(Re)build every bundle a month has data for. Returns [(kind, bytes)]. Safe to call in-process
+    (e.g. from the upload service after a load) or from the CLI."""
     y, mo = int(month[:4]), int(month[5:])
     days = [f"{month}-{i:02d}" for i in range(1, calendar.monthrange(y, mo)[1] + 1)]
-    client = ch_client()
+    client = client or ch_client()
 
     built = []
     if table_has_month(client, "txn", month):
@@ -461,6 +459,15 @@ def main() -> int:
     for kind, size in built:
         print(f"  -> insights[{month}/{kind}]  {size//1024} KB")
     print(f"OK -> {len(built)} bundle(s) written for {month}.")
+    return built
+
+
+def main() -> int:
+    month = os.environ.get("SB_MONTH") or (sys.argv[1] if len(sys.argv) > 1 else "")
+    if not (len(month) == 7 and month[4] == '-' and month[:4].isdigit() and month[5:].isdigit()):
+        print("ERROR: set SB_MONTH=YYYY-MM (e.g. 2026-03).", file=sys.stderr)
+        return 1
+    run(month)
     return 0
 
 

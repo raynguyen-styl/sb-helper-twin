@@ -123,7 +123,9 @@ services:
     volumes:
       - sb-ingest-work:/work                # persistent scratch for chunk assembly + DuckDB spill
     networks: [sb-net, backend]
-    deploy: { resources: { limits: { memory: 1g } } }
+    # cap allows the transient in-process insight rebuild after a load (pulls a month into DuckDB);
+    # idle usage is tiny. It's a ceiling, not a reservation.
+    deploy: { resources: { limits: { memory: 3g } } }
     logging: { options: { max-size: 10m } }
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8200/health',timeout=3).status==200 else 1)"]

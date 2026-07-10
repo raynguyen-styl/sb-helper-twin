@@ -34,6 +34,12 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 import ingest_core
+import build_insights
+
+# datasets whose load should also (re)build the month's dashboard insight bundles (so upload is
+# self-contained — no separate ch-insights step). wearable/HR bundle is deferred, so health/heart_rate
+# only refresh the pb_* playback tables (done inside load_dataset), not a bundle.
+INSIGHT_DATASETS = {"transactions", "items", "saving_spending"}
 
 WORKDIR = Path(os.environ.get("SB_INGEST_WORKDIR", "/tmp/sb-uploads"))
 SESSION_TTL_H = float(os.environ.get("SB_INGEST_SESSION_TTL_H", "24"))
@@ -238,6 +244,14 @@ async def _process(uid: str) -> None:
                     str(assembled), st["dataset"], st["month"], client=None, salt=None,
                     on_progress=on_progress, mode=st.get("mode", "replace"),
                     rebuild=st.get("rebuild", True)))
+
+            # (re)build the month's dashboard insight bundles so the upload is self-contained
+            if st.get("rebuild", True) and st["dataset"] in INSIGHT_DATASETS:
+                st["phase"] = "rebuilding"; _save(st)
+                try:
+                    await asyncio.to_thread(build_insights.run, st["month"])
+                except Exception as e:                     # best-effort — the raw load already succeeded
+                    st.setdefault("warnings", []).append(f"insights: {str(e).splitlines()[0]}")
 
             st.update(phase="done", progress=1.0, rows=result["rows"],
                       tables=result["tables"], rebuilt=result["rebuilt"])
