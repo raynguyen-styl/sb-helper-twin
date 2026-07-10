@@ -10,6 +10,17 @@ const INGEST = '/smartbuddy-ingest';          // same-origin; client nginx proxi
 const PART_SIZE = 32 * 1024 * 1024;           // 32 MB parts
 const PART_RETRIES = 4;
 
+// Shown instantly so the modal never waits on a network call; refined from /datasets once it arrives.
+const DEFAULT_DATASETS = [
+  { id: 'transactions', label: 'Canteen transactions', months: 'Feb + March', hint: 'Card/student ids are hashed and names dropped server-side. Also fills network-speed; rebuilds the map, overview, stalls + Playback.' },
+  { id: 'items', label: 'Student purchase items', months: 'March', hint: 'Student id hashed. Feeds Purchases & Nutrition (calories, Healthier-Choice).' },
+  { id: 'saving_spending', label: 'Student saving vs spending', months: 'March', hint: 'User id hashed. Feeds the Saving vs Spending view.' },
+  { id: 'health', label: 'Wearable activity (30-min)', months: 'Feb', hint: 'User ids hashed. Rebuilds the wearable Playback series.' },
+  { id: 'heart_rate', label: 'Heart rate (hourly)', months: 'Feb', hint: 'user_id + sync_id hashed.' },
+  { id: 'txn_perf', label: 'Transaction network speed', months: 'Feb', hint: 'No personal ids; per-transaction speed components (ms).' },
+  { id: 'schools', label: 'School dimension (MOE)', months: 'shared', hint: 'No personal ids; school metadata (level / zone / lat-lng).' },
+];
+
 const fmtBytes = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.round(n / 1e3)} KB`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -59,13 +70,10 @@ async function uploadFile(file, { dataset, month, mode, rebuild, onProg }) {
     }
 }
 
-export async function openUpload(onDone) {
+export function openUpload(onDone) {
     if (document.querySelector('.up-overlay')) return;              // single instance
 
-    let datasets = [{ id: 'transactions', label: 'Canteen transactions' }];
-    try { const d = await api('/datasets'); if (d.datasets?.length) datasets = d.datasets; } catch { /* gate/offline */ }
-
-    // Fixed, centered modal with a blurred backdrop that focuses the panel.
+    // Build + show the modal IMMEDIATELY — no awaiting the network, so it appears the instant you click.
     const overlay = document.createElement('div');
     overlay.className = 'up-overlay';
     overlay.innerHTML = `<div class="up-backdrop"></div>
@@ -75,11 +83,41 @@ export async function openUpload(onDone) {
           <div><div class="t">Upload data</div><span class="sub">load a month into ClickHouse</span></div>
           <button class="up-x" title="Close (Esc)">✕</button>
         </div>
-        <div class="up-modal-body"></div>
+        <div class="up-modal-body">
+          <p class="up-intro">Any size — the file is split into parts automatically. Personal ids are
+            <b>hashed</b> server-side (never stored raw, names dropped), and the month's dashboard
+            rebuilds when the upload finishes.</p>
+
+          <div class="up-grid">
+            <label class="up-field"><span class="up-label">Month</span>
+              <input type="month" class="up-in up-month" /></label>
+            <label class="up-field"><span class="up-label">Dataset</span>
+              <select class="up-in up-dataset"></select></label>
+          </div>
+          <p class="up-hint"></p>
+
+          <div class="up-field">
+            <span class="up-label">File(s)</span>
+            <div class="up-drop">
+              <span class="big">⬆</span>
+              <span class="up-drop-main">Drop files here, or <u>click to choose</u></span>
+              <span class="up-drop-sub">Parquet or CSV. Add several files for one dataset (e.g. Feb health = 6 parts) — the first replaces the month, the rest append.</span>
+            </div>
+            <input type="file" class="up-input" accept=".parquet,.csv" multiple hidden />
+            <div class="up-files"></div>
+          </div>
+
+          <div class="up-bar"><i></i></div>
+          <div class="up-actions">
+            <button class="up-btn" disabled>Upload &amp; ingest</button>
+            <span class="up-status"></span>
+          </div>
+          <div class="up-result"></div>
+        </div>
       </div>`;
     document.body.appendChild(overlay);
     document.body.style.overflow = 'hidden';                        // lock scroll behind
-    requestAnimationFrame(() => overlay.classList.add('show'));
+    requestAnimationFrame(() => overlay.classList.add('show'));     // backdrop + card fade in together
 
     const body = overlay.querySelector('.up-modal-body');
     const xBtn = overlay.querySelector('.up-x');
@@ -89,40 +127,12 @@ export async function openUpload(onDone) {
         overlay.classList.remove('show');
         document.body.style.overflow = '';
         document.removeEventListener('keydown', onKey);
-        setTimeout(() => overlay.remove(), 220);
+        setTimeout(() => overlay.remove(), 200);
     };
     function onKey(e) { if (e.key === 'Escape') close(); }
     document.addEventListener('keydown', onKey);
     overlay.querySelector('.up-backdrop').addEventListener('click', close);
     xBtn.addEventListener('click', close);
-
-    body.innerHTML = `
-      <div class="cap">Upload a <b>Parquet</b> or <b>CSV</b> (any size — split into parts automatically).
-      The server <b>hashes personal ids</b> (card/user ids never stored raw; names dropped), loads it
-      into the chosen <b>month</b>, and rebuilds the dashboard aggregates. Requires sign-in.</div>
-
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
-        <div style="flex:1;min-width:150px"><h5>Month</h5>
-          <input type="month" class="finput up-month" style="width:100%" /></div>
-        <div style="flex:2;min-width:200px"><h5>Dataset</h5>
-          <select class="finput up-dataset" style="width:100%">
-            ${datasets.map((d) => `<option value="${d.id}">${d.label}${d.months ? ` · ${d.months}` : ''}</option>`).join('')}
-          </select></div>
-      </div>
-      <div class="cap up-hint" style="margin-top:5px"></div>
-
-      <h5>File(s)</h5>
-      <div class="up-drop"><span class="big">⬆</span>Drop .parquet / .csv here, or click to choose.
-        <br><span class="cap">Pick several files for one dataset (e.g. Feb health = 6 parts) — first replaces the month, rest append.</span></div>
-      <input type="file" class="up-input" accept=".parquet,.csv" multiple hidden />
-      <div class="up-files"></div>
-
-      <div class="up-bar"><i></i></div>
-      <div style="display:flex;gap:10px;align-items:center;margin-top:12px">
-        <button class="up-btn" disabled>Upload &amp; ingest</button>
-        <span class="up-status cap"></span>
-      </div>
-      <div class="up-result" style="margin-top:12px"></div>`;
 
     const $ = (s) => body.querySelector(s);
     const monthEl = $('.up-month'), dsSel = $('.up-dataset'), hint = $('.up-hint');
@@ -130,8 +140,17 @@ export async function openUpload(onDone) {
     const bar = $('.up-bar'), barFill = $('.up-bar > i'), btn = $('.up-btn'), status = $('.up-status'), result = $('.up-result');
 
     let files = [];
+    let datasets = DEFAULT_DATASETS.slice();
     const showHint = () => { hint.textContent = datasets.find((d) => d.id === dsSel.value)?.hint || ''; };
-    showHint(); dsSel.onchange = showHint;
+    const fillDatasets = () => {
+        const cur = dsSel.value;
+        dsSel.innerHTML = datasets.map((d) => `<option value="${d.id}">${d.label}${d.months ? ` · ${d.months}` : ''}</option>`).join('');
+        if (cur) dsSel.value = cur;
+        showHint();
+    };
+    fillDatasets(); dsSel.onchange = showHint;
+    // refine labels/hints from the server; the modal is already usable meanwhile
+    api('/datasets').then((d) => { if (d?.datasets?.length) { datasets = d.datasets; fillDatasets(); } }).catch(() => {});
 
     const renderFiles = () => {
         filesEl.innerHTML = files.map((f, i) =>

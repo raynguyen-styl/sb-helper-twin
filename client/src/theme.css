@@ -48,7 +48,29 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 600; }
   background: var(--parchment); color: var(--ink-muted-48); font-size: 15px; line-height: 1; cursor: pointer; flex: none; transition: background .12s; }
 .up-modal-head .up-x:hover:not(:disabled) { background: var(--chip-translucent); color: var(--ink); }
 .up-modal-head .up-x:disabled { opacity: .35; cursor: not-allowed; }
-.up-modal-body { padding: 16px 18px 20px; overflow-y: auto; }
+.up-modal-body { padding: 22px 24px 24px; overflow-y: auto; }
+.up-intro { margin: 0 0 22px; color: var(--ink-muted-48); font-size: 13px; line-height: 1.6; }
+.up-intro b { color: var(--ink-muted-80); font-weight: 650; }
+.up-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.up-field { display: flex; flex-direction: column; gap: 8px; }
+.up-label { font-family: var(--font-display); font-size: 12.5px; font-weight: 650; color: var(--ink); }
+.up-in { height: 40px; width: 100%; border: 1px solid var(--hairline); border-radius: 10px; padding: 0 12px;
+  font-size: 13px; font-family: inherit; background: var(--canvas); color: var(--ink); outline: none;
+  transition: border-color .12s, box-shadow .12s; }
+.up-in:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,102,204,.12); }
+select.up-in { cursor: pointer; }
+.up-hint { margin: 11px 0 24px; min-height: 15px; color: var(--ink-muted-48); font-size: 12px; line-height: 1.5; }
+.up-drop { margin-top: 2px; padding: 30px 20px; border-radius: 12px; }
+.up-drop .big { font-size: 28px; }
+.up-drop-main { display: block; font-size: 13px; color: var(--ink); }
+.up-drop-main u { text-decoration: none; color: var(--primary); font-weight: 600; }
+.up-drop:hover .up-drop-main, .up-drop.drag .up-drop-main { color: var(--primary); }
+.up-drop-sub { display: block; margin-top: 7px; font-size: 11.5px; color: var(--ink-muted-48); line-height: 1.5; }
+.up-actions { display: flex; align-items: center; gap: 14px; margin-top: 24px; }
+.up-modal-body .up-btn { height: 42px; padding: 0 22px; font-size: 14px; font-weight: 650; }
+.up-status { color: var(--ink-muted-48); font-size: 12.5px; }
+.up-result:not(:empty) { margin-top: 18px; }
+@media (max-width: 480px) { .up-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .up-overlay, .up-modal { transition: none; } }
 .nav .period { color: rgba(255,255,255,.55); font-size: 12px; }
 .search { width: 260px; height: 28px; border-radius: var(--r-pill); border: none;
