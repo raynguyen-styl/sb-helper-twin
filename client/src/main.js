@@ -259,9 +259,8 @@ async function boot() {
     if (mPlay) openPlayback({});
     const openedByLink = mSchool || mStall || mTerm || (mFeb && viewAvailable('feb')) || mRole || mPlay;
     if (!openedByLink) {
-        if (!MONTHS.length) openUpload(onUploaded);   // fresh deploy, nothing uploaded yet → go upload
-        else if (role) openFirstAvailable(role);
-        else openHub(setRole);                        // pick a workspace
+        if (role) openFirstAvailable(role);
+        else openHub(setRole);                        // pick a workspace (Upload stays a nav button)
     }
 }
 boot();
