@@ -371,9 +371,12 @@ REBUILD: dict[str, list[str]] = {
 }
 
 
-if __name__ == "__main__":   # CLI: python ingest_core.py <dataset> <month> <file>
-    if len(sys.argv) != 4:
-        print("usage: ingest_core.py <dataset> <YYYY-MM> <file.parquet|csv>", file=sys.stderr)
+if __name__ == "__main__":   # CLI: python ingest_core.py <dataset> <month> <file> [mode] [rebuild]
+    if len(sys.argv) < 4:
+        print("usage: ingest_core.py <dataset> <YYYY-MM> <file.parquet|csv> [replace|append] [rebuild 0/1]",
+              file=sys.stderr)
         raise SystemExit(2)
-    out = load_dataset(sys.argv[3], sys.argv[1], sys.argv[2])
+    _mode = sys.argv[4] if len(sys.argv) > 4 else "replace"
+    _rebuild = (sys.argv[5] != "0") if len(sys.argv) > 5 else True
+    out = load_dataset(sys.argv[3], sys.argv[1], sys.argv[2], mode=_mode, rebuild=_rebuild)
     print(out)
