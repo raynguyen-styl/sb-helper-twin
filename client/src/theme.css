@@ -27,17 +27,16 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 600; }
 .month-picker option { color: #1d1d1f; }
 .up-files { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 
-/* Upload modal — fixed, centered, with a blurred backdrop that focuses the panel */
-.up-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px;
-  opacity: 0; transition: opacity .18s ease; }
-.up-overlay.show { opacity: 1; }
-.up-backdrop { position: absolute; inset: 0; background: rgba(18,18,24,.40);
-  backdrop-filter: blur(8px) saturate(115%); -webkit-backdrop-filter: blur(8px) saturate(115%); }
+/* Upload modal — fixed, centered. Solid dim scrim (paints instantly — no backdrop-filter lag) that
+   focuses the panel; only the card animates in, so the scrim + panel never appear out of sync. */
+.up-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px; }
+.up-backdrop { position: absolute; inset: 0; background: rgba(17,17,22,.5); }
 .up-modal { position: relative; width: min(540px, 94vw); max-height: 88vh; display: flex; flex-direction: column;
   background: var(--canvas); border-radius: var(--r-lg); overflow: hidden;
   box-shadow: 0 24px 70px rgba(0,0,0,.34), 0 2px 10px rgba(0,0,0,.18);
-  transform: translateY(10px) scale(.975); transition: transform .22s cubic-bezier(.2,.8,.2,1); }
-.up-overlay.show .up-modal { transform: none; }
+  opacity: 0; transform: translateY(10px) scale(.98);
+  transition: opacity .17s ease, transform .2s cubic-bezier(.2,.8,.2,1); }
+.up-overlay.show .up-modal { opacity: 1; transform: none; }
 .up-modal-head { display: flex; align-items: center; gap: 11px; padding: 16px 18px 14px;
   border-bottom: 1px solid var(--divider-soft); }
 .up-modal-head .ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
