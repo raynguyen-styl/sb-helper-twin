@@ -6,7 +6,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 tpl = open(os.path.join(HERE, "purchase_insights_template.html"), encoding="utf-8").read()
 data = open(os.path.join(HERE, "purchase_insights.json"), encoding="utf-8").read()
-chart = open(os.path.join(ROOT, "smart-buddy-app", "node_modules", "chart.js", "dist",
+chart = open(os.path.join(ROOT, "client", "node_modules", "chart.js", "dist",
                           "chart.umd.min.js"), encoding="utf-8").read()
 
 out = tpl.replace("/*__CHARTJS__*/", chart).replace("/*__DATA__*/{}", data)

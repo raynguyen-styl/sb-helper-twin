@@ -10,7 +10,7 @@ tpl = open(os.path.join(HERE, "pdf_report.html"), encoding="utf-8").read()
 #   python build_app_data.py --quarter
 g = open(os.path.join(HERE, "appdata_quarter", "global.json"), encoding="utf-8").read()
 s = open(os.path.join(HERE, "appdata_quarter", "schools.json"), encoding="utf-8").read()
-chart = open(os.path.join(ROOT, "smart-buddy-app", "node_modules", "chart.js", "dist",
+chart = open(os.path.join(ROOT, "client", "node_modules", "chart.js", "dist",
                           "chart.umd.min.js"), encoding="utf-8").read()
 
 out = (tpl.replace("/*__CHARTJS__*/", chart)

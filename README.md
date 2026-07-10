@@ -2,9 +2,9 @@
 
 Analysis of the SMART Buddy school payment + wearable ecosystem for STYL Solutions.
 **Scope: February 2026 only** — the project was narrowed to Feb on 8 Jul 2026 (March/April
-transactions and the May health drop were removed from disk; see HANDOVER.md §1 and
-DATA_PIPELINE.md §7). February is the one month where **payments and wearables overlap on the
-same calendar days**, which is what makes the day-aligned analysis possible.
+transactions and the May health drop were removed from disk; see PIPELINE.md). February is the
+one month where **payments and wearables overlap on the same calendar days**, which is what
+makes the day-aligned analysis possible.
 
 The Feb dataset: **~4.0M canteen transactions** (334 schools) + **~5.3M wearable records**
 (2.95M activity + 2.39M heart-rate, ~13,600 users). Generated from the raw Feb CSVs in `txn/`
@@ -14,7 +14,7 @@ The Feb dataset: **~4.0M canteen transactions** (334 schools) + **~5.3M wearable
 
 | File / folder | What it is | How to view |
 |---|---|---|
-| `smart-buddy-app/` | **Interactive insights app** (tree-digital-twin style), **February 2026 only** (tentative, 7 Jul — every window reads the same month) with a **role-based hub** — pick F&B / Engineering / Management and the nav shows that team's views. Windows: map + school details (per-school window: **revenue-by-stall bars**, every store individually, + a **Terminals tab** with each machine tagged to its stall and its machine-vs-site verdict), Network Overview (signal shown as plain-language quality bands; food charts read within name-verified volume), **Terminal Health** (2,604 machines with fault verdicts vs school peers), **February Insights** (day-type × user-segment × firmware × level filters). **Stall Explorer is shelved from the nav** (no item/SKU data — revisit when a menu/itemID feed exists); per-stall detail stays reachable via school windows, search and `#stall=` links. Unified search; everything cross-linked & deep-linkable (`#role=eng`, `#terminal=…`, `#feb=cny`) | **Dev:** `cd smart-buddy-app && npm install && npm run dev` → http://localhost:5188 (own port; 5173 belongs to the tree-digital-twin project). **Team-shareable:** containerized (`Dockerfile` + repo-root `docker-compose.yml`) as a static nginx site — `docker compose up -d --build` → :8088. Full steps in **DEPLOY.md** |
+| `client/` | **Interactive insights app** (tree-digital-twin style), **February 2026 only** (tentative, 7 Jul — every window reads the same month) with a **role-based hub** — pick F&B / Engineering / Management and the nav shows that team's views. Windows: map + school details (per-school window: **revenue-by-stall bars**, every store individually, + a **Terminals tab** with each machine tagged to its stall and its machine-vs-site verdict), Network Overview (signal shown as plain-language quality bands; food charts read within name-verified volume), **Terminal Health** (2,604 machines with fault verdicts vs school peers), **February Insights** (day-type × user-segment × firmware × level filters), plus a **Playback** window and a **SAM chat** panel. **Stall Explorer is shelved from the nav** (no item/SKU data — revisit when a menu/itemID feed exists); per-stall detail stays reachable via school windows, search and `#stall=` links. Unified search; everything cross-linked & deep-linkable (`#role=eng`, `#terminal=…`, `#feb=cny`) | **Dev:** `cd client && npm install && npm run dev` → http://localhost:5188 (own port; 5173 belongs to the tree-digital-twin project). **Team-shareable:** containerized (`Dockerfile` + repo-root `docker-compose.yml`) as a Vite→nginx site with Keycloak login + Playback via api-service — `docker compose up -d --build` → :8097. Full runbook in **DEPLOY.md** |
 | `SMART_Buddy_Dashboard.html` ⧗ | Main insights dashboard — KPIs, clusters, transactions, activity, heart rate, cross-dataset patterns, **data-quality report** (26 issue types) | double-click (offline, self-contained) |
 | `SMART_Buddy_Anomaly_Patterns.html` ⧗ | Root-cause drill-down of every anomaly family + prioritized action list | double-click |
 | `SMART_Buddy_Health_Anomaly_Patterns.html` ⧗ | Health-only subset of the anomaly report (payment content stripped — for the wearable supplier) | double-click |
@@ -23,7 +23,7 @@ The Feb dataset: **~4.0M canteen transactions** (334 schools) + **~5.3M wearable
 | `SMART_Buddy_Findings_Report.pdf` ⧗ | 6-page print report (whole Feb–Apr quarter): network health, speed trends, food categories, school spending ("atas" analysis) | any PDF reader |
 | `SMART_Buddy_Feb2026_Service_Report.pdf` | **February-2026 service-team report** (7-page print, Feb data only): terminal network health **with machine-vs-location fault verdicts**, speed trends, food categories, spending per school, food-type trends, and the CNY-week impact. Built for the service supervisor. Source: `SMART_Buddy_Feb2026_Service_Report.html` (self-contained) | any PDF reader |
 | `SMART_Buddy_{Dashboard,Anomaly_Patterns,Purchase_Insights,Health_Anomaly_Patterns}.pdf` | Email-ready PDF prints of the HTML reports | any PDF reader |
-| `analysis/` | The Python/DuckDB pipeline that produced everything (run order in HANDOVER.md §4) | — |
+| `analysis/` | The Python/DuckDB pipeline that produced everything (run order in PIPELINE.md §5) | — |
 
 ⧗ = **frozen historical artifact.** Built from the May health drop and/or the Feb–Apr quarter
 transactions, both removed in the 8 Jul Feb-only purge. The shipped file is unaffected but can
@@ -36,35 +36,46 @@ Shareable links (claude.ai artifacts, enable sharing before forwarding):
 - Purchase insights: https://claude.ai/code/artifact/2e53acbc-2348-4f0a-8294-63f851c056b3 (redeployed 7 Jul with the verified-name policy)
 - (No artifact yet for the Feb reports or the app.)
 
-**Sharing the app with the team** (chosen 7 Jul 2026 — app only, no database): the app
-bundles its data into the build, so it deploys as a **self-contained static nginx site**
-(no InfluxDB/Ditto/API). `Dockerfile` + `nginx.conf` in `smart-buddy-app/`, `docker-compose.yml`
-at the repo root — mirrors the tree-digital-twin `frontend` service, stripped of all backend
-wiring. **Completely separate from tree-twin-uat**: it connects to none of the shared platform
-stores (bucket `rtls`, Ditto `org.nparks`, Solace), and the compose stack is isolated by design
-(project `smartbuddy`, container `smartbuddy-frontend`, host port 8088 via `SB_FRONTEND_PORT`,
-private `sb-net` network — none of which collide with tree-twin's `nparks-*` / 8087 / `backend`).
-Placement, hostname, and auth are handled by the deploying engineer — full brief (incl. the exact
-tree-twin values to avoid and the basemap-egress caveat) in **DEPLOY.md**.
+**Sharing the app with the team**: the app now plugs into the **shared IoT platform exactly like
+tree-digital-twin** — the classic analytical windows still read their bundled JSON, but Playback
+reads the shared **ClickHouse `smartbuddy` database** through the **api-service** read service, the
+chat panel reaches the **SAM agent over Solace**, and the whole app sits behind **Keycloak login**
+(realm `styl-iot`, client `smart-buddy`). `Dockerfile` + `nginx.conf` live in `client/`, and the
+root `docker-compose.yml` brings up **client + api-service** in one stack (`docker compose up -d
+--build`); the Feb data is loaded once into ClickHouse by the `ch-ingest` one-shot from
+`docker-compose.agent.yml` (see DEPLOY.md). Isolated from tree-twin by design (project `smartbuddy`,
+containers `smartbuddy-frontend` / `smartbuddy-api`, frontend host port 8097 via `SB_FRONTEND_PORT`,
+`sb-net` + the shared external `backend` network — none of which collide with tree-twin's `nparks-*`
+/ 8087). Placement, hostname, and auth are handled by the deploying engineer — full runbook (nginx
+`/smartbuddy-api/` + `/smartbuddy-mcp/` routes, the exact tree-twin values to avoid, the
+basemap-egress caveat) in **DEPLOY.md**.
 
-## Live playback + data assistant (new — InfluxDB + Ditto, `tree-digital-twin` style)
+## Live playback + data assistant (new — `tree-digital-twin` style)
 
 Beyond the static dashboard above, the project now has a **time-playback** layer and a **chat data
-assistant**, built on the shared IoT platform (InfluxDB + Eclipse Ditto), modelled on
-`tree-digital-twin`. **All built and pushed; the first live run happens on the VM** (needs Docker +
-platform Influx/Ditto creds). Design: **PLAN_PLAYBACK_MIGRATION.md** · deploy: **SB_DEPLOY.md**.
+assistant** (a SAM agent), both served from a **single store — the shared ClickHouse `smartbuddy`
+database**. February 2026 is a fixed historical month, so there is no need for a live time-series /
+twin store: one OLAP store serves both playback and the agent (mirroring the car-identify precedent
+where one ClickHouse feeds a dashboard and playback). **All built and pushed; the first live run
+happens on the VM** (needs Docker + shared ClickHouse creds). Deploy: **DEPLOY.md**.
 
-- **Ingestion** (`smart-buddy-agent/ingestion/sb_backfill.py`): loads the Feb data into InfluxDB
-  (`sb_*` measurements = history) + Ditto (`org.smartbuddy` twins = current state). Personal ids are
-  hashed at ingest; safety flow is `--check` → dry-run → `--write` (mirrors tree-twin).
-- **Read API** (`smart-buddy-agent/sb-api/`): serves playback series (Flux) + map markers (Ditto).
-- **Playback window** (in `smart-buddy-app/`): scrub / play the February timeline — watch recess
-  spikes, the CNY drop, terminal faults, and wearable activity evolve. Additive — the existing
-  windows are unchanged; with no `VITE_SB_API_URL` set it uses built-in demo data.
+- **Ingestion** (`ingestion-service/build_feb_clickhouse.py`, the `ch-ingest` one-shot in
+  `docker-compose.agent.yml`): loads the Feb parquets into the shared ClickHouse `smartbuddy` database
+  — raw/analytical tables for the agent plus small precomputed **playback tables `pb_*`** for
+  api-service — and creates the database + the read-only user. Personal ids are hashed at ingest.
+- **Read API** (`api-service/`): serves the Playback series straight from the `pb_school_daily` /
+  `pb_wearable_daily` / `pb_schools` tables, connecting as the read-only `smartbuddy_ro` user (no host
+  port; reached via nginx `/smartbuddy-api/`).
+- **Playback window** (in `client/`): scrub / play the February **daily** timeline — school txns +
+  revenue (watch the CNY drop) and wearable steps + active users. Additive — the existing windows are
+  unchanged; with no `VITE_SB_API_URL` set it uses built-in demo data.
 - **Data assistant** (the in-app chat panel): a **SAM agent** answers natural-language questions by
-  running Flux over the **same `sb_*` InfluxDB measurements**, via the existing `IOT_UAT_MCP`
-  connector — see `smart-buddy-agent/sam-agent-instructions.md`. So the chat and the playback read
-  the one store; the classic windows read their bundled JSON.
+  running read-only **ClickHouse SQL** over the same `smartbuddy` database's raw tables, reached
+  through the **dedicated read-only user** via the `mcp-service` (`smartbuddy-mcp`) adapter — see
+  `mcp-service/agent-setup.md`. So there is **one store**: api-service reads the `pb_*` daily tables
+  and the agent reads the raw tables (via MCP); the classic windows read their bundled JSON. (No
+  InfluxDB/Ditto: Influx would blow up on the high-cardinality card/terminal ids and Ditto only holds
+  current thing-state — neither fits, so a columnar OLAP store serves both; see DEPLOY.md.)
 
 ## Headline findings
 
@@ -98,6 +109,5 @@ platform Influx/Ditto creds). Design: **PLAN_PLAYBACK_MIGRATION.md** · deploy: 
 9. Stall ↔ machine is ~1:1 (2,491 of 2,546 stalls have exactly one terminal) — "filter by machine number" and "filter by stall" are nearly the same thing.
 
 Full method notes: the Method sections inside each HTML report and the PDF appendix.
-Pipeline overview & "where the tasks run": **DATA_PIPELINE.md**.
-Pipeline architecture, metric logic & data-quality handling: **PIPELINE.md**.
-Run order, decisions & session context: **HANDOVER.md**.
+Pipeline (where tasks run, architecture, run order, metric logic & data-quality): **PIPELINE.md**.
+Deployment (dashboard + Playback + SAM agent on the shared ClickHouse stack): **DEPLOY.md**.

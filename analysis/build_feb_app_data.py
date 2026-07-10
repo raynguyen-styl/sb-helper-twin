@@ -8,7 +8,7 @@ Precomputes every filter slice the Feb window offers, so the app stays client-on
   - CNY story:  four weekday windows around CNY (before / break / return / normal)
 
 Reads  parquet/feb_{health,heart_rate,txn}.parquet  (convert_parquet_feb.py)
-Writes appdata/feb.json   (copy to smart-buddy-app/src/data/)
+Writes appdata/feb.json   (copy to client/src/data/)
 """
 import duckdb, json, os, time
 import numpy as np, pandas as pd

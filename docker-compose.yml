@@ -5,41 +5,72 @@
 # STYL Solutions Pte. Ltd. is strictly limited by the confidential information provisions of the Agreement
 # referenced above.
 #
-# SMART Buddy dashboard — static frontend only (no backend, no database).
-# COMPLETELY SEPARATE from the tree-digital-twin / tree-twin-uat project. This stack
-# connects to NONE of the shared platform stores (InfluxDB bucket `rtls`, Ditto
-# namespace `org.nparks`, Solace) — the app bundles its data into the build, so there
-# is nothing to query at runtime and no way for it to touch tree-twin's data.
+# SMART Buddy — app stack (frontend + read API), deployed on the shared VM alongside the platform.
+# February 2026 is a FIXED historical month, so there is ONE store: the shared ClickHouse `smartbuddy`
+# database. sb-api serves the dashboard's Playback window from it (read-only user); the SAM agent
+# queries the same db via docker-compose.agent.yml. NO InfluxDB / Ditto / backfill.
+# The Feb data is loaded once by the ch-ingest one-shot (see docker-compose.agent.yml + DEPLOY.md).
 #
-#   docker compose up -d --build      # build + serve on host ${SB_FRONTEND_PORT:-8088}
-#   docker compose down               # stop
+#   docker compose up -d --build          # smartbuddy-api + smartbuddy-frontend
 #
-# Isolation choices baked in here (see DEPLOY.md "Deploy brief" for the full rationale):
-#   • explicit project name `smartbuddy`  → its own network/volume namespace, not tied to the dir name
-#   • container `smartbuddy-frontend`      → does not collide with `nparks-frontend`
-#   • host port 8088 via SB_FRONTEND_PORT  → distinct var + default from tree-twin's FRONTEND_PORT (8087)
-#   • private bridge network `sb-net`      → does NOT join tree-twin's shared `backend` network by default
+# Isolation from tree-twin / other demos (checked against the live VM registry):
+#   • project `smartbuddy` · containers `smartbuddy-api` / `-frontend`
+#   • ONE public hostname: the ALB maps smart-buddy-helper-uat.styl.solutions/* → the frontend
+#     (host 8097, free on the VM). The frontend's nginx same-origin-proxies /smartbuddy-api/ +
+#     /smartbuddy-mcp/ to the internal services — so the shared nginx-proxy is NOT touched.
+#   • sb-api has NO host port — reached only via the frontend nginx at /smartbuddy-api/
+#   • data lives in the shared ClickHouse `smartbuddy` database (own db + read-only user)
+#   • `sb-net` + the shared external `backend` net (to reach clickhouse:8123, sb-api, mcp, jwt-validator)
 
 name: smartbuddy
 
 networks:
   sb-net:
     driver: bridge
-  # OPT-IN ONLY — uncomment (and the matching `networks:` line on the service) if the
-  # colleague chooses to co-host on the shared VM and route via the platform nginx-proxy.
-  # backend:
-  #   external: true
-  #   name: ${BACKEND_NETWORK:-solace-pubsub-geo-filtering_backend}
+  backend:
+    external: true
+    name: ${BACKEND_NETWORK:-solace-pubsub-geo-filtering_backend}
 
 services:
-  frontend:
+  # ── read API — serves Playback from ClickHouse `smartbuddy` (read-only user); via /smartbuddy-api/ ─
+  smartbuddy-api:
+    build: { context: ./api-service }
+    container_name: smartbuddy-api
+    restart: always
+    environment:
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-smartbuddy}
+      CLICKHOUSE_USER: ${CLICKHOUSE_RO_USER:-smartbuddy_ro}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_RO_PASSWORD:?set CLICKHOUSE_RO_PASSWORD (the read-only user's password)}
+      SB_API_PORT: "3320"
+      SB_API_KEY: ${SB_API_KEY:-}
+    expose: ["3320"]                        # in-network only; NO host port (proxy fronts it, like nparks-api)
+    networks: [sb-net, backend]
+    deploy: { resources: { limits: { memory: 128m } } }
+    logging: { options: { max-size: 10m } }
+
+  # ── frontend (Vite → nginx). Playback reads sb-api; chat reaches SAM over Solace ─────────────────
+  smartbuddy-frontend:
     build:
-      context: ./smart-buddy-app
+      context: ./client
+      args:
+        # Playback API base (proxied sb-api). Empty → Playback uses bundled demo data (offline dev).
+        VITE_SB_API_URL: ${VITE_SB_API_URL:-}
+        # Keycloak (shared realm styl-iot). Empty → app runs without login (local dev only).
+        VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL:-}
+        VITE_KEYCLOAK_REALM: ${VITE_KEYCLOAK_REALM:-styl-iot}
+        VITE_KEYCLOAK_CLIENT_ID: ${VITE_KEYCLOAK_CLIENT_ID:-smart-buddy}
+        # SAM chat transport (low-priv demo Solace creds; baked into the bundle).
+        VITE_SOLACE_URL: ${VITE_SOLACE_URL:-}
+        VITE_SOLACE_VPN: ${VITE_SOLACE_VPN:-}
+        VITE_SOLACE_USER: ${VITE_SOLACE_USER:-}
+        VITE_SOLACE_PASSWORD: ${VITE_SOLACE_PASSWORD:-}
     container_name: smartbuddy-frontend
     restart: always
     ports:
-      - "${SB_FRONTEND_PORT:-8088}:8080"   # 8088 avoids tree-twin's frontend (8087)
-    networks: [sb-net]
-    # networks: [sb-net, backend]          # use instead when joining the shared proxy
+      - "${SB_FRONTEND_PORT:-8097}:8080"    # ALB maps smart-buddy-helper-uat.styl.solutions/* here (8097 free on the VM)
+    # on `backend` too: this container's nginx same-origin-proxies /smartbuddy-api/ + /smartbuddy-mcp/
+    # to the sb-api / mcp / jwt-validator containers (see client/nginx.conf) — one hostname serves all.
+    networks: [sb-net, backend]
     deploy: { resources: { limits: { memory: 64m } } }
     logging: { options: { max-size: 10m } }

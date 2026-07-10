@@ -1,127 +1,227 @@
-# SMART Buddy dashboard — deployment brief
+# DEPLOY — SMART Buddy (dashboard + Playback + SAM agent)
 
-**For the engineer deploying this.** SMART Buddy is a **completely separate project**
-from the tree-digital-twin (`tree-twin-uat.styl.solutions`). This brief has everything
-needed to stand it up **without conflicting with tree-twin's data or server**.
-
-Everything up to the actual VM/host build is done and verified here. The three
-infrastructure decisions (**where it runs**, **hostname**, **auth**) are yours — they're
-laid out in §3 with a checklist for each.
+Single deploy runbook for the whole SMART Buddy stack. It is a **separate project** from
+tree-digital-twin (`tree-twin-uat.styl.solutions`) but **plugs into the same shared IoT platform**
+(shared ClickHouse / Solace / Keycloak) the same way tree-twin does — but it is fronted by its OWN
+nginx (in the client container), so the shared platform nginx-proxy is untouched. Everything is built and
+boot-validated; the **first live run happens on the VM** (it needs Docker + the shared ClickHouse).
 
 ---
 
-## 1 · What it is (and why there's no database)
+## 1 · Architecture (ClickHouse-only, two compose stacks)
 
-The interactive app (`smart-buddy-app/`, Vite + MapLibre) reads its data from precomputed
-JSON that Vite **bundles into the build at compile time** (`src/main.js`:
-`import GLOBAL from './data/global.json'` …). The built `dist/` is therefore fully
-self-contained: **no API, no InfluxDB, no Ditto, no Solace, no Keycloak client in the app.**
-The entire runtime is one nginx container serving static files.
+February 2026 is a **fixed historical month**, so there is **ONE data store**: the shared ClickHouse
+instance (atlantic's `clickhouse`, in-network) with its own **`smartbuddy` database**. Both the
+**Playback API** and the **SAM agent** read it as a **read-only user (`smartbuddy_ro`)**. There is
+**no InfluxDB / Ditto / backfill** — see "Why ClickHouse" below.
 
-**Consequence for you:** there is *nothing to point at a backend*. Unlike the tree-twin
-frontend, this build takes **no `VITE_*` args** — `docker compose up -d --build` is the
-whole build. (The reports `SMART_Buddy_*.html/.pdf` in the repo root are separate,
-double-click-to-open files and need no hosting at all.)
+ONE public hostname. The ALB maps `smart-buddy-helper-uat.styl.solutions/*` to the client container;
+the client's OWN nginx same-origin-routes everything (like car-identify's dashboard / atlantic's
+super-admin-web), so the shared platform nginx-proxy is **not touched**:
 
-## 2 · Isolation from tree-twin-uat — the guarantees
+```
+ ALB: smart-buddy-helper-uat.styl.solutions/*  ─▶  client (Vite→nginx, host :8097)
+        ├─ /                → static SPA  (Keycloak login: realm styl-iot, client smart-buddy)
+        ├─ /smartbuddy-api/ → api-service :3320   (JWT via jwt-validator) ─┐ read-only
+        └─ /smartbuddy-mcp/ → mcp-service :3501    (Bearer MCP_API_KEY)    ─┤ smartbuddy_ro
+                                                                           ▼
+                                     shared ClickHouse  →  database `smartbuddy`
+                                     (loaded once by ingestion-service / ch-ingest)
+ SAM chat: browser ─Solace─▶ SAM agent (mesh) ─▶ https://<host>/smartbuddy-mcp/mcp
+```
 
-### Data: safe by construction (no shared-store access exists)
-SMART Buddy has **no code path** to any shared platform store. This is structural, not a
-setting:
+| Service | Dir | Container | Port | Exposure |
+|---|---|---|---|---|
+| **client** (dashboard + Playback + SAM chat + Keycloak login) | `client/` | `smartbuddy-frontend` | host **8097** → 8080 | ALB maps the demo hostname/* → host 8097; its nginx routes the rest |
+| **api-service** (Playback read API — reads `pb_*` daily tables) | `api-service/` | `smartbuddy-api` | 3320 (in-network, **no host port**) | client nginx `/smartbuddy-api/` (Keycloak JWT via jwt-validator) |
+| **mcp-service** (SAM agent NL→SQL adapter) | `mcp-service/` | `smartbuddy-mcp` | 3501 (in-network, **no host port**) | client nginx `/smartbuddy-mcp/` (Bearer `SB_MCP_API_KEY`) |
+| **ingestion-service** (one-shot Feb load) | `ingestion-service/` | `smartbuddy-ch-ingest` | — | compose profile `ingest` (not a running service) |
 
-| Shared store | tree-twin-uat uses | SMART Buddy | Conflict |
-|---|---|---|---|
-| InfluxDB org `styl`, bucket `rtls` | tilt telemetry | never connects | **None** |
-| Eclipse Ditto namespace `org.nparks` | one Thing per tree | never connects | **None** |
-| Solace VPN `ai-poc-event-broker`, topic `nparks` | pub/sub | never connects | **None** |
+Two compose files, one project (`smartbuddy`):
+- **`docker-compose.yml`** — the **app stack**: `client` + `api-service`.
+- **`docker-compose.agent.yml`** — the **agent stack**: `mcp-service` + the `ch-ingest` one-shot.
 
-### Server: values tree-twin-uat already occupies — **do NOT reuse these**
-(Structural values only; live secrets live in the VM's `.env`, not here.)
+Isolation from tree-twin / other demos (own project / port / container names, own `smartbuddy` db +
+Solace topic — none collide): project `smartbuddy`; containers `smartbuddy-{frontend,api,mcp}`;
+frontend host port **8097** (tree-twin is 8087); networks `sb-net` (private) + external `backend`
+(so the client nginx reaches `clickhouse:8123` / `smartbuddy-api` / `smartbuddy-mcp` / `jwt-validator`
+by name); Keycloak client
+`smart-buddy` (never reuse `nparks-tree-twin`).
 
-| Resource | tree-twin-uat value |
-|---|---|
-| Public domain | `tree-twin-uat.styl.solutions` |
-| Shared platform host | `iot-uat.styl.solutions` (Keycloak `/auth`, Ditto `/ditto-raw`, Influx `influxdb.iot-uat…`, API `/api/nparks`) |
-| Host ports | **8087** frontend · **3310** api · **3400** forecast · **3300** history-api |
-| Container names | `nparks-frontend` · `nparks-api` · `nparks-forecast-service` · `nparks-ingestion` |
-| Compose project | `tree-digital-twin` |
-| Docker networks | `twin` (bridge) + external `solace-pubsub-geo-filtering_backend` |
-| Keycloak | realm `styl-iot`, client `nparks-tree-twin` |
+**Why ClickHouse (and NOT Influx/Ditto):** the agent needs rich ad-hoc SQL (joins, `GROUP BY`,
+medians, distinct counts) over millions of Feb rows. *InfluxDB* is tag-keyed time-series and would
+blow up on the high-cardinality `cardId`/`terminalId` values (no real joins); *Ditto* stores current
+thing-state (one doc per device), not millions of transactional rows. A columnar **OLAP** store fits,
+and the platform already runs a shared ClickHouse — so SMART Buddy's Feb working set goes into its
+own `smartbuddy` database and is queried read-only.
 
-### Values SMART Buddy already claims (chosen NOT to collide)
-| Resource | SMART Buddy value | Set where |
+---
+
+## 2 · Standard deploy flow (how changes reach the VM)
+
+**Never edit code/config directly on the VM.** Local is the source of truth:
+
+1. Make changes **locally**, commit, `git push` to GitHub.
+2. On the VM: `git pull` in the repo, then run the `docker compose` command(s) below.
+3. **Gitignored files (`.env`, parquets) are NOT in git** — for those, either
+   - run `./bootstrap-env.sh` on the VM (assembles `.env` from the sibling `/data` repos + fresh
+     secrets), or
+   - keep the local `.env` as source of truth and **`scp` it up** to the VM repo root;
+   - copy the Feb parquets under `./analysis/` up to the VM (`scp -r`) — the ingest one-shot reads them.
+
+So: **local → GitHub → VM `git pull` → `docker compose`**; secrets/data ride over `scp` (or
+`bootstrap-env.sh`), never committed.
+
+---
+
+## 3 · Environment
+
+`docker compose` reads the **single repo-root `.env`** for both stacks. Generate it on the VM:
+
+```bash
+# on the VM, in the repo root:
+./bootstrap-env.sh        # assembles .env from the sibling /data repos + fresh per-demo secrets
+#   (or: cp .env.example .env and fill by hand). Review the ✓ SET / ✗ MISSING checklist it prints.
+```
+`bootstrap-env.sh` writes the root `.env` **plus** three per-service `.env` files
+(`client/.env`, `api-service/.env`, `mcp-service/.env`) used only for local `npm run dev`/`npm start`;
+the docker deploy uses the root `.env`. If you edit `.env` locally instead, `scp` it up.
+
+Variables this stack uses:
+
+| Variable | Used by | Notes |
 |---|---|---|
-| Host port | **8088** (override with env `SB_FRONTEND_PORT`) | `docker-compose.yml` |
-| Container name | `smartbuddy-frontend` | `docker-compose.yml` |
-| Compose project | `smartbuddy` (pinned via `name:`) | `docker-compose.yml` |
-| Docker network | `sb-net` (private bridge; **does not** join tree-twin's `backend`) | `docker-compose.yml` |
-| Internal listen port | `8080` (inside the container only) | `smart-buddy-app/nginx.conf` |
-| Domain / Keycloak client | **none yet — your decision (§3)** | — |
+| `CLICKHOUSE_URL` | api-service, mcp-service, ch-ingest | `http://clickhouse:8123` (in-network) |
+| `CLICKHOUSE_DB` | all | `smartbuddy` |
+| `CLICKHOUSE_RO_USER` / `CLICKHOUSE_RO_PASSWORD` | api-service, mcp-service (+ created by ch-ingest) | the **read-only** user both read services connect as |
+| `CLICKHOUSE_ADMIN_USER` / `CLICKHOUSE_ADMIN_PASSWORD` | **ch-ingest only** | shared-instance superuser — needed once to `CREATE` the db + read-only user. Not used at runtime |
+| `SB_ID_SALT` | ch-ingest | pin to keep hashed card/user tokens stable across re-ingests (else ephemeral per run) |
+| `SB_FRONTEND_PORT` | client | host port for the frontend (default **8097**) |
+| `VITE_SB_API_URL` | client (build arg) | api-service base — **same-origin** `/smartbuddy-api` (the client nginx proxies it). Empty → Playback uses bundled demo data |
+| `VITE_KEYCLOAK_URL` / `VITE_KEYCLOAK_REALM` / `VITE_KEYCLOAK_CLIENT_ID` | client (build arg) | realm `styl-iot`, client `smart-buddy`. Empty `VITE_KEYCLOAK_URL` → no login (local dev only) |
+| `VITE_SOLACE_URL` / `VITE_SOLACE_VPN` / `VITE_SOLACE_USER` / `VITE_SOLACE_PASSWORD` | client (build arg) | SAM chat transport — **low-priv** demo creds (they ship in the browser bundle) |
+| `SB_MCP_API_KEY` | mcp-service | Bearer token the SAM agent sends to the MCP. **Fresh** random secret (`openssl rand -hex 32`) — never a tree-twin key |
 
-## 3 · The three decisions you own (+ checklist for each)
+The frontend bakes its `VITE_*` at **build** time — rebuild the `client` service after changing any.
+No `INFLUX_*` / `DITTO_*`: that store does not exist here.
 
-> Whatever you pick, the compose stack stays fully isolated (own project, port, network;
-> no shared stores). These decisions only affect *how it's exposed and gated*.
+---
 
-### A · Where it runs
-- **Same shared UAT VM, isolated** — put it in e.g. `/data/smart-buddy-dashboard`,
-  `docker compose up -d --build`. It listens on host `8088` and shares nothing but the
-  kernel. Route it via the platform nginx-proxy (see B).
-- **Separate / dedicated host** — copy the repo, `docker compose up -d --build`, put any
-  reverse proxy + TLS in front. Nothing is shared with tree-twin at all.
+## 4 · Deploy commands (run on the VM, from the repo root)
 
-### B · Hostname / routing
-Give it its **own** hostname — never `tree-twin-uat.styl.solutions`. Suggested:
-`smart-buddy-uat.styl.solutions`.
+```bash
+# 4a. Load the Feb data into ClickHouse (ONCE) — the ch-ingest one-shot.
+#     Creates the `smartbuddy` db + read-only user AND loads the agent tables + the pb_* playback
+#     tables. Needs the parquets under ./analysis on the host (gitignored — scp them up first).
+docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-ingest
 
-**If routing via the shared nginx-proxy (same-VM path):**
-1. In `docker-compose.yml`, uncomment the `backend` external-network block **and** switch
-   the service line to `networks: [sb-net, backend]` so the proxy can resolve
-   `smartbuddy-frontend`.
-2. Add a proxy server block: `server_name smart-buddy-uat.styl.solutions;` →
-   `location / { proxy_pass http://smartbuddy-frontend:8080; }` (+ `/healthz` is available
-   for upstream checks). No `/api/` route needed — there is no API.
-3. Issue TLS for the new hostname; add the DNS record.
+# 4b. Bring up the app stack (client + api-service):
+docker compose up -d --build
 
-**If on a separate host:** point your reverse proxy / load balancer at `host:8088`
-(or publish 80/443 directly). Same single `location /` → the container.
+# 4c. Bring up the SAM agent stack (mcp-service):
+docker compose -f docker-compose.yml -f docker-compose.agent.yml up -d --build
+```
 
-### C · Auth (the app carries real card / device / user IDs — gate it)
-- **Own Keycloak client on realm `styl-iot`** — create a **new** client (e.g.
-  `smart-buddy-dashboard`); do **not** reuse `nparks-tree-twin`. Gate at the proxy with
-  `auth_request` (like tree-twin's `/api/`), add the client to the shared `jwt-validator`
-  `JWT_ALLOWED_CLIENTS`, and add `https://<hostname>/*` to the client redirect URIs.
-  ⚠ Note: the app has **no** `keycloak-js` login flow built in, so proxy-level
-  `auth_request` gating is the intended approach. App-level OIDC login would be extra work.
-- **Basic auth / IP allowlist at the proxy** — simplest; no Keycloak client needed.
-- **Internal network only** — acceptable only if the network itself is the boundary.
+`build_feb_clickhouse.py` (ingestion-service) transforms the Feb parquets — reusing `taxonomy.py`
+plus the same PII hashing + student-traffic filter as the analysis pipeline — then, as the ClickHouse
+**admin**, creates the `smartbuddy` database and loads **MergeTree tables with NO TTL** (permanent,
+unlike atlantic's 30-day raw tables):
+- **for the agent** — `feb_txn`, `feb_health`, `feb_heart_rate`, `txn_perf_202602`, `schools`,
+  `stall_category` + the `tx` / `stallcat` views;
+- **for api-service (Playback)** — the small precomputed daily rollups `pb_schools`,
+  `pb_school_daily` (per-school txns + revenue) and `pb_wearable_daily` (cohort steps + active users),
+  so the read API never runs heavy aggregation on the shared instance.
 
-## 4 · Files in this repo
+It then creates the dedicated **read-only user** `smartbuddy_ro` (`SELECT` only on `smartbuddy.*`).
+Idempotent — re-run to refresh the snapshot.
 
-| File | Role |
-|---|---|
-| `smart-buddy-app/Dockerfile` | two-stage `node` build → `nginx:1.27-alpine` serving `dist/` on 8080 |
-| `smart-buddy-app/nginx.conf` | SPA fallback (hash routing), immutable `/assets/` cache, `/healthz` |
-| `smart-buddy-app/.dockerignore` | keeps `node_modules`/`dist`/`.env` out of the build context |
-| `docker-compose.yml` (repo root) | the whole stack — one isolated `frontend` service |
+---
 
-## 5 · Operational notes
+## 5 · Hostname + routing (ONE hostname, no shared-proxy change)
 
-- **Basemap needs outbound internet.** MapLibre fetches Carto Positron tiles from a CDN at
-  runtime. With egress the map renders; on a fully air-gapped host the basemap image is
-  blank (all data, charts, tables, school list still work). If air-gapped, self-host a tile
-  source and repoint MapLibre.
-- **Data is a point-in-time snapshot** (Feb 2026, generated 7 Jul 2026). To refresh:
-  regenerate the JSON via the `analysis/` pipeline (HANDOVER.md §4), copy into
-  `smart-buddy-app/src/data/`, then `docker compose up -d --build` to bake it into a new image.
-- **Dev server unchanged.** `npm run dev` (5188) / `npm run preview` (5189) still work for
-  local iteration; the container is the shareable artifact.
-- **Verified here:** `npm run build` succeeds (self-contained `dist/` = 1 HTML + 1 CSS +
-  1 JS). The image itself was **not** built here (no Docker on the analysis workstation) —
-  first real build happens on your target host.
+Everything is served under **one** hostname — `smart-buddy-helper-uat.styl.solutions/*` (never reuse
+`tree-twin-uat…`). You only need **one ALB rule**: map that hostname to the **client** container
+(host port **8097**), plus its DNS record + TLS at the ALB. That's it — the **shared platform
+nginx-proxy is NOT touched.**
 
-## 6 · No-Docker fallback
+The client's own nginx (`client/nginx.conf`) same-origin-routes the rest — the same pattern
+car-identify's dashboard and atlantic's super-admin-web use:
+- `/` → the static SPA (the browser then does Keycloak login via keycloak-js).
+- `/smartbuddy-api/` → `smartbuddy-api:3320`, **gated by Keycloak JWT** (`auth_request` → the shared
+  `jwt-validator:3200`; answers carry hashed-but-real ids).
+- `/smartbuddy-mcp/` → `smartbuddy-mcp:3501`, guarded by the MCP's own **Bearer `SB_MCP_API_KEY`**;
+  the SAM agent's MCP base URL is `https://smart-buddy-helper-uat.styl.solutions/smartbuddy-mcp/mcp`.
 
-`npm run build` produces `smart-buddy-app/dist/` — a static folder you can drop onto any
-static host (internal IIS/nginx, an HTTP file share, an object-store static site). Serve
-`index.html` with SPA fallback; behaviour is identical.
+For this the **client container joins the external `backend` network** (already set in
+`docker-compose.yml`) so its nginx reaches `smartbuddy-api` / `smartbuddy-mcp` / `jwt-validator` by
+name. `api-service` and `mcp-service` have **no host port** — they are reachable only through the
+client nginx.
+
+---
+
+## 6 · Keycloak
+
+Register a **`smart-buddy`** client in the Keycloak admin console (realm `styl-iot`), add it to the
+platform **`JWT_ALLOWED_CLIENTS`**, and add `https://<hostname>/*` to its redirect URIs — exactly like
+the other demos. The frontend ships a `keycloak-js` login flow (`VITE_KEYCLOAK_*`) and the
+`/smartbuddy-api/` route is gated by `auth_request`. Never reuse `nparks-tree-twin`. If you skip
+Keycloak (local dev / internal-only), leave `VITE_KEYCLOAK_URL` empty and gate at the proxy instead.
+
+---
+
+## 7 · Register the SAM agent (mesh owner)
+
+- Create the SAM agent (model `claude-opus-4-8`) from **`mcp-service/agent-prompt.md`** (design/schema
+  brief) and paste the instructions from **`mcp-service/agent-setup.md`** into the SAM "Instructions"
+  field, with the MCP endpoint + `SB_MCP_API_KEY` (§4/§5) and a **new** Anthropic API key (do not
+  reuse another project's key).
+- Add the Event Gateway rule: subscribe `STYL/iot/smartbuddy/system/*/v1/sam/chat/request`, reply on
+  `.../system/{same}/v1/sam/chat/response` (and optionally `.../error`).
+- Point the FE at Solace via `VITE_SOLACE_*` and rebuild the `client` service; the chat panel goes
+  live. With no SAM env configured, the chat panel simply shows "offline" — the rest is unaffected.
+
+---
+
+## 8 · Verify end-to-end
+
+1. **ch-ingest ran:** ClickHouse `smartbuddy` has the agent tables + the `pb_*` playback tables.
+2. **api-service health:** `docker compose exec smartbuddy-api wget -qO- http://localhost:3320/health`
+   → `{"status":"ok","store":"clickhouse","db":"smartbuddy"}`. `/api/schools` returns the school list
+   (biggest spenders first, PBS on top); `/api/schools/PBS/playback` returns a per-day series.
+3. **Playback:** dashboard → Playback → pick a school → the daily timeline animates real Feb data
+   (watch the CNY 16–18 revenue drop).
+4. **SAM chat:** ask *"Which school spends the most?"* → **PBS, ~$321,334**.
+
+---
+
+## 9 · Safety notes (shared instance — keep these)
+
+- **Personal ids anonymised at ingest** — `cardId`, `user_id`, `sync_id` become one-way salted-hash
+  tokens (`sb_…`) before rows ever reach ClickHouse (pin `SB_ID_SALT` to keep them stable). Grouping/
+  counting is preserved; the real 16-digit card / wearable id can never be emitted.
+- **Own `smartbuddy` database** — walled off from atlantic's raw UWB/camera tables.
+- **Dedicated read-only user** (`smartbuddy_ro`, `SELECT` only on `smartbuddy.*`) — the read services
+  cannot touch the other demos' tables.
+- **No TTL** on the SMART Buddy MergeTree tables — this transactional month is permanent, unlike the
+  shared instance's 30-day raw tables.
+- **mcp-service session is hard read-only** (`readonly=2`) — no writes, no per-query setting changes;
+  plus a `run_sql` guard (single statement, must start `SELECT`/`WITH`, DDL/data-movement denylist),
+  a per-query **row cap** (1000 default / 5000 max), a **15 s timeout**, and a **~2 GB memory cap**, so
+  a heavy agent query can't starve the shared instance's live ingest.
+- **Bearer `SB_MCP_API_KEY`** on `/smartbuddy-mcp/`; the Solace creds in the FE bundle are public, so
+  scope them low-privilege to the smartbuddy chat topics only.
+- **Basemap needs outbound internet** — MapLibre fetches Carto Positron tiles from a CDN at runtime;
+  on an air-gapped host the basemap is blank (all data/charts/tables/list still work).
+
+---
+
+## 10 · Refresh / rollback
+
+- **Refresh the snapshot:** regenerate the parquets via the `analysis/` pipeline (see PIPELINE.md),
+  copy them to `./analysis` on the VM, and re-run the `ch-ingest` one-shot (§4a).
+- **Rollback:** `DROP DATABASE smartbuddy` on the shared ClickHouse removes all SMART Buddy data
+  without touching the other demos (own db + read-only user). Bring the stacks down with
+  `docker compose down` (add `-f docker-compose.agent.yml` for the agent stack).
+
+*Companion docs: **README.md** (overview + data facts + deliverables) · **PIPELINE.md** (the offline
+analysis pipeline that produces the parquets/JSON/reports).*

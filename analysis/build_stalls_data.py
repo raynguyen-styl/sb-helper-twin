@@ -13,7 +13,7 @@ Verdict logic (machine vs location): a terminal is compared to its school peers
 bad terminal + bad peers => the site (location/network).
 
 Reads  parquet/feb_txn.parquet, parquet/txn_perf_202602.parquet, school_geo.json
-Writes appdata/stalls.json   (copy to smart-buddy-app/src/data/)
+Writes appdata/stalls.json   (copy to client/src/data/)
 """
 import duckdb, json, os, time
 import pandas as pd

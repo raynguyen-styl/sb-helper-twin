@@ -7,16 +7,14 @@
 # ── Regenerable DuckDB parquet (rebuilt by analysis/convert_*.py) ──
 /analysis/parquet/
 
-# ── SAM agent DuckDB store (real card/device/user IDs; rebuilt by build_feb_duckdb.py) ──
-/smart-buddy-agent/data/
-# Aggregate CSV artifacts for SAM upload (regenerable; internal school-spend summaries) ──
-/smart-buddy-agent/artifacts/
-# Ingestion dry-run output (Influx line-protocol + Ditto JSON; regenerable) ──
-/smart-buddy-agent/ingestion/out/
-# Local env files (secrets: MCP_API_KEY, Anthropic key, Solace creds) — NEVER commit
+# Local env files (secrets: ClickHouse creds, MCP key, Solace creds) — NEVER commit
 .env
-/smart-buddy-agent/**/.env
-/smart-buddy-app/.env
+.env.bak.*
+!.env.example
+/client/.env
+/api-service/.env
+/mcp-service/.env
+/ingestion-service/.env
 
 # ── Python caches ──
 __pycache__/
@@ -24,14 +22,15 @@ __pycache__/
 
 # ── Node / Vite build output ──
 node_modules/
-/smart-buddy-app/dist/
+/client/dist/
+/client/.vite/
 
 # ── Generated reports — embed real sample card/device/user IDs; kept out per repo scope ──
 /SMART_Buddy_*.html
 /SMART_Buddy_*.pdf
 /analysis/*_spliced.html
 
-# ── Generated pipeline output JSON (regenerable; duplicates smart-buddy-app/src/data) ──
+# ── Generated pipeline output JSON (regenerable; duplicates client/src/data) ──
 /analysis/appdata/
 # build_app_data.py --quarter output (feeds the Findings PDF splice)
 /analysis/appdata_quarter/
