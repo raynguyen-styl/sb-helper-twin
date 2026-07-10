@@ -95,7 +95,10 @@ services:
       CLICKHOUSE_USER: ${CLICKHOUSE_RW_USER:-smartbuddy_rw}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_RW_PASSWORD:?set CLICKHOUSE_RW_PASSWORD}
       SB_MONTH: ${SB_MONTH:-}   # pass per run: SB_MONTH=2026-03 docker compose … run --rm ch-insights
-    deploy: { resources: { limits: { memory: 3g } } }   # pulls a month of txn+txn_perf into DuckDB
+      SB_DUCKDB_MEMORY: ${SB_DUCKDB_MEMORY:-1GB}
+    volumes:
+      - sb-ingest-work:/work      # DuckDB spill dir (temp_directory=/work/duckdb_tmp)
+    deploy: { resources: { limits: { memory: 5g } } }   # pulls a month of txn+txn_perf into pandas/DuckDB
     networks: [sb-net, backend]
     logging: { options: { max-size: 10m } }
 

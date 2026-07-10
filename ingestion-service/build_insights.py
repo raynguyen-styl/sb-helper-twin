@@ -69,14 +69,26 @@ def put(client, month: str, kind: str, obj: dict) -> int:
 # ── transaction bundles (DuckDB, reusing the analysis SQL) ───────────────────────
 def register_facts(con, client, month: str) -> None:
     """Pull the month's txn + txn_perf as Arrow and register them + the tx/stallcat/txm views."""
+    con.execute("SET timezone='Asia/Singapore'")
+    con.execute(f"SET memory_limit='{os.environ.get('SB_DUCKDB_MEMORY', '1GB')}'")   # bound + spill to disk
+    con.execute("SET temp_directory='/work'")   # /work volume (mounted in both ingest + ch-insights)
     keep_txn = ("id, schoolId, storeId, storeName, terminalId, amount, txn_date, txn_time, cardId, "
                 "paymentMode, paymentType, errorCode")
     # query_df (pandas) → DuckDB register. Avoids the optional pyarrow dep; DuckDB queries the frame.
-    con.register("txn", client.query_df(
-        f"SELECT {keep_txn} FROM {CH_DB}.txn WHERE month = %(m)s", parameters={"m": month}))
-    con.register("txn_perf", client.query_df(
-        f"SELECT * FROM {CH_DB}.txn_perf WHERE month = %(m)s", parameters={"m": month}))
-    con.execute("SET timezone='Asia/Singapore'")
+    txn = client.query_df(f"SELECT {keep_txn} FROM {CH_DB}.txn WHERE month = %(m)s", parameters={"m": month})
+    perf = client.query_df(f"SELECT * FROM {CH_DB}.txn_perf WHERE month = %(m)s", parameters={"m": month})
+    # shrink pandas memory: repeated-value string columns → category (skip high-cardinality ids)
+    for df in (txn, perf):
+        for col in df.select_dtypes(include=["object"]).columns:
+            if col in ("cardId", "id"):
+                continue
+            try:
+                if df[col].nunique(dropna=True) * 3 < len(df):
+                    df[col] = df[col].astype("category")
+            except Exception:
+                pass
+    con.register("txn", txn)
+    con.register("txn_perf", perf)
     # tx: student-traffic working set + derived cols both build sections use
     con.execute(f"""CREATE OR REPLACE VIEW tx AS
         SELECT *, {LEVEL} AS level, extract(hour FROM CAST(txn_time AS TIME)) AS hh,
