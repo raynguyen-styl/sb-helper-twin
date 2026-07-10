@@ -19,7 +19,8 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 600; }
 .app { display: flex; flex-direction: column; height: 100vh; }
 .nav { height: 44px; background: var(--black); color: #fff; display: flex; align-items: center;
     justify-content: space-between; padding: 0 20px; font-size: 13px; flex: none; }
-.nav .brand { font-weight: 600; }
+.nav .brand { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.brand-logo { height: 20px; width: 20px; border-radius: 5px; object-fit: cover; flex: none; }
 .nav-right { display: flex; align-items: center; gap: 14px; }
 .nav .period { color: rgba(255,255,255,.55); font-size: 12px; }
 .search { width: 260px; height: 28px; border-radius: var(--r-pill); border: none;

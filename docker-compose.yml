@@ -15,7 +15,7 @@
 #
 # Isolation from tree-twin / other demos (checked against the live VM registry):
 #   • project `smartbuddy` · containers `smartbuddy-api` / `-frontend`
-#   • ONE public hostname: the ALB maps smart-buddy-helper-uat.styl.solutions/* → the frontend
+#   • ONE public hostname: the ALB maps smartbuddy-helper-uat.styl.solutions/* → the frontend
 #     (host 8097, free on the VM). The frontend's nginx same-origin-proxies /smartbuddy-api/ +
 #     /smartbuddy-mcp/ to the internal services — so the shared nginx-proxy is NOT touched.
 #   • sb-api has NO host port — reached only via the frontend nginx at /smartbuddy-api/
@@ -68,7 +68,7 @@ services:
     container_name: smartbuddy-frontend
     restart: always
     ports:
-      - "${SB_FRONTEND_PORT:-8097}:8080"    # ALB maps smart-buddy-helper-uat.styl.solutions/* here (8097 free on the VM)
+      - "${SB_FRONTEND_PORT:-8097}:8080"    # ALB maps smartbuddy-helper-uat.styl.solutions/* here (8097 free on the VM)
     # on `backend` too: this container's nginx same-origin-proxies /smartbuddy-api/ + /smartbuddy-mcp/
     # to the sb-api / mcp / jwt-validator containers (see client/nginx.conf) — one hostname serves all.
     networks: [sb-net, backend]

@@ -14,7 +14,7 @@ as a **dedicated read-only user** (`smartbuddy_ro`, SELECT only on that database
 - **Description:** `Answers questions about the February 2026 SMART Buddy canteen + wearable data by writing read-only ClickHouse SQL over the smartbuddy database.`
 
 ## 2 · Connector / tools
-Attach the **`smartbuddy-mcp`** MCP endpoint (`https://smart-buddy-helper-uat.styl.solutions/smartbuddy-mcp/mcp`, Bearer
+Attach the **`smartbuddy-mcp`** MCP endpoint (`https://smartbuddy-helper-uat.styl.solutions/smartbuddy-mcp/mcp`, Bearer
 `MCP_API_KEY`). The agent uses its tools: `get_server_time`, `resolve_time_range`, `list_tables`,
 `describe_table`, `sample_rows`, and `run_sql` (the main tool — one read-only `SELECT`/`WITH` query).
 

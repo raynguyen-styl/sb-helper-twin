@@ -15,12 +15,12 @@ instance (atlantic's `clickhouse`, in-network) with its own **`smartbuddy` datab
 **Playback API** and the **SAM agent** read it as a **read-only user (`smartbuddy_ro`)**. There is
 **no InfluxDB / Ditto / backfill** — see "Why ClickHouse" below.
 
-ONE public hostname. The ALB maps `smart-buddy-helper-uat.styl.solutions/*` to the client container;
+ONE public hostname. The ALB maps `smartbuddy-helper-uat.styl.solutions/*` to the client container;
 the client's OWN nginx same-origin-routes everything (like car-identify's dashboard / atlantic's
 super-admin-web), so the shared platform nginx-proxy is **not touched**:
 
 ```
- ALB: smart-buddy-helper-uat.styl.solutions/*  ─▶  client (Vite→nginx, host :8097)
+ ALB: smartbuddy-helper-uat.styl.solutions/*  ─▶  client (Vite→nginx, host :8097)
         ├─ /                → static SPA  (Keycloak login: realm styl-iot, client smart-buddy)
         ├─ /smartbuddy-api/ → api-service :3320   (JWT via jwt-validator) ─┐ read-only
         └─ /smartbuddy-mcp/ → mcp-service :3501    (Bearer MCP_API_KEY)    ─┤ smartbuddy_ro
@@ -139,7 +139,7 @@ Idempotent — re-run to refresh the snapshot.
 
 ## 5 · Hostname + routing (ONE hostname, no shared-proxy change)
 
-Everything is served under **one** hostname — `smart-buddy-helper-uat.styl.solutions/*` (never reuse
+Everything is served under **one** hostname — `smartbuddy-helper-uat.styl.solutions/*` (never reuse
 `tree-twin-uat…`). You only need **one ALB rule**: map that hostname to the **client** container
 (host port **8097**), plus its DNS record + TLS at the ALB. That's it — the **shared platform
 nginx-proxy is NOT touched.**
@@ -150,7 +150,7 @@ car-identify's dashboard and atlantic's super-admin-web use:
 - `/smartbuddy-api/` → `smartbuddy-api:3320`, **gated by Keycloak JWT** (`auth_request` → the shared
   `jwt-validator:3200`; answers carry hashed-but-real ids).
 - `/smartbuddy-mcp/` → `smartbuddy-mcp:3501`, guarded by the MCP's own **Bearer `SB_MCP_API_KEY`**;
-  the SAM agent's MCP base URL is `https://smart-buddy-helper-uat.styl.solutions/smartbuddy-mcp/mcp`.
+  the SAM agent's MCP base URL is `https://smartbuddy-helper-uat.styl.solutions/smartbuddy-mcp/mcp`.
 
 For this the **client container joins the external `backend` network** (already set in
 `docker-compose.yml`) so its nginx reaches `smartbuddy-api` / `smartbuddy-mcp` / `jwt-validator` by
