@@ -95,7 +95,7 @@ services:
       CLICKHOUSE_USER: ${CLICKHOUSE_RW_USER:-smartbuddy_rw}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_RW_PASSWORD:?set CLICKHOUSE_RW_PASSWORD}
       SB_MONTH: ${SB_MONTH:?set SB_MONTH=YYYY-MM (e.g. 2026-03) — the month to (re)build}
-    deploy: { resources: { limits: { memory: 2g } } }   # KMeans + slice compute
+    deploy: { resources: { limits: { memory: 3g } } }   # pulls a month of txn+txn_perf into DuckDB
     networks: [sb-net, backend]
     logging: { options: { max-size: 10m } }
 

@@ -81,6 +81,7 @@ def _public(st: dict) -> dict:
     got = _received_parts(st["id"])
     return {
         "id": st["id"], "dataset": st["dataset"], "month": st["month"], "filename": st["filename"],
+        "mode": st.get("mode", "replace"),
         "size": st["size"], "part_size": st["part_size"], "total_parts": st["total_parts"],
         "received": len(got), "received_parts": got, "phase": st.get("phase", "created"),
         "progress": st.get("progress", 0.0), "rows": st.get("rows"), "tables": st.get("tables"),
@@ -127,10 +128,16 @@ async def start_upload(request: Request):
         raise HTTPException(400, "size / total_parts / part_size must be integers.")
     if total_parts < 1 or total_parts > MAX_PARTS or part_size < 1:
         raise HTTPException(400, f"total_parts must be 1..{MAX_PARTS} and part_size > 0.")
+    # replace = swap this month's partition (default); append = add to it (multi-file datasets).
+    mode = str(body.get("mode", "replace"))
+    if mode not in ("replace", "append"):
+        raise HTTPException(400, "mode must be 'replace' or 'append'.")
+    rebuild = bool(body.get("rebuild", True))   # client sets false on all but the last file of a batch
 
     uid = os.urandom(16).hex()
     st = {"id": uid, "dataset": dataset, "month": month, "filename": filename, "ext": ext,
           "size": size, "part_size": part_size, "total_parts": total_parts,
+          "mode": mode, "rebuild": rebuild,
           "phase": "uploading", "progress": 0.0, "created": int(time.time())}
     _sessions[uid] = st
     _save(st)
@@ -227,8 +234,10 @@ async def _process(uid: str) -> None:
 
             st["phase"] = "loading"; _save(st)
             result = await asyncio.to_thread(
-                ingest_core.load_dataset, str(assembled), st["dataset"], st["month"],
-                client=None, salt=None, on_progress=on_progress)
+                lambda: ingest_core.load_dataset(
+                    str(assembled), st["dataset"], st["month"], client=None, salt=None,
+                    on_progress=on_progress, mode=st.get("mode", "replace"),
+                    rebuild=st.get("rebuild", True)))
 
             st.update(phase="done", progress=1.0, rows=result["rows"],
                       tables=result["tables"], rebuilt=result["rebuilt"])

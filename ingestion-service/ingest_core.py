@@ -63,7 +63,10 @@ DATASETS: dict[str, dict] = {
         "hint": "card/student ids hashed, names dropped; also fills txn_perf; rebuilds tx + Playback.",
         "targets": [
             {"table": "txn", "exclude": PERF_COLS, "require": ["schoolId", "amount", "txn_date"]},
-            {"table": "txn_perf", "include": ["id", *PERF_COLS], "skip_unless": PERF_COLS},
+            # txn_perf carries the dimensions it's queried by (so speed views need no join back to txn)
+            {"table": "txn_perf", "skip_unless": PERF_COLS,
+             "include": ["id", "schoolId", "terminalId", "txn_date", "paymentMode", "paymentType",
+                         "errorCode", *PERF_COLS]},
         ],
         "rebuild": ["stall_category", "tx", "stallcat", "pb_school_daily", "pb_schools"],
     },
@@ -183,8 +186,18 @@ def _table_exists(client, table: str) -> bool:
 
 # ── the loader ─────────────────────────────────────────────────────────────────
 def load_dataset(file_path: str, dataset: str, month: str, *, client=None,
-                 salt: str | None = None, on_progress=None) -> dict:
-    """Load one dataset file into `month`'s partition of its target table(s). Returns a summary."""
+                 salt: str | None = None, on_progress=None, mode: str = "replace",
+                 rebuild: bool = True) -> dict:
+    """Load one dataset file into `month`'s partition of its target table(s). Returns a summary.
+
+    mode='replace' (default) atomically swaps the month partition (wiping any prior rows for that
+    month); mode='append' adds the file's rows to the month partition — used to load a dataset that
+    ships as several source files (e.g. Feb health/heart_rate come in 6 parts each): upload the first
+    with 'replace' and the rest with 'append'. Set rebuild=False on all-but-the-last file of a batch
+    to skip the (repeated) aggregate rebuild until the final file.
+    """
+    if mode not in ("replace", "append"):
+        raise ValueError("mode must be 'replace' or 'append'.")
     if dataset not in DATASETS:
         raise ValueError(f"Unknown dataset '{dataset}'. One of: {', '.join(DATASETS)}.")
     if not MONTH_RE.match(month or ""):
@@ -240,23 +253,28 @@ def load_dataset(file_path: str, dataset: str, month: str, *, client=None,
         types = {r[0]: ch_type(r[1]) for r in schema}
         types["month"] = "String"
 
-        rows = _load_projection(con, client, table, out_cols, types, m, prog)
+        rows = _load_projection(con, client, table, out_cols, types, m, prog, mode=mode)
         loaded.append({"table": table, "rows": rows})
 
         # 3) transactions also derive the per-stall food category (taxonomy) for this month
         if dataset == "transactions" and table == "txn":
-            _load_stall_category(con, client, m, prog)
+            _load_stall_category(con, client, m, prog, mode=mode)
 
     con.close()
 
-    rebuilt = _rebuild(client, spec.get("rebuild", []), prog)
+    rebuilt = _rebuild(client, spec.get("rebuild", []), prog) if rebuild else []
     return {"dataset": dataset, "month": month,
             "tables": loaded, "rebuilt": rebuilt,
             "rows": sum(t["rows"] for t in loaded)}
 
 
-def _load_projection(con, client, table, out_cols, types, month, prog, *, view="proj") -> int:
-    """Create/reconcile `table`, stage the projected rows, atomically REPLACE PARTITION month."""
+def _load_projection(con, client, table, out_cols, types, month, prog, *, view="proj",
+                     mode="replace") -> int:
+    """Create/reconcile `table`, stage the projected rows, then swap into `month`'s partition.
+
+    mode='replace' → atomic ALTER … REPLACE PARTITION (wipes the month first);
+    mode='append'  → INSERT the staged rows into the month partition (adds to it).
+    """
     quoted = ",\n  ".join(f"`{c}` {types[c]}" for c in out_cols)
     if not _table_exists(client, table):
         client.command(
@@ -283,13 +301,16 @@ def _load_projection(con, client, table, out_cols, types, month, prog, *, view="
             client.insert(f"{CH_DB}.{stg}", data, column_names=out_cols)
             total += len(batch)
             prog("loading", table=table, rows=total)
-        client.command(f"ALTER TABLE {CH_DB}.{table} REPLACE PARTITION '{month}' FROM {CH_DB}.{stg}")
+        if mode == "append":
+            client.command(f"INSERT INTO {CH_DB}.{table} SELECT * FROM {CH_DB}.{stg}")
+        else:
+            client.command(f"ALTER TABLE {CH_DB}.{table} REPLACE PARTITION '{month}' FROM {CH_DB}.{stg}")
         return total
     finally:
         client.command(f"DROP TABLE IF EXISTS {CH_DB}.{stg}")
 
 
-def _load_stall_category(con, client, month, prog):
+def _load_stall_category(con, client, month, prog, *, mode="replace"):
     """Derive stall food-category (shared taxonomy v2) from the just-loaded transactions file."""
     from taxonomy import STALLCAT_SQL
     con.execute(f"CREATE OR REPLACE VIEW tx AS SELECT * FROM src WHERE {TX_FILTER}")
@@ -299,7 +320,8 @@ def _load_stall_category(con, client, month, prog):
     out_cols = [r[0] for r in schema]
     types = {r[0]: ch_type(r[1]) for r in schema}
     types["month"] = "String"
-    _load_projection(con, client, "stall_category", out_cols, types, month, prog, view="sc_proj")
+    _load_projection(con, client, "stall_category", out_cols, types, month, prog,
+                     view="sc_proj", mode=mode)
 
 
 # ── aggregate rebuilds (recomputed across ALL months; small tables/views) ────────
