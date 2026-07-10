@@ -4,7 +4,6 @@
 // month's partition, then rebuilds the aggregates. You can select SEVERAL files for one dataset
 // (e.g. Feb health ships as 6 parts) — the first REPLACES the month, the rest APPEND, and the
 // aggregate rebuild runs once at the end. Keycloak-gated at the client nginx (Bearer).
-import { openWindow } from './windowing.js';
 import { authReady, authToken } from './auth.js';
 
 const INGEST = '/smartbuddy-ingest';          // same-origin; client nginx proxies to smartbuddy-ingest
@@ -61,12 +60,41 @@ async function uploadFile(file, { dataset, month, mode, rebuild, onProg }) {
 }
 
 export async function openUpload(onDone) {
-    const body = openWindow({ id: 'upload', title: 'Upload data', sub: 'load a month into ClickHouse', chips: [] });
-    if (!body) return;
-    const tw = body.closest('.tw'); if (tw) tw.style.width = '480px';
+    if (document.querySelector('.up-overlay')) return;              // single instance
 
     let datasets = [{ id: 'transactions', label: 'Canteen transactions' }];
     try { const d = await api('/datasets'); if (d.datasets?.length) datasets = d.datasets; } catch { /* gate/offline */ }
+
+    // Fixed, centered modal with a blurred backdrop that focuses the panel.
+    const overlay = document.createElement('div');
+    overlay.className = 'up-overlay';
+    overlay.innerHTML = `<div class="up-backdrop"></div>
+      <div class="up-modal" role="dialog" aria-modal="true" aria-label="Upload data">
+        <div class="up-modal-head">
+          <span class="ico">⬆</span>
+          <div><div class="t">Upload data</div><span class="sub">load a month into ClickHouse</span></div>
+          <button class="up-x" title="Close (Esc)">✕</button>
+        </div>
+        <div class="up-modal-body"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';                        // lock scroll behind
+    requestAnimationFrame(() => overlay.classList.add('show'));
+
+    const body = overlay.querySelector('.up-modal-body');
+    const xBtn = overlay.querySelector('.up-x');
+    let busy = false;                                               // block close during an active upload
+    const close = () => {
+        if (busy) return;
+        overlay.classList.remove('show');
+        document.body.style.overflow = '';
+        document.removeEventListener('keydown', onKey);
+        setTimeout(() => overlay.remove(), 220);
+    };
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onKey);
+    overlay.querySelector('.up-backdrop').addEventListener('click', close);
+    xBtn.addEventListener('click', close);
 
     body.innerHTML = `
       <div class="cap">Upload a <b>Parquet</b> or <b>CSV</b> (any size — split into parts automatically).
@@ -126,6 +154,7 @@ export async function openUpload(onDone) {
     btn.onclick = async () => {
         const month = monthEl.value;
         if (!files.length || !/^\d{4}-\d{2}$/.test(month)) return;
+        busy = true; xBtn.disabled = true;                          // don't let the modal close mid-upload
         btn.disabled = dsSel.disabled = monthEl.disabled = input.disabled = true;
         result.innerHTML = ''; bar.classList.add('show'); barFill.style.width = '0';
         const dataset = dsSel.value;
@@ -152,6 +181,7 @@ export async function openUpload(onDone) {
             status.textContent = 'Failed';
             result.innerHTML = `<div class="callout-bad"><b>Upload failed</b> — ${String(e.message || e)}</div>`;
         } finally {
+            busy = false; xBtn.disabled = false;
             btn.disabled = dsSel.disabled = monthEl.disabled = input.disabled = false;
         }
     };

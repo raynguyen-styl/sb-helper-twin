@@ -26,6 +26,30 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 600; }
   border-radius: 7px; padding: 5px 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .month-picker option { color: #1d1d1f; }
 .up-files { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+
+/* Upload modal — fixed, centered, with a blurred backdrop that focuses the panel */
+.up-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px;
+  opacity: 0; transition: opacity .18s ease; }
+.up-overlay.show { opacity: 1; }
+.up-backdrop { position: absolute; inset: 0; background: rgba(18,18,24,.40);
+  backdrop-filter: blur(8px) saturate(115%); -webkit-backdrop-filter: blur(8px) saturate(115%); }
+.up-modal { position: relative; width: min(540px, 94vw); max-height: 88vh; display: flex; flex-direction: column;
+  background: var(--canvas); border-radius: var(--r-lg); overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0,0,0,.34), 0 2px 10px rgba(0,0,0,.18);
+  transform: translateY(10px) scale(.975); transition: transform .22s cubic-bezier(.2,.8,.2,1); }
+.up-overlay.show .up-modal { transform: none; }
+.up-modal-head { display: flex; align-items: center; gap: 11px; padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--divider-soft); }
+.up-modal-head .ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  background: rgba(0,102,204,.12); color: var(--primary); font-size: 15px; flex: none; }
+.up-modal-head .t { font-family: var(--font-display); font-weight: 600; font-size: 17px; letter-spacing: -.3px; color: var(--ink); }
+.up-modal-head .sub { display: block; color: var(--ink-muted-48); font-size: 12px; font-weight: 400; margin-top: 1px; }
+.up-modal-head .up-x { margin-left: auto; width: 30px; height: 30px; border-radius: var(--r-pill); border: none;
+  background: var(--parchment); color: var(--ink-muted-48); font-size: 15px; line-height: 1; cursor: pointer; flex: none; transition: background .12s; }
+.up-modal-head .up-x:hover:not(:disabled) { background: var(--chip-translucent); color: var(--ink); }
+.up-modal-head .up-x:disabled { opacity: .35; cursor: not-allowed; }
+.up-modal-body { padding: 16px 18px 20px; overflow-y: auto; }
+@media (prefers-reduced-motion: reduce) { .up-overlay, .up-modal { transition: none; } }
 .nav .period { color: rgba(255,255,255,.55); font-size: 12px; }
 .search { width: 260px; height: 28px; border-radius: var(--r-pill); border: none;
     background: rgba(255,255,255,.14); color: #fff; padding: 0 14px; font-size: 12.5px; outline: none; }
