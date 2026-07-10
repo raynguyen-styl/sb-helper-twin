@@ -41,6 +41,19 @@ export function authToken() {
   return kc?.token || null;
 }
 
+// Logged-in username for the nav badge (preferred_username, else name). null when auth is disabled.
+export function authUser() {
+  return kc?.tokenParsed?.preferred_username || kc?.tokenParsed?.name || null;
+}
+
+// Roles from the token (realm + client), lowercased — used to gate admin-only UI (e.g. Upload).
+export function authRoles() {
+  const t = kc?.tokenParsed || {};
+  const realm = t.realm_access?.roles || [];
+  const client = Object.values(t.resource_access || {}).flatMap((r) => r.roles || []);
+  return [...realm, ...client].map((r) => String(r).toLowerCase());
+}
+
 export function logout() {
   if (kc) kc.logout({ redirectUri: window.location.origin });
   else window.location.reload();

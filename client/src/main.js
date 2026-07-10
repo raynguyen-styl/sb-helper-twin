@@ -13,7 +13,8 @@ import { openStallExplorer, openStall } from './stall-window.js';
 import { openEng, openTerminal } from './eng-window.js';
 import { openHub, ROLES } from './hub-window.js';
 import { openPlayback } from './playback-window.js';
-import { initAuth } from './auth.js';
+import { openUpload } from './upload-window.js';
+import { initAuth, authReady, authRoles, logout } from './auth.js';
 import { initSolace } from './solace/solace.js';
 import { initSam } from './sam/samClient.js';
 import { initSamPanel } from './sam/samPanel.js';
@@ -22,6 +23,8 @@ import { initSamPanel } from './sam/samPanel.js';
 // Fire-and-forget: login-required redirects unauthenticated browsers to Keycloak; sb-api calls await
 // `authReady` (see sbApi.js) so no request races the token.
 initAuth();
+// When auth settles, show who's signed in + a logout button in the nav.
+authReady.then(({ username }) => renderUser(username));
 
 const LV_COLOR = { Primary: '#2a78d6', Secondary: '#1baf7a', 'Junior College': '#7d5fd3', Other: '#8e8e93' };
 const HEALTH = (v, warn, bad) => (v >= bad ? '#ff3b30' : v >= warn ? '#ff9500' : '#34c759');
@@ -37,6 +40,7 @@ const VIEWS = {
     eng:      { label: 'Terminal Health',  open: (p) => openEng(STALLS, p || {}) },
     feb:      { label: 'February Insights', open: (p) => openFeb(FEB, p) },
     playback: { label: 'Playback',         open: (p) => openPlayback(p || {}) },
+    upload:   { label: '⬆ Upload data',    open: () => openUpload() },
 };
 let role = localStorage.getItem('sb-role') || null;
 
@@ -50,11 +54,28 @@ function renderNav() {
     const nv = document.getElementById('nav-views');
     const keys = [...(role ? ROLES[role].views : Object.keys(VIEWS))];
     if (!keys.includes('playback')) keys.push('playback');  // Playback available in every workspace
+    if (!keys.includes('upload')) keys.push('upload');      // Upload data available in every workspace
     nv.innerHTML = keys.map((k) => `<button class="nav-btn" data-view="${k}">${VIEWS[k].label}</button>`).join('') +
         `<button class="nav-role" id="role-btn" title="Switch workspace">${role ? ROLES[role].icon + ' ' + ROLES[role].label : '☰ All views'} ▾</button>`;
     nv.querySelectorAll('[data-view]').forEach((b) =>
         b.addEventListener('click', () => VIEWS[b.dataset.view].open()));
     nv.querySelector('#role-btn').addEventListener('click', () => openHub(setRole));
+}
+
+// User badge + logout in the top-right nav (only when Keycloak is enabled → username present).
+function renderUser(username) {
+    if (!username || username === 'dev') return;              // local dev / no-auth → no badge
+    const right = document.querySelector('.nav-right');
+    if (!right || document.getElementById('nav-user')) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'nav-user'; wrap.className = 'nav-user';
+    const name = document.createElement('span');
+    name.className = 'nav-user-name'; name.title = 'Signed in'; name.textContent = `👤 ${username}`;
+    const btn = document.createElement('button');
+    btn.className = 'nav-logout'; btn.title = 'Sign out'; btn.textContent = 'Logout';
+    btn.addEventListener('click', () => logout());
+    wrap.append(name, btn);
+    right.appendChild(wrap);
 }
 
 /* ---------- cross-window API (used by stall/eng/school windows + SAM actions) ---------- */

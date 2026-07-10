@@ -1,3 +1,6 @@
 duckdb>=1.1
 pandas>=2.0
 clickhouse-connect>=0.8
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9

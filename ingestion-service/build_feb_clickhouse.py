@@ -51,6 +51,10 @@ CH_ADMIN_PASSWORD = os.environ.get("CLICKHOUSE_ADMIN_PASSWORD", "")
 CH_DB = os.environ.get("CLICKHOUSE_DB", "smartbuddy")
 RO_USER = os.environ.get("CLICKHOUSE_RO_USER", "smartbuddy_ro")
 RO_PASSWORD = os.environ.get("CLICKHOUSE_RO_PASSWORD", "")
+# Optional WRITE user for the dashboard upload service (smartbuddy-ingest). Created only if a
+# password is provided. Scoped to smartbuddy.* (never admin, never other demos' tables).
+RW_USER = os.environ.get("CLICKHOUSE_RW_USER", "smartbuddy_rw")
+RW_PASSWORD = os.environ.get("CLICKHOUSE_RW_PASSWORD", "")
 
 # taxonomy.py is the single source of truth for stall classification (v2)
 sys.path.insert(0, str(ANALYSIS_DIR))
@@ -201,6 +205,14 @@ def main() -> int:
     admin.command(f"CREATE USER IF NOT EXISTS {RO_USER} IDENTIFIED BY '{RO_PASSWORD}'")
     admin.command(f"GRANT SELECT ON {CH_DB}.* TO {RO_USER}")
     print(f"  -> read-only user {RO_USER} granted SELECT on {CH_DB}.* (SELECT-only; no other grants)")
+
+    # Optional WRITE user for the dashboard upload service — scoped to smartbuddy.* only.
+    if RW_PASSWORD:
+        admin.command(f"CREATE USER IF NOT EXISTS {RW_USER} IDENTIFIED BY '{RW_PASSWORD}'")
+        admin.command(f"GRANT SELECT, INSERT, ALTER, CREATE TABLE, DROP TABLE, CREATE VIEW, DROP VIEW, TRUNCATE ON {CH_DB}.* TO {RW_USER}")
+        print(f"  -> write user {RW_USER} granted write on {CH_DB}.* (dashboard upload service; NOT admin, NOT other demos)")
+    else:
+        print("  -> (CLICKHOUSE_RW_PASSWORD unset — skipping the upload-service write user; set it to enable dashboard uploads)")
 
     verify(admin)
     con.close()

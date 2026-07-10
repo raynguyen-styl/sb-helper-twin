@@ -46,16 +46,18 @@ CH_ADMIN_USER="$(first CLICKHOUSE_USER "$ATL_ENV")"
 CH_ADMIN_PW="$(first CLICKHOUSE_PASSWORD "$ATL_ENV")"
 
 # ── fresh per-demo secrets (generated once, preserved on re-run) ─────────────────────────────────
-PREV_MCP=""; PREV_RO=""; PREV_SALT=""
+PREV_MCP=""; PREV_RO=""; PREV_RW=""; PREV_SALT=""
 if [ -f "$OUT" ]; then
   PREV_MCP="$(grab SB_MCP_API_KEY "$OUT")"
   PREV_RO="$(grab CLICKHOUSE_RO_PASSWORD "$OUT")"
+  PREV_RW="$(grab CLICKHOUSE_RW_PASSWORD "$OUT")"
   PREV_SALT="$(grab SB_ID_SALT "$OUT")"
   cp "$OUT" "$OUT.bak.$(date +%s)"
-  echo "note: existing .env backed up; generated secrets (MCP key / CH read-only pw / salt) preserved."
+  echo "note: existing .env backed up; generated secrets (MCP key / CH read-only + write pw / salt) preserved."
 fi
 MCP_KEY="${PREV_MCP:-$(openssl rand -hex 32)}"
 RO_PW="${PREV_RO:-$(openssl rand -hex 24)}"
+RW_PW="${PREV_RW:-$(openssl rand -hex 24)}"
 ID_SALT="${PREV_SALT:-$(openssl rand -hex 16)}"
 
 umask 177   # .env → 600
@@ -68,6 +70,8 @@ CLICKHOUSE_URL=http://clickhouse:8123
 CLICKHOUSE_DB=smartbuddy
 CLICKHOUSE_RO_USER=smartbuddy_ro
 CLICKHOUSE_RO_PASSWORD=$RO_PW
+CLICKHOUSE_RW_USER=smartbuddy_rw
+CLICKHOUSE_RW_PASSWORD=$RW_PW
 CLICKHOUSE_ADMIN_USER=$CH_ADMIN_USER
 CLICKHOUSE_ADMIN_PASSWORD=$CH_ADMIN_PW
 SB_ID_SALT=$ID_SALT
@@ -136,7 +140,7 @@ mark "VITE_SOLACE_URL         (tree/uwb .env)" "$SOL_URL"
 mark "VITE_SOLACE_VPN" "$SOL_VPN"
 mark "VITE_SOLACE_USER" "$SOL_USER"
 mark "VITE_SOLACE_PASSWORD" "$SOL_PW"
-echo "  [gen] SB_MCP_API_KEY / CLICKHOUSE_RO_PASSWORD / SB_ID_SALT  — generated"
+echo "  [gen] SB_MCP_API_KEY / CLICKHOUSE_RO_PASSWORD / CLICKHOUSE_RW_PASSWORD / SB_ID_SALT  — generated"
 echo
 echo "Next: review .env; ensure a Keycloak client 'smart-buddy' exists (admin console) and is in"
 echo "JWT_ALLOWED_CLIENTS; then deploy per DEPLOY.md."

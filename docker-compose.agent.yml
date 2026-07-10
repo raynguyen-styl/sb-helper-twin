@@ -71,9 +71,40 @@ services:
       CLICKHOUSE_ADMIN_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:?set CLICKHOUSE_ADMIN_PASSWORD}
       CLICKHOUSE_RO_USER: ${CLICKHOUSE_RO_USER:-smartbuddy_ro}
       CLICKHOUSE_RO_PASSWORD: ${CLICKHOUSE_RO_PASSWORD:?set CLICKHOUSE_RO_PASSWORD (created for the MCP)}
+      # Optional write user for the dashboard upload service (created here if set).
+      CLICKHOUSE_RW_USER: ${CLICKHOUSE_RW_USER:-smartbuddy_rw}
+      CLICKHOUSE_RW_PASSWORD: ${CLICKHOUSE_RW_PASSWORD:-}
       SB_ID_SALT: ${SB_ID_SALT:-}
       SB_ANALYSIS_DIR: /data/analysis
     volumes:
       - ./analysis:/data/analysis:ro      # parquets + school_geo.json + taxonomy.py (gitignored parquets)
     networks: [sb-net, backend]
     logging: { options: { max-size: 10m } }
+
+  # ── HTTP ingest service — the dashboard "Upload data" tab posts here (via client nginx) ──────────
+  smartbuddy-ingest:
+    build:
+      context: ./ingestion-service
+    container_name: smartbuddy-ingest
+    restart: always
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8200"]
+    expose: ["8200"]                        # in-network only; reached via client nginx /smartbuddy-ingest/
+    environment:
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-smartbuddy}
+      # Connect as the WRITE user (SELECT/INSERT/CREATE/DROP on smartbuddy.* only — never admin).
+      CLICKHOUSE_USER: ${CLICKHOUSE_RW_USER:-smartbuddy_rw}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_RW_PASSWORD:?set CLICKHOUSE_RW_PASSWORD (the upload service's write user)}
+      SB_ID_SALT: ${SB_ID_SALT:-}
+      SB_INGEST_MAX_MB: ${SB_INGEST_MAX_MB:-512}
+      # Optional: restrict to Keycloak roles (matched vs X-Auth-Roles from the proxy). Empty = any signed-in user.
+      SB_INGEST_ALLOWED_ROLES: ${SB_INGEST_ALLOWED_ROLES:-}
+    networks: [sb-net, backend]
+    deploy: { resources: { limits: { memory: 512m } } }
+    logging: { options: { max-size: 10m } }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8200/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
