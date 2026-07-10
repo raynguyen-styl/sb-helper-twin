@@ -1,13 +1,14 @@
-# ingestion-service — two entrypoints from one image (on the platform `backend` network; the shared
-# ClickHouse is internal-only):
-#   • build_feb_clickhouse.py — one-shot bulk builder (compose `ch-ingest`, profile ingest); reads the
-#     Feb parquets + taxonomy.py bind-mounted at /data/analysis.
-#   • app.py (FastAPI, uvicorn) — the HTTP ingest service behind the dashboard's Upload tab (compose
-#     `smartbuddy-ingest`, overrides CMD).
+# ingestion-service — one image, three entrypoints (runs on the platform `backend` network; the
+# shared ClickHouse is internal-only):
+#   • init_db.py        — one-shot ADMIN bootstrap: create db + insights table + ro/rw users (no data).
+#   • app.py (uvicorn)  — the chunked, resumable, size-unlimited HTTP upload service behind the
+#                         dashboard's "Upload data" tab (long-running; the default CMD).
+#   • build_insights.py — one-shot: (re)build a month's precomputed insight bundles into `insights`.
+# The loader ingest_core.py + vendored taxonomy.py / *_geo.json are shared by all three.
 FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY build_feb_clickhouse.py app.py ./
-# default CMD = the one-shot builder; the HTTP service overrides it in docker-compose.agent.yml
-CMD ["python", "build_feb_clickhouse.py"]
+COPY . .
+# default = the long-running upload service; init_db.py / build_insights.py run via compose one-shots.
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8200"]
