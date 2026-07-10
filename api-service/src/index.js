@@ -1,7 +1,8 @@
-// sb-api — SMART Buddy read API for the dashboard's Playback window. Serves per-school daily series,
-// the wearable cohort daily series, and the school list from the shared ClickHouse `smartbuddy` db
-// (read-only user). Behind the shared nginx-proxy at /smartbuddy-api/ (Keycloak JWT); optional
-// Bearer on /api for defence-in-depth. No InfluxDB/Ditto — one OLAP store serves playback + agent.
+// sb-api — SMART Buddy read API. Serves (1) the precomputed per-month INSIGHT BUNDLES the whole
+// dashboard now reads from ClickHouse (map, overview, terminal health, stalls, March items/savings),
+// and (2) the Playback daily series — all from the shared `smartbuddy` db as the read-only user, all
+// scoped by month. Behind the client nginx at /smartbuddy-api/ (Keycloak JWT); optional Bearer on /api
+// for defence-in-depth. No InfluxDB/Ditto — one OLAP store serves the dashboard, playback + agent.
 import express from 'express';
 import { SB_API_PORT, SB_API_KEY, CLICKHOUSE_DB } from './config.js';
 import * as db from './clickhouse.js';
@@ -33,10 +34,30 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
   res.status(500).json({ error: String(e.message || e) });
 });
 
-// ── playback series (ClickHouse) ────────────────────────────────────────────────
-app.get('/api/schools', wrap(async (_req, res) => res.json(await db.listSchools())));
-app.get('/api/schools/:id/playback', wrap(async (req, res) => res.json(await db.schoolDaily(req.params.id))));
-app.get('/api/wearable/playback', wrap(async (_req, res) => res.json(await db.wearableDaily())));
+// month = ?month=YYYY-MM if given (and valid), else the newest month with data.
+const resolveMonth = async (req) => {
+  const m = String(req.query.month || '').trim();
+  return /^\d{4}-\d{2}$/.test(m) ? m : await db.latestMonth();
+};
+
+// ── months + insight bundles (the dashboard reads these) ─────────────────────────
+app.get('/api/months', wrap(async (_req, res) => res.json(await db.listMonths())));
+
+app.get('/api/insights', wrap(async (req, res) => {
+  const kind = String(req.query.kind || '').trim();
+  if (!/^[a-z_]+$/.test(kind)) return res.status(400).json({ error: 'bad or missing kind' });
+  const month = await resolveMonth(req);
+  const json = await db.getInsight(month, kind);            // raw json string (avoid parse+reserialize)
+  if (json == null) return res.status(404).json({ error: `no ${kind} bundle for ${month || '(no data)'}` });
+  res.set('X-SB-Month', month).type('application/json').send(json);
+}));
+
+// ── playback series (ClickHouse, per month) ──────────────────────────────────────
+app.get('/api/schools', wrap(async (req, res) => res.json(await db.listSchools(await resolveMonth(req)))));
+app.get('/api/schools/:id/playback', wrap(async (req, res) =>
+  res.json(await db.schoolDaily(req.params.id, await resolveMonth(req)))));
+app.get('/api/wearable/playback', wrap(async (req, res) =>
+  res.json(await db.wearableDaily(await resolveMonth(req)))));
 
 app.get('/health', wrap(async (_req, res) => {
   await db.ping();
