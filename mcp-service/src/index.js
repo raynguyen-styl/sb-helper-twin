@@ -194,8 +194,12 @@ app.all("/mcp", async (req, res) => {
 app.get("/health", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
 app.get("/", (_req, res) => res.json({ name: "smartbuddy-mcp", status: "ok" }));
 
+// Always start listening — do NOT hard-exit if ClickHouse isn't ready. The `smartbuddy` db + the
+// read-only user are created by ch-ingest; until then (or during a transient ClickHouse blip) tool
+// calls degrade gracefully to {error,hint} instead of crash-looping the container (mirrors sb-api).
+app.listen(MCP_PORT, () => {
+  console.log(`[smartbuddy-mcp] listening on :${MCP_PORT} — auth: ${MCP_API_KEY ? "enabled" : "disabled (dev)"} — ClickHouse READ-ONLY`);
+});
 initDb()
-  .then(() => app.listen(MCP_PORT, () => {
-    console.log(`[smartbuddy-mcp] listening on :${MCP_PORT} — auth: ${MCP_API_KEY ? "enabled" : "disabled (dev)"} — ClickHouse READ-ONLY`);
-  }))
-  .catch((e) => { console.error("[smartbuddy-mcp] failed to reach ClickHouse:", e.message); process.exit(1); });
+  .then(() => console.log("[smartbuddy-mcp] ClickHouse reachable — smartbuddy db ready"))
+  .catch((e) => console.warn(`[smartbuddy-mcp] ClickHouse not ready yet (tools error until ch-ingest runs): ${e.message}`));
