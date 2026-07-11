@@ -167,7 +167,9 @@ function renderWear(el, FEB) {
 function renderHR(el, FEB) {
     let fw = 'All', dt = 'All';
     el.innerHTML = '';
-    fbar(el, 'Firmware', FEB.hr.firmwares.map((f) => ({ v: f, t: f === 'All' ? 'All firmware' : f })), fw, (v) => { fw = v; paint(); });
+    // firmware_version isn't in the current raw feed → only show the filter when there's a real choice
+    if ((FEB.hr.firmwares || []).length > 1)
+        fbar(el, 'Firmware', FEB.hr.firmwares.map((f) => ({ v: f, t: f === 'All' ? 'All firmware' : f })), fw, (v) => { fw = v; paint(); });
     fbar(el, 'Day type', [{ v: 'All', t: 'All days' }, { v: 'School', t: 'School' },
         { v: 'Weekend', t: 'Weekend' }, { v: 'CNY', t: 'CNY' }], dt, (v) => { dt = v; paint(); });
     const box = document.createElement('div'); el.appendChild(box);
@@ -185,14 +187,14 @@ function renderHR(el, FEB) {
           <h5>Share of readings in elevated zones, by hour</h5>
           <div class="cap">% of hourly readings ≥100 bpm on school days vs weekends vs CNY — PE &amp; recess hours light up on school days.</div>
           <div class="cwrap"><canvas></canvas></div>
-          <h5>Firmware fleet — February</h5>
+          ${FEB.hr.fw_table.length ? `<h5>Firmware fleet — February</h5>
           <table class="mini"><tr><th>Firmware</th><th style="text-align:right">Records</th>
             <th style="text-align:right">Users</th><th style="text-align:right">255-errors</th>
             <th style="text-align:right">&lt;40 bpm</th></tr>
             ${FEB.hr.fw_table.map((x) => `<tr><td><b>${x.fw}</b>${x.err255 > 0 ? ' <span class="chip chip-indep">FAULTY</span>' : ''}</td>
               <td class="num">${fmt(x.n)}</td><td class="num">${fmt(x.users)}</td>
-              <td class="num">${fmt(x.err255)}</td><td class="num">${fmt(x.lt40)}</td></tr>`).join('')}</table>
-          <h5 style="margin-top:12px">Resting heart rate (all firmware)</h5>
+              <td class="num">${fmt(x.err255)}</td><td class="num">${fmt(x.lt40)}</td></tr>`).join('')}</table>` : ''}
+          <h5 style="margin-top:12px">Resting heart rate</h5>
           <div class="cwrap"><canvas></canvas></div>`;
         const [c1, c2, c3] = box.querySelectorAll('canvas');
         keep('hr', mk(c1, { type: 'line', data: { labels: HOURS, datasets: [
