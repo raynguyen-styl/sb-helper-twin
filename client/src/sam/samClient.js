@@ -61,25 +61,14 @@ function _getSamTopicSegment() {
 
 const SAM_TOPIC_SEGMENT = _getSamTopicSegment();
 
-let SAM_QUERY_TOPIC = "";
-let SAM_RESPONSE_TOPIC = "";
-let SAM_ERROR_TOPIC = "";
-let SAM_SOLACE_MODE = "none"; // "explicit" | "per-tab" | "none"
-
-if (EXPLICIT_SAM_QUERY && EXPLICIT_SAM_RESPONSE) {
-  SAM_SOLACE_MODE = "explicit";
-  SAM_QUERY_TOPIC = EXPLICIT_SAM_QUERY;
-  SAM_RESPONSE_TOPIC = EXPLICIT_SAM_RESPONSE;
-  SAM_ERROR_TOPIC = EXPLICIT_SAM_ERROR;
-} else if (SAM_TOPIC_SEGMENT) {
-  SAM_SOLACE_MODE = "per-tab";
-  const base = `STYL/iot/smartbuddy/system/${SAM_TOPIC_SEGMENT}/v1/sam/chat`;
-  SAM_QUERY_TOPIC = `${base}/request`;
-  SAM_RESPONSE_TOPIC = `${base}/response`;
-  SAM_ERROR_TOPIC = EXPLICIT_SAM_ERROR || `${base}/error`;
-}
-
-const SAM_USE_SOLACE_FIFO = SAM_SOLACE_MODE === "per-tab";
+// SHARED request/response/error topics — the styl-office-uwb convention and exactly what the SAM POC
+// gateway rule subscribes to. Replies are correlated by the `correlationId` in the JSON payload.
+const _DOMAIN = "smartbuddy";
+const SAM_QUERY_TOPIC = EXPLICIT_SAM_QUERY || (import.meta.env.VITE_SAM_SOLACE_TOPIC_REQUEST || "").trim() || `STYL/iot/${_DOMAIN}/system/shared/v1/sam/chat/request`;
+const SAM_RESPONSE_TOPIC = EXPLICIT_SAM_RESPONSE || (import.meta.env.VITE_SAM_SOLACE_TOPIC_RESPONSE || "").trim() || `STYL/iot/${_DOMAIN}/system/shared/v1/sam/chat/response`;
+const SAM_ERROR_TOPIC = EXPLICIT_SAM_ERROR || (import.meta.env.VITE_SAM_SOLACE_TOPIC_ERROR || "").trim() || `STYL/iot/${_DOMAIN}/system/shared/v1/sam/chat/error`;
+const SAM_SOLACE_MODE = "solace";   // transport always attempted (times out → offline if Solace unconfigured)
+const SAM_USE_SOLACE_FIFO = false;  // replies carry correlationId, matched in _takePendingForPayload
 
 function _parseTimeoutMs(fallback) {
   const raw = import.meta.env.VITE_SAM_TIMEOUT_MS;
@@ -367,26 +356,16 @@ export function initSam() {
 export async function chat(text, context = {}) {
   if (useSolaceSam()) {
     _registerSolaceHandlers();
-    if (SAM_USE_SOLACE_FIFO) {
-      return new Promise((resolve) => {
-        const entry = { resolve, timer: null };
-        entry.timer = setTimeout(() => { _removePendingFifoEntry(entry); console.warn("[sam] Solace reply timeout"); resolve({ offline: true }); }, SAM_TIMEOUT_SOLACE_MS);
-        _pendingFifo.push(entry);
-        const body = _composeTextMessage(text, context); // plain text (text-only agent)
-        console.log(`[sam] publish → ${SAM_QUERY_TOPIC} (timeout ${SAM_TIMEOUT_SOLACE_MS}ms, FIFO)`);
-        publish(SAM_QUERY_TOPIC, body);
-      });
-    }
     const correlationId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `sb-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         if (_pending.has(correlationId)) { _pending.delete(correlationId); console.warn("[sam] Solace reply timeout"); resolve({ offline: true }); }
       }, SAM_TIMEOUT_SOLACE_MS);
       _pending.set(correlationId, { resolve, timer });
-      // Text-only wire: the id can't ride in plain text, so explicit-topic mode
-      // relies on the single-pending / FIFO fallback to match the reply.
-      const body = _composeTextMessage(text, context);
-      console.log(`[sam] publish → ${SAM_QUERY_TOPIC} (timeout ${SAM_TIMEOUT_SOLACE_MS}ms)`);
+      // JSON envelope {correlationId, text, context, ts} — matches the styl-office-uwb wire + the SAM
+      // gateway rule ({payload.text}/{payload.correlationId}/{payload.context}/{payload.ts}).
+      const body = JSON.stringify({ correlationId, text: String(text ?? ""), context: _contextPreamble(context), ts: Date.now() });
+      console.log(`[sam] publish → ${SAM_QUERY_TOPIC} (corr ${correlationId})`);
       publish(SAM_QUERY_TOPIC, body);
     });
   }
