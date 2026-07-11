@@ -5,16 +5,18 @@ import { openWindow } from './windowing.js';
 
 // NOTE: the Stall Explorer view is shelved (no item/SKU data yet) — stall detail
 // lives inside each school window instead. Re-add 'stalls' here when it returns.
+// Views are filtered to what the selected month actually has (main.js viewAvailable), so listing a
+// month-specific view here is safe — it just doesn't show in a month that lacks it.
 export const ROLES = {
     fnb:  { label: 'F&B / Operations', icon: '🍜', color: '#1baf7a',
-            desc: 'What sells, price points, revenue by school, stall and hour — February insights.',
-            views: ['feb', 'overview'], primary: 'feb' },
+            desc: 'What sells, price points, revenue by school, stall and hour — plus nutrition & savings.',
+            views: ['overview', 'items', 'savings', 'feb'], primary: 'overview' },
     eng:  { label: 'Engineering', icon: '🔧', color: '#2a78d6',
             desc: 'Terminal fleet health, machine-vs-location fault diagnosis, network, speed, signal.',
-            views: ['eng', 'overview', 'feb'], primary: 'eng' },
+            views: ['eng', 'overview'], primary: 'eng' },
     mgmt: { label: 'Management', icon: '📊', color: '#7d5fd3',
-            desc: 'Everything — network overview, school spending, terminals, February insights.',
-            views: ['overview', 'eng', 'feb'], primary: 'overview' },
+            desc: 'Everything — network overview, school spending, terminals, nutrition & savings.',
+            views: ['overview', 'eng', 'items', 'savings', 'feb'], primary: 'overview' },
 };
 
 export function openHub(onPick) {

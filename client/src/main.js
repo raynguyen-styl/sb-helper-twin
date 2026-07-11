@@ -16,7 +16,7 @@ import { openUpload } from './upload-window.js';
 import { initAuth, authReady, authRoles, logout } from './auth.js';
 import { initSolace } from './solace/solace.js';
 import { initSam } from './sam/samClient.js';
-import { initSamPanel } from './sam/samPanel.js';
+import { initSamPanel, setSamMonth } from './sam/samPanel.js';
 
 // Force Keycloak login first when configured (live deploy). No-op stub in local dev (no VITE_KEYCLOAK_URL).
 // Fire-and-forget: login-required redirects unauthenticated browsers to Keycloak; sb-api calls await
@@ -224,6 +224,7 @@ async function loadMonth(m) {
     localStorage.setItem('sb-month', m);
     curKinds = MONTHS.find((x) => x.month === m)?.kinds || [];
     setPlaybackMonth(m);
+    setSamMonth(m);
     const [g, sc, st] = await Promise.all([
         fetchBundle(m, 'global').catch(() => ({})),
         fetchBundle(m, 'schools').catch(() => ({ schools: {} })),

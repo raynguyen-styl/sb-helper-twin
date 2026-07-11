@@ -8,6 +8,34 @@
  */
 
 import { chat } from "./samClient.js";
+import { monthLabel } from "../sbData.js";
+
+// Month-appropriate starter prompts (CNY + heart-rate only make sense for Feb; items/savings for March).
+function chipsHtml(m) {
+  const rows = m === "2026-02"
+    ? [["Which schools spent the most?", "Top-spending schools"],
+       ["How did Chinese New Year affect revenue?", "CNY revenue impact"],
+       ["Which terminals are the slowest?", "Slowest terminals"],
+       ["What is the average heart rate, excluding the 255 sensor errors?", "Average heart rate"]]
+    : [["Which schools spent the most?", "Top-spending schools"],
+       ["Which terminals are the slowest?", "Slowest terminals"],
+       ["What share of items were a Healthier Choice?", "Healthier-choice share"],
+       ["How much did students save versus spend?", "Saving vs spending"]];
+  return rows.map(([p, l]) =>
+    `<button type="button" class="sam-empty-chip" data-prompt="${p.replace(/"/g, "&quot;")}">${l}</button>`).join("");
+}
+
+let _send = null;   // set by initSamPanel; lets the module-level setSamMonth wire regenerated chips
+
+// main.js calls this whenever the dashboard month changes → the panel reflects the SELECTED month.
+export function setSamMonth(m) {
+  const lbl = monthLabel(m) || "the loaded data";
+  const q = (s) => document.querySelector(`#sam-panel ${s}`);
+  const sub = q(".sam-sub"); if (sub) sub.textContent = `Data assistant · ${monthLabel(m) || "—"}`;
+  const title = q(".sam-empty-title"); if (title) title.textContent = `Ask about the ${lbl} data`;
+  const input = document.getElementById("sam-input"); if (input) input.placeholder = `Ask about ${monthLabel(m) || "the data"}…`;
+  const prompts = q(".sam-empty-prompts"); if (prompts) prompts.innerHTML = chipsHtml(m);
+}
 
 const MOBILE_BREAKPOINT = 720;
 const AVATAR = "/icon.png";                 // branded assistant avatar (public/icon.png)
@@ -142,7 +170,7 @@ export function initSamPanel(getContext) {
         <img class="sam-brand-av" src="${AVATAR}" alt="" />
         <div class="sam-header-txt">
           <span class="sam-title">SAM</span>
-          <span class="sam-sub">Data assistant · Feb 2026</span>
+          <span class="sam-sub">Data assistant</span>
         </div>
       </div>
       <div class="sam-header-right">
@@ -155,20 +183,15 @@ export function initSamPanel(getContext) {
       <div class="sam-empty-state">
         <div class="sam-empty-inner">
           <img class="sam-empty-av" src="${AVATAR}" alt="" />
-          <div class="sam-empty-title">Ask about the February 2026 data</div>
+          <div class="sam-empty-title">Ask about the data</div>
           <div class="sam-empty-copy">Spending, stalls, network health or wearables — in plain English. SAM writes SQL and answers with real numbers.</div>
-          <div class="sam-empty-prompts">
-            <button type="button" class="sam-empty-chip" data-prompt="Which schools spent the most in February?">Top-spending schools</button>
-            <button type="button" class="sam-empty-chip" data-prompt="How did Chinese New Year affect revenue?">CNY revenue impact</button>
-            <button type="button" class="sam-empty-chip" data-prompt="Which terminals are the slowest?">Slowest terminals</button>
-            <button type="button" class="sam-empty-chip" data-prompt="What is the average heart rate, excluding the 255 sensor errors?">Average heart rate</button>
-          </div>
+          <div class="sam-empty-prompts"></div>
         </div>
       </div>
     </div>
     <div id="sam-footer" class="sam-footer">
       <div class="sam-inputwrap">
-        <textarea id="sam-input" rows="1" placeholder="Ask about February 2026…" class="sam-input" aria-label="Message to SAM"></textarea>
+        <textarea id="sam-input" rows="1" placeholder="Ask SAM…" class="sam-input" aria-label="Message to SAM"></textarea>
         <button type="button" id="sam-send" class="sam-send" aria-label="Send" title="Send">↑</button>
       </div>
       <div class="sam-hint">Enter to send · Shift+Enter for a new line</div>
@@ -333,5 +356,11 @@ export function initSamPanel(getContext) {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }   // Enter sends, Shift+Enter = newline
   });
-  thread.querySelectorAll("[data-prompt]").forEach((b) => b.addEventListener("click", () => void handleSend(b.getAttribute("data-prompt") || "")));
+  // delegated so regenerated (month-aware) chips keep working without rebinding
+  _send = handleSend;
+  thread.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-prompt]");
+    if (b) void handleSend(b.getAttribute("data-prompt") || "");
+  });
+  setSamMonth("");   // render neutral starter chips until main.js sets the month
 }

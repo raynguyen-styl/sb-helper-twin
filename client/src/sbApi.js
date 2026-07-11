@@ -11,6 +11,7 @@ export const isLive = () => !!BASE;
 // server reads the right month's pb_* partition; empty → the server defaults to its newest month.
 let MONTH = '';
 export function setMonth(m) { MONTH = m || ''; }
+export const getMonth = () => MONTH;
 const mq = () => (MONTH ? `?month=${encodeURIComponent(MONTH)}` : '');
 
 async function get(path) {

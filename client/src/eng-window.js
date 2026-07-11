@@ -5,14 +5,15 @@
 import { openWindow } from './windowing.js';
 import { mk, opts, ax, bar, line, C } from './charts.js';
 import { vchip } from './stall-window.js';
+import { monthLabel } from './sbData.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-SG');
 const mach = (t) => t.length > 12 ? '…' + t.slice(-12) : t;
-const FEB_LABELS = [...Array(28).keys()].map((i) => i + 1);
+const dayLabels = (arr) => (arr || []).map((_, i) => i + 1);   // 1..N days, matches the month's data length
 const secs = (ms) => ms == null ? '–' : (ms / 1000).toFixed(1) + 's';
 
 export function openEng(DATA, preset = {}) {
-    const body = openWindow({ id: 'eng', title: 'Terminal Health', sub: 'machine-vs-location diagnostics · February 2026', chips: ['<span class="chip chip-flag">ENGINEERING</span>'] });
+    const body = openWindow({ id: 'eng', title: 'Terminal Health', sub: `machine-vs-location diagnostics · ${monthLabel(DATA.meta.month)}`, chips: ['<span class="chip chip-flag">ENGINEERING</span>'] });
     if (!body) return;
     const tw = body.closest('.tw');
     tw.style.width = '700px'; tw.style.left = '46px'; tw.style.top = '20px';
@@ -103,7 +104,7 @@ export function openTerminal(DATA, tid) {
     body.innerHTML = `
       <div class="callout-${t.verdict === 'machine' ? 'bad' : t.verdict === 'site' ? 'warn' : 'ok'}">${diag}</div>
       <div class="stats">
-        <div class="stat"><div class="v">${fmt(t.n)}</div><div class="l">Feb txns</div></div>
+        <div class="stat"><div class="v">${fmt(t.n)}</div><div class="l">txns</div></div>
         <div class="stat"><div class="v" style="${t.err_pct >= 10 ? 'color:var(--bad)' : ''}">${t.err_pct}%</div><div class="l">errors (school ${t.peer_err ?? '–'}%)</div></div>
         <div class="stat"><div class="v">${secs(t.med_ms)}</div><div class="l">median (school ${secs(t.peer_ms)})</div></div>
         <div class="stat"><div class="v">${secs(t.p95_ms)}</div><div class="l">p95</div></div>
@@ -120,13 +121,14 @@ export function openTerminal(DATA, tid) {
         <a href="#" data-stall>Open stall window →</a> &nbsp;·&nbsp; <a href="#" data-school>Open ${t.school} →</a></div>`;
 
     const [c1, c2, c3] = body.querySelectorAll('canvas');
-    mk(c1, { type: 'line', data: { labels: FEB_LABELS, datasets: [
+    const DL = dayLabels(t.daily_err.length ? t.daily_err : t.daily_ms);
+    mk(c1, { type: 'line', data: { labels: DL, datasets: [
         { label: 'this machine', data: t.daily_err, ...line(C.red), spanGaps: true },
-        { label: `school avg (${t.peer_err ?? '–'}%)`, data: FEB_LABELS.map(() => t.peer_err), ...line(C.muted, { borderDash: [4, 4], borderWidth: 1.5 }) },
+        { label: `school avg (${t.peer_err ?? '–'}%)`, data: DL.map(() => t.peer_err), ...line(C.muted, { borderDash: [4, 4], borderWidth: 1.5 }) },
     ] }, options: opts({ legend: true, indexMode: true, scales: { x: ax(), y: ax({ ticks: { callback: (v) => v + '%' } }) } }) });
-    mk(c2, { type: 'line', data: { labels: FEB_LABELS, datasets: [
+    mk(c2, { type: 'line', data: { labels: DL, datasets: [
         { label: 'median ms', data: t.daily_ms, ...line(C.blue), spanGaps: true },
-        { label: `school (${secs(t.peer_ms)})`, data: FEB_LABELS.map(() => t.peer_ms), ...line(C.muted, { borderDash: [4, 4], borderWidth: 1.5 }) },
+        { label: `school (${secs(t.peer_ms)})`, data: DL.map(() => t.peer_ms), ...line(C.muted, { borderDash: [4, 4], borderWidth: 1.5 }) },
     ] }, options: opts({ legend: true, indexMode: true, scales: { x: ax(), y: ax({ ticks: { callback: (v) => (v / 1000) + 's' } }) } }) });
     const comp = t.comp || {};
     mk(c3, { type: 'bar', data: { labels: ['check signal', 'open socket', 'handshake', 'transfer', 'tap→finish'],

@@ -5,7 +5,8 @@
 import { openWindow } from './windowing.js';
 import { mk, opts, ax, line, C } from './charts.js';
 import { createPlaybar } from './playback.js';
-import { schools, schoolSeries, wearableCohort, isLive, setMonth } from './sbApi.js';
+import { schools, schoolSeries, wearableCohort, isLive, setMonth, getMonth } from './sbApi.js';
+import { monthLabel } from './sbData.js';
 
 // main.js sets the active month here so playback reads the matching pb_* partition.
 export function setPlaybackMonth(m) { setMonth(m); }
@@ -19,7 +20,7 @@ const labelFor = () => (f) => f.date.slice(5);         // MM-DD (both subjects a
 export async function openPlayback(preset) {
   const body = openWindow({
     id: 'playback', title: 'Playback',
-    sub: isLive() ? 'Feb 2026 · daily (ClickHouse)' : 'Feb 2026 · daily demo (set VITE_SB_API_URL for live)',
+    sub: isLive() ? `${monthLabel(getMonth()) || 'Daily'} · daily (ClickHouse)` : 'daily demo (set VITE_SB_API_URL for live)',
     chips: [],
   });
   if (!body) return;

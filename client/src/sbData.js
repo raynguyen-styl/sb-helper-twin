@@ -23,3 +23,15 @@ export async function fetchMonths() {
 export async function fetchBundle(month, kind) {
   return api(`/api/insights?month=${encodeURIComponent(month)}&kind=${encodeURIComponent(kind)}`);
 }
+
+// ── month label helpers (windows show the SELECTED month, not a hardcoded "February") ──────────────
+const MONTHS_FULL = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+export function monthLabel(m) {                       // '2026-03' -> 'March 2026'
+  if (!/^\d{4}-\d{2}$/.test(m || '')) return '';
+  const [y, mo] = m.split('-');
+  return `${MONTHS_FULL[+mo]} ${y}`;
+}
+export const monthName = (m) => (monthLabel(m).split(' ')[0] || '');   // '2026-03' -> 'March'
+// Is this month February (used to gate CNY-specific notes/highlights)?
+export const isCNYMonth = (m) => m === '2026-02';

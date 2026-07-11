@@ -1,12 +1,13 @@
 // Network-wide overview window: opened on load. KPIs + the five requested views.
 import { openWindow } from './windowing.js';
 import { mk, opts, ax, bar, line, C, CAT_COLOR, LV_COLOR } from './charts.js';
+import { monthLabel, monthName, isCNYMonth } from './sbData.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-SG');
 const CATS = ['Drinks', 'Snacks & Desserts', 'Cooked Food', 'Mixed', 'Bookshop & Supplies', 'Unclassified'];
 
 export function openOverview(GLOBAL, SCHOOLS, onOpenSchool) {
-    const body = openWindow({ id: 'overview', title: 'Network Overview', sub: 'February 2026', chips: [] });
+    const body = openWindow({ id: 'overview', title: 'Network Overview', sub: monthLabel(GLOBAL.meta.month), chips: [] });
     if (!body) return;
     body.closest('.tw').style.width = '700px';
     body.closest('.tw').style.left = 'calc(100vw - 740px)';
@@ -54,16 +55,17 @@ function renderNet(el, G) {
     const sigTot = G.signal_dist.reduce((a, r) => a + r.n, 0);
     const bands = BANDS.map((b) => ({ ...b,
         n: G.signal_dist.filter((r) => b.test(r.sig)).reduce((a, r) => a + r.n, 0) }));
+    const MON = monthName(G.meta.month);
     el.innerHTML = `
-      <h5>Daily error rate &amp; offline share — February</h5>
-      <div class="cap">Errors hold a flat 6–9% school-day baseline; offline processing ~30%. 17–18 Feb are the CNY holidays (no school).</div>
+      <h5>Daily error rate &amp; offline share — ${MON}</h5>
+      <div class="cap">Errors hold a flat 6–9% school-day baseline; offline processing ~30%.${isCNYMonth(G.meta.month) ? ' 17–18 Feb are the CNY holidays (no school).' : ''}</div>
       <div class="cwrap"><canvas></canvas></div>
       <h5>How good is the signal where terminals live?</h5>
-      <div class="cap">Share of February's 4G transactions by the signal quality the terminal reported at the moment
+      <div class="cap">Share of ${MON}'s 4G transactions by the signal quality the terminal reported at the moment
       of payment. 45 WiFi terminals measure differently (dBm) and are excluded here.</div>
       <div class="cwrap" style="height:130px"><canvas></canvas></div>
       <div class="cap">${bands.map((b) => `<span style="color:${b.color}">●</span> ${b.label} — ${b.desc}`).join(' &nbsp; ')}</div>
-      <h5>Terminals needing attention (≥1k Feb txns, worst error rate)</h5>
+      <h5>Terminals needing attention (≥1k ${MON} txns, worst error rate)</h5>
       <table class="mini"><tr><th>Terminal</th><th>School</th><th style="text-align:right">Txns</th>
         <th style="text-align:right">Err %</th><th style="text-align:right">Median</th></tr>
         ${worst.map((t) => `<tr><td style="font-size:10.5px">…${t.terminalId.slice(-11)}</td><td><b>${t.school}</b></td>
@@ -88,7 +90,7 @@ function renderNet(el, G) {
 
 function renderSpeed(el, G) {
     el.innerHTML = `
-      <h5>Daily median &amp; p95 transaction time — February</h5>
+      <h5>Daily median &amp; p95 transaction time — ${monthName(G.meta.month)}</h5>
       <div class="cap">Stable ~2.3s median all month — no degradation trend. The p95 tail is where queues form.</div>
       <div class="cwrap"><canvas></canvas></div>
       <h5>Weekly median by payment stack</h5>
@@ -129,8 +131,9 @@ function renderFood(el, G) {
     const verPct = (100 * (mixTot - (uncl?.n || 0)) / mixTot);
     const ver = G.food_mix.filter((r) => r.mcat !== 'Unclassified').sort((a, b) => b.n - a.n);
     const verTot = ver.reduce((a, b) => a + b.n, 0);
+    const MON = monthName(G.meta.month);
     el.innerHTML = `
-      <h5>How much of February is name-verified?</h5>
+      <h5>How much of ${MON} is name-verified?</h5>
       <div class="cap">No item/SKU data exists, so a stall gets a category only if its registered name says what
       it sells, and only if its own prices don't contradict the claim (a "cooked food" name trading at a
       $0.60 modal is not counted as cooked food). Generic names ("Stall 1") and bare company names
@@ -144,10 +147,10 @@ function renderFood(el, G) {
       honest about what we know, silent about what we don't.</div>
       <h5>What sells — share within name-verified volume</h5>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>Category share by week — name-verified stalls, February</h5>
+      <h5>Category share by week — name-verified stalls, ${MON}</h5>
       <div class="cap">Share within verified volume per week; the mix barely moves — the timetable sets demand.</div>
       <div class="cwrap tall"><canvas></canvas></div>
-      <h5>Average price by week per verified category — February</h5>
+      <h5>Average price by week per verified category — ${MON}</h5>
       <div class="cap">Flat across the month — no canteen inflation. Low-volume points are gapped, not charted.</div>
       <div class="cwrap"><canvas></canvas></div>`;
     const [c1, c2, c3] = el.querySelectorAll('canvas');

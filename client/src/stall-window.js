@@ -3,16 +3,16 @@
 // Filtering is client-side over the precomputed stalls array (no backend).
 import { openWindow } from './windowing.js';
 import { mk, opts, ax, bar, line, C, CAT_COLOR } from './charts.js';
+import { monthLabel, monthName, isCNYMonth } from './sbData.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-SG');
 const fmt$ = (v) => v >= 1e6 ? '$' + (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? '$' + Math.round(v / 1e3).toLocaleString() + 'K' : '$' + Math.round(v);
 const CAT_CHIP = (c) => `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${CAT_COLOR[c] || C.muted};margin-right:5px"></span>`;
 const mach = (t) => t.length > 12 ? '…' + t.slice(-12) : t;
-const FEB_LABELS = [...Array(28).keys()].map((i) => i + 1);
 let charts = [];
 
 export function openStallExplorer(DATA, preset = {}) {
-    const body = openWindow({ id: 'stalls', title: 'Stall Explorer', sub: 'every stall & machine · February 2026', chips: ['<span class="chip chip-sec">F&B</span>'] });
+    const body = openWindow({ id: 'stalls', title: 'Stall Explorer', sub: `every stall & machine · ${monthLabel(DATA.meta.month)}`, chips: ['<span class="chip chip-sec">F&B</span>'] });
     if (!body) {
         // window already open — re-apply preset filters if given
         const w = document.querySelector('[data-win="stalls"] .tw-body');
@@ -30,7 +30,7 @@ export function openStallExplorer(DATA, preset = {}) {
         <div class="stat"><div class="v">${fmt(m.stalls)}</div><div class="l">stalls</div></div>
         <div class="stat"><div class="v">${fmt(m.terminals)}</div><div class="l">machines</div></div>
         <div class="stat"><div class="v">${m.schools}</div><div class="l">schools</div></div>
-        <div class="stat"><div class="v">${fmt$(m.rev)}</div><div class="l">Feb revenue</div></div>
+        <div class="stat"><div class="v">${fmt$(m.rev)}</div><div class="l">revenue</div></div>
       </div>
       <div class="fbar"><span class="fl">Search</span>
         <input id="st-q" class="finput" placeholder="school ID, stall name or machine number…" value="${qtext}"></div>
@@ -104,12 +104,12 @@ export function openStall(DATA, sid) {
     const terms = s.terms.map((tid) => DATA.terminals.find((t) => t.id === tid)).filter(Boolean);
     body.innerHTML = `
       <div class="stats">
-        <div class="stat"><div class="v">${fmt$(s.rev)}</div><div class="l">Feb revenue</div></div>
+        <div class="stat"><div class="v">${fmt$(s.rev)}</div><div class="l">revenue</div></div>
         <div class="stat"><div class="v">${fmt(s.n)}</div><div class="l">transactions</div></div>
         <div class="stat"><div class="v">$${s.ticket.toFixed(2)}</div><div class="l">avg ticket</div></div>
         <div class="stat"><div class="v">${s.terms.length}</div><div class="l">machine${s.terms.length > 1 ? 's' : ''}</div></div>
       </div>
-      <h5>Daily revenue — February</h5><div class="cwrap"><canvas></canvas></div>
+      <h5>Daily revenue — ${monthName(DATA.meta.month)}</h5><div class="cwrap"><canvas></canvas></div>
       <h5>Revenue by hour (school days) &amp; price mix</h5>
       <div style="display:flex;gap:10px"><div class="cwrap" style="flex:1.4"><canvas></canvas></div>
       <div class="cwrap" style="flex:1"><canvas></canvas></div></div>
@@ -126,8 +126,10 @@ export function openStall(DATA, sid) {
       <div class="cap" style="margin-top:8px"><a href="#" data-school>Open ${s.school} school window →</a></div>`;
 
     const [c1, c2, c3] = body.querySelectorAll('canvas');
-    mk(c1, { type: 'bar', data: { labels: FEB_LABELS, datasets: [{ label: 'rev', data: s.daily,
-        backgroundColor: FEB_LABELS.map((d) => d >= 16 && d <= 18 ? C.red : CAT_COLOR[s.cat] || C.yellow), borderRadius: 2 }] },
+    const DL = s.daily.map((_, i) => i + 1);                       // 1..N days (matches this month)
+    const cny = isCNYMonth(DATA.meta.month);
+    mk(c1, { type: 'bar', data: { labels: DL, datasets: [{ label: 'rev', data: s.daily,
+        backgroundColor: DL.map((d) => cny && d >= 16 && d <= 18 ? C.red : CAT_COLOR[s.cat] || C.yellow), borderRadius: 2 }] },
         options: opts({ tooltip: { callbacks: { label: (c) => fmt$(c.parsed.y) } }, scales: { x: ax(), y: ax({ ticks: { callback: (v) => fmt$(v) } }) } }) });
     mk(c2, { type: 'bar', data: { labels: [...Array(15).keys()].map((h) => h + 5), datasets: [{ label: 'rev', data: s.hourly, ...bar(CAT_COLOR[s.cat] || C.yellow) }] },
         options: opts({ scales: { x: ax(), y: ax({ ticks: { callback: (v) => fmt$(v) } }) } }) });
