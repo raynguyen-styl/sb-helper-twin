@@ -202,6 +202,7 @@ export function initSamPanel(getContext) {
 
     .sam-thread { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; }
     .sam-empty-state { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px 4px; }
+    .sam-empty-state[hidden] { display: none; }   /* the explicit display:flex above would otherwise override [hidden] */
     .sam-empty-inner { max-width: 280px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
     .sam-empty-av { width: 46px; height: 46px; border-radius: 12px; object-fit: cover; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
     .sam-empty-title { color: var(--ink); font-family: var(--font-display); font-size: 15px; font-weight: 650; }
