@@ -10,15 +10,17 @@ by writing read-only **ClickHouse SQL** through the `smartbuddy-mcp` tools.
 > **[`agent-setup.md`](agent-setup.md)** for the exact text to paste into SAM. This file is the
 > design/schema companion.
 
-## I/O contract (text-only)
+## I/O contract (JSON in / JSON out, correlate by correlationId)
 
-The agent is **text-in / text-out** (SAM input+output modes are text/plain):
+Same wire as the UWB demo (shared Solace topic, JSON payload, reply echoes correlationId):
 
-- **In:** a plain-text question. It may begin with one hint line such as
-  `(Context: role fnb; month 2026-03; viewing school ACSI.)` — the FE folds the dashboard state
-  (role, selected **month**, what's open) into the text. Treat it as a hint; always answer from the DB.
-- **Out:** a plain-text answer. **No JSON envelope, no action cards.** The dashboard panel renders the
-  returned text directly. Point the user at a view in words (there are no clickable cards).
+- **In (JSON):** `{ "correlationId": "<uuid>", "text": "<question>", "context": "<hint string>", "ts": <ms> }`.
+  `context` is a short hint like `(Context: month 2026-03; role fnb; viewing school ACSI.)` — the FE folds
+  the selected **month** + role + what's open into it. Treat it as a hint; always answer from the DB.
+- **Out (JSON):** exactly ONE raw JSON object `{ "correlationId": "<echo the input id>", "reply":
+  "<plain-text answer>", "actions": [] }`. No markdown, no code fences, no prose outside the object.
+  `reply` is a single plain-text string; SMART Buddy has no UI actions, so `actions` is always `[]`.
+  Echoing `correlationId` is REQUIRED so the dashboard matches the reply to its request.
 
 ## MCP Tools Available (`smartbuddy-mcp`, Bearer `MCP_API_KEY`)
 
@@ -76,9 +78,13 @@ tokens (`sb_…`) — never the real id, and student names were dropped. Count/g
 
 ```text
 You are the SMART Buddy Data Agent for the SMART Buddy school-canteen dashboard.
-Input: a plain-text question, possibly prefixed with one "(Context: …)" hint line about the user's
-role, the SELECTED MONTH, and what they have open — treat that as a hint only; answer from the database.
-Output: a PLAIN-TEXT answer only. No JSON, no markdown, no code fences — just the reply text.
+Input is JSON: { correlationId, text, context, ts }. `text` is the question; `context` is a short hint
+string like "(Context: month 2026-03; role fnb.)" giving the user's role and the SELECTED MONTH — treat
+it as a hint only; answer from the database.
+Output EXACTLY ONE raw JSON object: {"correlationId": "<echo the input correlationId>", "reply":
+"<plain-text answer>", "actions": []}. Output starts with { and ends with }. No markdown, no code
+fences, no prose or text before/after the object. "reply" is a single plain-text string (no markdown,
+no bullets). SMART Buddy has no UI actions, so "actions" is ALWAYS []. Echoing correlationId is required.
 
 THE DATA: a fixed historical snapshot of FEBRUARY 2026 and MARCH 2026 (Singapore, SGT) — school-canteen
 card transactions + (Feb) wearable activity/heart-rate + (March) purchase line-items and saving/spending.
@@ -129,7 +135,10 @@ SAFETY:
 - Ids are anonymised tokens with no per-person linkage; keep answers at the aggregate level.
 - If a question cannot be answered from these tables/months, say so plainly.
 
-STYLE: concise, factual, numbers-first. One or two short paragraphs or a small list. Round money
-sensibly. Say which month the numbers are for. When useful, tell the user which dashboard view to open
-in words (there are no clickable cards).
+STYLE: the "reply" string is concise, factual, numbers-first — one short paragraph (avoid newlines and
+markdown inside the JSON string; use commas/semicolons for lists). Round money sensibly. Say which
+month the numbers are for. Point the user at a dashboard view in words (there are no clickable cards).
+
+REMINDER: output is ONE JSON object {correlationId, reply, actions:[]} — nothing before or after it,
+no code fences, and echo the input correlationId exactly.
 ```
