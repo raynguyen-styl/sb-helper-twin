@@ -1,14 +1,20 @@
 # SMART Buddy Dashboard — Data Analysis Project
 
 Analysis of the SMART Buddy school payment + wearable ecosystem for STYL Solutions.
-**Scope: February 2026 only** — the project was narrowed to Feb on 8 Jul 2026 (March/April
-transactions and the May health drop were removed from disk; see PIPELINE.md). February is the
-one month where **payments and wearables overlap on the same calendar days**, which is what
-makes the day-aligned analysis possible.
 
-The Feb dataset: **~4.0M canteen transactions** (334 schools) + **~5.3M wearable records**
-(2.95M activity + 2.39M heart-rate, ~13,600 users). Generated from the raw Feb CSVs in `txn/`
-(parts 001–005) and `health data/` (`*_202602_part*`).
+> **Deployed system (current):** the dashboard now serves **two months — February 2026 + March 2026**,
+> and **all data is read live from the shared ClickHouse `smartbuddy` database** (nothing is baked into
+> the JS bundle). Data arrives through the dashboard's **chunked Upload feature** (any size), is loaded
+> per-month (`month` partition), and the per-month insight bundles are precomputed into an `insights`
+> table. A top-bar **month picker** switches everything. Feb has canteen + wearable (activity/heart-rate);
+> March has canteen + purchase line-items + saving/spending. Runbook + pipeline: **DEPLOY.md** / below.
+>
+> The historical analysis notes below (Feb-only scope, local parquet pipeline, frozen HTML/PDF reports)
+> describe the ORIGINAL offline analysis and are kept as a record.
+
+The dataset: **~4.0M canteen transactions/month** (334 schools) + Feb **~5.3M wearable records**
+(2.95M activity + 2.39M heart-rate, ~13,600 users) + March **~4.3M purchase line-items** and
+**~145k student saving/spending** rows.
 
 ## Deliverables
 
@@ -36,46 +42,36 @@ Shareable links (claude.ai artifacts, enable sharing before forwarding):
 - Purchase insights: https://claude.ai/code/artifact/2e53acbc-2348-4f0a-8294-63f851c056b3 (redeployed 7 Jul with the verified-name policy)
 - (No artifact yet for the Feb reports or the app.)
 
-**Sharing the app with the team**: the app now plugs into the **shared IoT platform exactly like
-tree-digital-twin** — the classic analytical windows still read their bundled JSON, but Playback
-reads the shared **ClickHouse `smartbuddy` database** through the **api-service** read service, the
-chat panel reaches the **SAM agent over Solace**, and the whole app sits behind **Keycloak login**
-(realm `styl-iot`, client `smart-buddy`). `Dockerfile` + `nginx.conf` live in `client/`, and the
-root `docker-compose.yml` brings up **client + api-service** in one stack (`docker compose up -d
---build`); the Feb data is loaded once into ClickHouse by the `ch-ingest` one-shot from
-`docker-compose.agent.yml` (see DEPLOY.md). Isolated from tree-twin by design (project `smartbuddy`,
-containers `smartbuddy-frontend` / `smartbuddy-api`, frontend host port 8097 via `SB_FRONTEND_PORT`,
-`sb-net` + the shared external `backend` network — none of which collide with tree-twin's `nparks-*`
-/ 8087). Placement, hostname, and auth are handled by the deploying engineer — full runbook (nginx
-`/smartbuddy-api/` + `/smartbuddy-mcp/` routes, the exact tree-twin values to avoid, the
-basemap-egress caveat) in **DEPLOY.md**.
+## Architecture (deployed)
 
-## Live playback + data assistant (new — `tree-digital-twin` style)
+The app plugs into the shared IoT platform like tree-digital-twin, but **every window reads live from
+the shared ClickHouse `smartbuddy` database** (via the api-service read API) — nothing is baked into the
+JS bundle, and a top-bar **month picker** switches between Feb and March. Behind **Keycloak login**
+(realm `styl-iot`, client `smart-buddy`; the token's client must be in the shared jwt-validator's
+`JWT_ALLOWED_CLIENTS`). `Dockerfile` + `nginx.conf` live in `client/`; root `docker-compose.yml` runs
+**client + api-service**, and `docker-compose.agent.yml` runs **mcp-service** (SAM) + the chunked
+**upload service** + the ingest/insight one-shots. Isolated from tree-twin (project `smartbuddy`,
+containers `smartbuddy-*`, host port 8097, `sb-net` + shared `backend` net). Public host
+`smartbuddy-helper-uat.styl.solutions`; the client nginx same-origin-proxies `/smartbuddy-api/` +
+`/smartbuddy-mcp/` + `/smartbuddy-ingest/`. Full runbook: **DEPLOY.md**.
 
-Beyond the static dashboard above, the project now has a **time-playback** layer and a **chat data
-assistant** (a SAM agent), both served from a **single store — the shared ClickHouse `smartbuddy`
-database**. February 2026 is a fixed historical month, so there is no need for a live time-series /
-twin store: one OLAP store serves both playback and the agent (mirroring the car-identify precedent
-where one ClickHouse feeds a dashboard and playback). **All built and pushed; the first live run
-happens on the VM** (needs Docker + shared ClickHouse creds). Deploy: **DEPLOY.md**.
-
-- **Ingestion** (`ingestion-service/build_feb_clickhouse.py`, the `ch-ingest` one-shot in
-  `docker-compose.agent.yml`): loads the Feb parquets into the shared ClickHouse `smartbuddy` database
-  — raw/analytical tables for the agent plus small precomputed **playback tables `pb_*`** for
-  api-service — and creates the database + the read-only user. Personal ids are hashed at ingest.
-- **Read API** (`api-service/`): serves the Playback series straight from the `pb_school_daily` /
-  `pb_wearable_daily` / `pb_schools` tables, connecting as the read-only `smartbuddy_ro` user (no host
-  port; reached via nginx `/smartbuddy-api/`).
-- **Playback window** (in `client/`): scrub / play the February **daily** timeline — school txns +
-  revenue (watch the CNY drop) and wearable steps + active users. Additive — the existing windows are
-  unchanged; with no `VITE_SB_API_URL` set it uses built-in demo data.
-- **Data assistant** (the in-app chat panel): a **SAM agent** answers natural-language questions by
-  running read-only **ClickHouse SQL** over the same `smartbuddy` database's raw tables, reached
-  through the **dedicated read-only user** via the `mcp-service` (`smartbuddy-mcp`) adapter — see
-  `mcp-service/agent-setup.md`. So there is **one store**: api-service reads the `pb_*` daily tables
-  and the agent reads the raw tables (via MCP); the classic windows read their bundled JSON. (No
-  InfluxDB/Ditto: Influx would blow up on the high-cardinality card/terminal ids and Ditto only holds
-  current thing-state — neither fits, so a columnar OLAP store serves both; see DEPLOY.md.)
+Pieces:
+- **Upload → ClickHouse** (`ingestion-service/`): the dashboard **Upload tab** posts chunked, resumable,
+  **size-unlimited** files to the `smartbuddy-ingest` service, which hashes PII, loads them into the
+  target table's `month` partition (`ingest_core.py`, atomic REPLACE/append), and rebuilds aggregates.
+  `init_db.py` (one-shot) creates the db + `insights` table + scoped `smartbuddy_ro`/`smartbuddy_rw`
+  users. `build_insights.py` (+ `build_insights_wearable.py` for Feb) precompute each month's dashboard
+  bundles into the `insights` table. (`scripts/vm-load.sh` / `sb-upload.mjs` do the same load from a CLI.)
+- **Read API** (`api-service/`): `/api/months`, `/api/insights?month=&kind=` (the bundles every window
+  renders) + Playback series (`pb_*` tables), as the read-only `smartbuddy_ro` user.
+- **Dashboard** (`client/`): map + per-school/stall/terminal windows, Network Overview, Terminal Health,
+  **Wearables** (Feb), **Purchases & Nutrition** + **Saving vs Spending** (March), a **Playback** window
+  and a **SAM chat** panel — each fetched per selected month.
+- **Data assistant** (`mcp-service` = `smartbuddy-mcp`): a **SAM agent** answers NL questions by writing
+  read-only **ClickHouse SQL** over the `smartbuddy` tables via MCP (read-only user). Wire: shared Solace
+  topic `STYL/iot/smartbuddy/system/shared/v1/sam/chat/{request,response,error}`, JSON `{correlationId,
+  text,context,ts}`. See `mcp-service/agent-setup.md` + `agent-prompt.md`. (No InfluxDB/Ditto — one OLAP
+  store serves the dashboard, playback and the agent.)
 
 ## Headline findings
 

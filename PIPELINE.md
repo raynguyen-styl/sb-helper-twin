@@ -1,9 +1,16 @@
 # PIPELINE — SMART Buddy analysis pipeline (offline, Python/DuckDB)
 
-**Scope: February 2026 only.** March/April transactions and the May health drop were removed from
-disk on 8 Jul 2026 (see the purge note at the end). Everything below describes the Feb-only pipeline
-as it stands now; historical quarter/May steps are noted where they used to run but can no longer be
-re-executed without re-downloading the source drops.
+> **This file documents the ORIGINAL offline analysis pipeline** (raw CSV → parquet → JSON bundles →
+> HTML/PDF reports). The **deployed** dashboard no longer uses it: data is now **uploaded through the
+> dashboard into ClickHouse** (two months, Feb + March), and each month's insight bundles are
+> precomputed there by `ingestion-service/build_insights.py` + `build_insights_wearable.py` (which
+> reuse the same `taxonomy.py` + the SQL logic ported from the scripts below). See **DEPLOY.md** for
+> the live pipeline. The scripts here remain the reference for how each metric is computed + the
+> historical local artifacts.
+
+**Analysis scope (this file): February 2026.** March/April transactions and the May health drop were
+removed from disk on 8 Jul 2026 (see the purge note at the end). Historical quarter/May steps are
+noted where they used to run but can no longer be re-executed without re-downloading the source drops.
 
 Engineer-facing reference for the **offline analysis pipeline**: how the raw Feb CSVs become the
 JSON bundle, the app data, and the reports, and how every headline metric is computed.

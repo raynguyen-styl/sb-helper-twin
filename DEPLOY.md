@@ -109,31 +109,39 @@ No `INFLUX_*` / `DITTO_*`: that store does not exist here.
 
 ## 4 · Deploy commands (run on the VM, from the repo root)
 
+The store now holds **two months (Feb + March 2026)** and **data arrives through the dashboard's
+chunked Upload feature** (or `scripts/vm-load.sh` from a CLI) — no parquets, no bulk one-shot. Every
+fact table is `PARTITION BY month` ('2026-02' | '2026-03').
+
 ```bash
-# 4a. Load the Feb data into ClickHouse (ONCE) — the ch-ingest one-shot.
-#     Creates the `smartbuddy` db + read-only user AND loads the agent tables + the pb_* playback
-#     tables. Needs the parquets under ./analysis on the host (gitignored — scp them up first).
-docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-ingest
-
-# 4b. Bring up the app stack (client + api-service):
+# 4a. Build + start both stacks (frontend + api-service; mcp + upload service):
 docker compose up -d --build
-
-# 4c. Bring up the SAM agent stack (mcp-service):
 docker compose -f docker-compose.yml -f docker-compose.agent.yml up -d --build
+
+# 4b. ONE-SHOT: create the db + insights table + scoped ro/rw users (no data files needed):
+docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-init
+
+# 4c. Load data: open the dashboard → "Upload data" (chunked, any size), per month + dataset;
+#     OR from a machine holding the files:  bash scripts/vm-load.sh <file> <dataset> <YYYY-MM> [replace|append] [rebuild]
+#     Datasets: transactions, txn_perf, health, heart_rate (Feb) · items, saving_spending (March) · schools.
+
+# 4d. Build each month's dashboard insight bundles (upload auto-triggers this; run manually to force):
+SB_MONTH=2026-03 docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-insights
+SB_MONTH=2026-02 docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-insights
+docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-insights python build_insights_wearable.py 2026-02   # Feb wearable tab
 ```
 
-`build_feb_clickhouse.py` (ingestion-service) transforms the Feb parquets — reusing `taxonomy.py`
-plus the same PII hashing + student-traffic filter as the analysis pipeline — then, as the ClickHouse
-**admin**, creates the `smartbuddy` database and loads **MergeTree tables with NO TTL** (permanent,
-unlike atlantic's 30-day raw tables):
-- **for the agent** — `feb_txn`, `feb_health`, `feb_heart_rate`, `txn_perf_202602`, `schools`,
-  `stall_category` + the `tx` / `stallcat` views;
-- **for api-service (Playback)** — the small precomputed daily rollups `pb_schools`,
-  `pb_school_daily` (per-school txns + revenue) and `pb_wearable_daily` (cohort steps + active users),
-  so the read API never runs heavy aggregation on the shared instance.
-
-It then creates the dedicated **read-only user** `smartbuddy_ro` (`SELECT` only on `smartbuddy.*`).
-Idempotent — re-run to refresh the snapshot.
+**`init_db.py`** creates the `smartbuddy` db, the `insights(month,kind,json)` table, and two scoped
+users: **`smartbuddy_ro`** (`SELECT` only — api-service + MCP) and **`smartbuddy_rw`** (SELECT/INSERT/
+ALTER/CREATE/DROP on `smartbuddy.*` only — the upload service). **`ingest_core.py`** loads each file
+into its table's `month` partition (hashing PII, dropping names), rebuilding the `tx`/`stallcat` views
++ the `pb_*` playback rollups. **`build_insights.py`** / **`build_insights_wearable.py`** precompute the
+per-month bundles the dashboard reads. Tables (all MergeTree, NO TTL, `PARTITION BY month`):
+- **facts** — `txn`, `txn_perf`, `health`, `heart_rate` (Feb), `items`, `saving_spending` (March),
+  `stall_category` + the `tx` / `stallcat` views; **dimension** `schools` (no month).
+- **playback** — `pb_school_daily`, `pb_schools`, `pb_wearable_daily`.
+- **bundles** — `insights(month, kind, json)`: `global` / `schools` / `stalls` / `items` / `savings` /
+  `wearable`, served verbatim to the client by api-service.
 
 ---
 
