@@ -18,10 +18,16 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 600; }
 
 .app { display: flex; flex-direction: column; height: 100vh; }
 .nav { height: 44px; background: var(--black); color: #fff; display: flex; align-items: center;
-    justify-content: space-between; padding: 0 20px; font-size: 13px; flex: none; }
-.nav .brand { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    justify-content: space-between; gap: 16px; flex-wrap: nowrap; padding: 0 20px; font-size: 13px; flex: none; }
+/* brand shrinks (never wraps) so the controls on the right stay put; subtitle drops when tight */
+.nav .brand { font-weight: 600; display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; }
 .brand-logo { height: 20px; width: 20px; border-radius: 5px; object-fit: cover; flex: none; }
-.nav-right { display: flex; align-items: center; gap: 14px; }
+.brand-txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.brand-sub { font-weight: 400; color: rgba(255,255,255,.5); }
+/* controls keep their natural width (always visible); the search is the flexible element */
+.nav-right { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+@media (max-width: 1280px) { .brand-sub { display: none; } }
+@media (max-width: 960px)  { .search { display: none; } }
 .month-picker { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.22);
   border-radius: 7px; padding: 5px 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .month-picker option { color: #1d1d1f; }
@@ -72,11 +78,11 @@ select.up-in { cursor: pointer; }
 @media (max-width: 480px) { .up-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .up-overlay, .up-modal { transition: none; } }
 .nav .period { color: rgba(255,255,255,.55); font-size: 12px; }
-.search { width: 260px; height: 28px; border-radius: var(--r-pill); border: none;
+.search { flex: 0 1 240px; min-width: 120px; width: auto; height: 28px; border-radius: var(--r-pill); border: none;
     background: rgba(255,255,255,.14); color: #fff; padding: 0 14px; font-size: 12.5px; outline: none; }
 .search::placeholder { color: rgba(255,255,255,.45); }
 .search:focus { background: rgba(255,255,255,.24); }
-.nav-views { display: flex; gap: 6px; align-items: center; }
+.nav-views { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; flex-wrap: nowrap; }
 .nav-btn { height: 28px; border: none; border-radius: var(--r-pill); padding: 0 13px; cursor: pointer;
     background: rgba(255,255,255,.14); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .nav-btn:hover { background: var(--primary); }
