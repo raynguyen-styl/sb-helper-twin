@@ -12,11 +12,12 @@ const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/; // safe object-name guard for metadata
 function runSqlDescription() {
   const tableLines = LISTED.map((t) => `  ${t.padEnd(17)} — ${TABLES[t].purpose.split(". ")[0]}.`);
   return [
-    "Run a READ-ONLY SQL query against the SMART Buddy February-2026 ClickHouse store and get rows back.",
+    "Run a READ-ONLY SQL query against the SMART Buddy ClickHouse store (February 2026 + March 2026) and get rows back.",
     "This is the main tool — write ClickHouse SQL to answer the question, then cite the numbers you get.",
     "",
     "HARD RULES (enforced): a single statement, must start with SELECT or WITH, read-only. Anything else is rejected with an {error, hint}.",
-    "ClickHouse dialect: dates are toDate('2026-02-14') (NOT DATE '…'); day-of-week is toDayOfWeek(txn_date) (Mon=1..Sun=7); cast text dates with toDateOrNull(hr_date); median()/quantile() and count(DISTINCT x) work.",
+    "MONTH: every fact table has a `month` String column ('2026-02' | '2026-03'). ALWAYS filter WHERE month = '2026-0X' (or GROUP BY month). Wearables (health, heart_rate) are Feb-only; items + saving_spending are March-only; transactions/speed/stalls exist for both.",
+    "ClickHouse dialect: dates are toDate('2026-03-14') (NOT DATE '…'); day-of-week is toDayOfWeek(txn_date) (Mon=1..Sun=7); recorded_time is a UNIX epoch → toDateTime(recorded_time); median()/quantile() and count(DISTINCT x) work; cast messy values with toInt32OrNull(toString(x)).",
     "",
     "Tables / views (call describe_table for columns + units):",
     ...tableLines,
@@ -24,27 +25,31 @@ function runSqlDescription() {
     "Analysis rules you MUST follow:",
     ...GLOBAL_NOTES.map((n) => `  - ${n}`),
     "",
-    "Example queries (copy & adapt):",
-    "  -- verified-name food category coverage (use verified-only denominators for shares)",
+    "Example queries (copy & adapt — note the month filter):",
+    "  -- verified-name food category coverage for a month (verified-only denominators for shares)",
     "  SELECT sc.mcat, count(*) AS txns, round(sum(t.amount)/100.0,2) AS revenue_sgd",
-    "  FROM tx t JOIN stallcat sc USING (schoolId, storeId) GROUP BY sc.mcat ORDER BY txns DESC;",
+    "  FROM tx t JOIN stallcat sc USING (month, schoolId, storeId)",
+    "  WHERE t.month = '2026-03' GROUP BY sc.mcat ORDER BY txns DESC;",
     "",
-    "  -- spend per school with MOE governance type ('atas' axis), matched schools only",
+    "  -- spend per school MOE governance type ('atas' axis), matched schools only, one month",
     "  SELECT s.type AS moe_type, count(*) AS txns, round(avg(t.amount)/100.0,2) AS avg_ticket_sgd",
-    "  FROM tx t JOIN schools s USING (schoolId) GROUP BY s.type ORDER BY txns DESC;",
+    "  FROM tx t JOIN schools s USING (schoolId) WHERE t.month = '2026-02' GROUP BY s.type ORDER BY txns DESC;",
     "",
-    "  -- CNY impact: daily revenue across the CNY window",
-    "  SELECT txn_date, round(sum(amount)/100.0,2) AS revenue_sgd, count(*) AS txns",
-    "  FROM tx WHERE txn_date BETWEEN toDate('2026-02-13') AND toDate('2026-02-22') GROUP BY txn_date ORDER BY txn_date;",
+    "  -- compare the two months' daily revenue",
+    "  SELECT month, txn_date, round(sum(amount)/100.0,2) AS revenue_sgd, count(*) AS txns",
+    "  FROM tx GROUP BY month, txn_date ORDER BY month, txn_date;",
     "",
-    "  -- mean heart rate (exclude the 255 sentinel; Feb dates only)",
+    "  -- mean heart rate, FEBRUARY only (exclude 0/255 sentinels; recorded_time is an epoch)",
     "  SELECT round(avg(bpm_number),1) AS mean_bpm, count(*) AS readings, count(DISTINCT user_id) AS users",
-    "  FROM feb_heart_rate WHERE bpm_number BETWEEN 30 AND 220",
-    "    AND toDateOrNull(hr_date) BETWEEN toDate('2026-02-01') AND toDate('2026-02-28');",
+    "  FROM heart_rate WHERE month = '2026-02' AND bpm_number BETWEEN 30 AND 220;",
     "",
-    "  -- transaction speed by network stack (guard startToFinish > 0)",
+    "  -- MARCH Healthier-Choice share of purchase items",
+    "  SELECT round(100.0*countIf(toInt32OrNull(toString(healthyChoice))=1)/count(),1) AS healthy_pct",
+    "  FROM items WHERE month = '2026-03';",
+    "",
+    "  -- transaction speed by network stack, one month (guard startToFinish > 0)",
     "  SELECT posNetworkType, count(*) AS n, round(median(startToFinish)) AS median_ms",
-    "  FROM txn_perf_202602 WHERE startToFinish > 0 GROUP BY posNetworkType ORDER BY n DESC;",
+    "  FROM txn_perf WHERE month = '2026-02' AND startToFinish > 0 GROUP BY posNetworkType ORDER BY n DESC;",
     "",
     `Use resolve_time_range for date phrases (CNY, weekends, 'first week', a weekday). maxRows caps the result (default ${MAX_ROWS_DEFAULT}, max ${MAX_ROWS_HARD}); large results are truncated with truncated=true — aggregate in SQL instead of pulling raw rows.`,
   ].join("\n");
@@ -55,17 +60,17 @@ function buildMcpServer() {
 
   server.tool(
     "get_server_time",
-    "Return the real server clock AND the fixed scope of this dataset. Call this first: the data is a historical snapshot of FEBRUARY 2026 (SGT) — do not assume it matches your training year or 'today'. All date filtering must stay within 2026-02-01..2026-02-28.",
+    "Return the real server clock AND the fixed scope of this dataset. Call this first: the data is a historical snapshot of FEBRUARY 2026 and MARCH 2026 (SGT) — do not assume it matches your training year or 'today'. Every fact table has a `month` column ('2026-02' | '2026-03'); always filter it.",
     {},
     async () => {
       const now = Date.now();
-      return { content: [{ type: "text", text: JSON.stringify({ serverNowMs: now, serverNowIso: new Date(now).toISOString(), dataset: DATASET, note: "Query dates within February 2026 only." }, null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ serverNowMs: now, serverNowIso: new Date(now).toISOString(), dataset: DATASET, months: ["2026-02", "2026-03"], note: "Two months. Filter the `month` column. Wearables are Feb-only; items/saving_spending are March-only." }, null, 2) }] };
     },
   );
 
   server.tool(
     "resolve_time_range",
-    "Turn a natural-language date phrase into exact February-2026 dates (SGT) plus a ready-to-paste SQL predicate on txn_date. Handles: explicit dates (2026-02-14 or 2-14), 'CNY'/'Chinese New Year' (and 'CNY week'), 'Valentine', 'first/second/third/last week', 'weekend', 'weekday'/'school day', and weekday names (returns every matching Feb date). Use its `predicate` directly in run_sql.",
+    "Turn a natural-language date phrase into exact dates (SGT) within a dataset month plus a ready-to-paste SQL predicate that pins the `month` column + a txn_date range. Detects 'March'/'February' (default Feb; CNY forces Feb). Handles: explicit dates (2026-03-14 or 3-14), 'CNY'/'Chinese New Year' (+ 'CNY week'), 'Valentine', 'first/second/third/last week', 'weekend', 'weekday'/'school day', and weekday names. Use its `predicate` directly in run_sql; it returns the `month` too.",
     { text: z.string().describe("The date phrase, e.g. 'CNY week', 'first week', 'every Monday', '2-14', 'weekends'.") },
     async ({ text }) => {
       console.log(`[tool] resolve_time_range text=${String(text).slice(0, 60)}`);

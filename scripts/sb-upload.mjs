@@ -25,6 +25,12 @@ const CLIENT = process.env.SB_KC_CLIENT || 'smart-buddy';
 const DATA_ROOT = process.env.SB_DATA_ROOT || 'C:/Users/STYLSG/Desktop';
 const AUTH_FILE = new URL('./.sb-auth.json', import.meta.url);
 const PART = 32 * 1024 * 1024;
+// Endpoint bases. Public (default): via nginx under /smartbuddy-* (Keycloak-gated → needs a token).
+// Direct (SB_NO_AUTH=1 + SB_INGEST_BASE/SB_API_BASE): straight to the containers (e.g. over an SSH
+// tunnel), skipping the auth gate — no token needed.
+const INGEST = process.env.SB_INGEST_BASE || `${BASE}/smartbuddy-ingest`;
+const READAPI = process.env.SB_API_BASE || `${BASE}/smartbuddy-api`;
+const NO_AUTH = process.env.SB_NO_AUTH === '1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fmtB = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(0)} MB` : `${Math.round(n / 1e3)} KB`);
 
@@ -64,18 +70,21 @@ async function token() {
   throw new Error('No usable auth in scripts/.sb-auth.json (need refresh_token, or username+password).');
 }
 
-async function api(pathname, { method = 'GET', body, json, raw = false } = {}) {
+async function req(url, { method = 'GET', body, json } = {}) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const headers = { Authorization: `Bearer ${await token()}` };
+    const headers = {};
+    if (!NO_AUTH) headers.Authorization = `Bearer ${await token()}`;
     if (json) headers['Content-Type'] = 'application/json';
-    const r = await fetch(`${BASE}${pathname}`, { method, headers, body: json ? JSON.stringify(json) : body });
-    if (r.status === 401 && attempt === 0) { auth.access_token = null; continue; }   // force refresh once
+    const r = await fetch(url, { method, headers, body: json ? JSON.stringify(json) : body });
+    if (r.status === 401 && !NO_AUTH && attempt === 0) { auth.access_token = null; continue; }  // refresh once
     const text = await r.text();
     let data; try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text }; }
-    if (!r.ok) throw new Error(`${pathname} → ${r.status}: ${data.error || data.detail || text.slice(0, 200)}`);
-    return raw ? text : data;
+    if (!r.ok) throw new Error(`${url} → ${r.status}: ${data.error || data.detail || text.slice(0, 200)}`);
+    return data;
   }
 }
+const ing = (p, o) => req(`${INGEST}${p}`, o);       // ingest service (upload protocol)
+const rd = (p, o) => req(`${READAPI}${p}`, o);       // read API (months + insights, for verify)
 
 // ── one file through the chunked protocol ──────────────────────────────────────
 async function uploadFile(abs, { dataset, month, mode, rebuild }) {
@@ -83,28 +92,38 @@ async function uploadFile(abs, { dataset, month, mode, rebuild }) {
   const totalParts = Math.max(1, Math.ceil(size / PART));
   const name = path.basename(abs);
   process.stdout.write(`    ${name} (${fmtB(size)}, ${totalParts} parts, mode=${mode}) `);
-  const { id } = await api('/smartbuddy-ingest/uploads', { method: 'POST', json: {
+  const { id } = await ing('/uploads', { method: 'POST', json: {
     dataset, month, mode, rebuild, filename: name, size, part_size: PART, total_parts: totalParts } });
 
+  // Upload parts CONCURRENTLY — long-haul single-stream TCP is latency-limited, so N parallel PUTs
+  // move far more throughput. Each worker preads its own slice (position-based read is concurrency-safe).
+  const CONC = Math.max(1, Number(process.env.SB_CONCURRENCY || 4));
   const fd = await open(abs, 'r');
-  try {
-    const buf = Buffer.allocUnsafe(PART);
-    for (let i = 0; i < totalParts; i += 1) {
-      const len = Math.min(PART, size - i * PART);
-      await fd.read(buf, 0, len, i * PART);
-      let ok = false;
-      for (let a = 0; a < 4 && !ok; a += 1) {
-        try { await api(`/smartbuddy-ingest/uploads/${id}/parts/${i}`, { method: 'PUT', body: buf.subarray(0, len) }); ok = true; }
-        catch (e) { if (a === 3) throw e; await sleep(600 * (a + 1)); }
-      }
-      process.stdout.write(`\r    ${name} — uploaded ${i + 1}/${totalParts} parts   `);
+  let done = 0, next = 0;
+  const putPart = async (i) => {
+    const len = Math.min(PART, size - i * PART);
+    const b = Buffer.allocUnsafe(len);
+    await fd.read(b, 0, len, i * PART);
+    for (let a = 0; a < 5; a += 1) {
+      try { await ing(`/uploads/${id}/parts/${i}`, { method: 'PUT', body: b }); return; }
+      catch (e) { if (a === 4) throw e; await sleep(800 * (a + 1)); }
     }
-  } finally { await fd.close(); }
+  };
+  const worker = async () => {
+    while (next < totalParts) {
+      const i = next; next += 1;
+      await putPart(i);
+      done += 1;
+      process.stdout.write(`\r    ${name} — uploaded ${done}/${totalParts} parts   `);
+    }
+  };
+  try { await Promise.all(Array.from({ length: Math.min(CONC, totalParts) }, worker)); }
+  finally { await fd.close(); }
 
-  await api(`/smartbuddy-ingest/uploads/${id}/complete`, { method: 'POST', json: {} });
+  await ing(`/uploads/${id}/complete`, { method: 'POST', json: {} });
   for (;;) {
     await sleep(2000);
-    const st = await api(`/smartbuddy-ingest/uploads/${id}`);
+    const st = await ing(`/uploads/${id}`);
     if (st.phase === 'done') { console.log(`\r    ${name} — done: ${Number(st.rows || 0).toLocaleString()} rows${st.rebuilt?.length ? `, rebuilt ${st.rebuilt.join('/')}` : ''}          `); return st; }
     if (st.phase === 'error') throw new Error(`load failed: ${st.error}`);
     process.stdout.write(`\r    ${name} — ${st.phase}${st.load_rows ? ` (${Number(st.load_rows).toLocaleString()} rows)` : ''}          `);
@@ -126,12 +145,12 @@ async function uploadDataset({ month, dataset, files }) {
 // ── verification ────────────────────────────────────────────────────────────────
 async function verify() {
   console.log('\n═══ verify ═══');
-  const months = await api('/smartbuddy-api/api/months');
+  const months = await rd('/api/months');
   console.log('months in ClickHouse:', JSON.stringify(months));
   for (const m of months) {
     for (const kind of m.kinds) {
       try {
-        const b = await api(`/smartbuddy-api/api/insights?month=${m.month}&kind=${kind}`);
+        const b = await rd(`/api/insights?month=${m.month}&kind=${kind}`);
         const meta = b.meta || {};
         const note = kind === 'global' ? `${meta.txns?.toLocaleString?.() || '?'} txns, $${Math.round(meta.sgd || 0).toLocaleString()}, ${meta.schools_mapped}/${meta.schools_total} mapped`
           : kind === 'stalls' ? `${b.stalls?.length || 0} stalls, ${b.terminals?.length || 0} terminals`
@@ -147,10 +166,12 @@ async function verify() {
 
 // ── main ─────────────────────────────────────────────────────────────────────────
 async function main() {
-  if (!existsSync(new URL('.', AUTH_FILE)) || !existsSync(AUTH_FILE)) {
-    console.error(`Create ${path.basename(AUTH_FILE.pathname)} in scripts/ with a refresh_token (see header).`); process.exit(1);
+  if (!NO_AUTH) {
+    if (!existsSync(AUTH_FILE)) {
+      console.error(`Create ${path.basename(AUTH_FILE.pathname)} in scripts/ with a refresh_token (see header).`); process.exit(1);
+    }
+    auth = JSON.parse(await readFile(AUTH_FILE, 'utf8'));
   }
-  auth = JSON.parse(await readFile(AUTH_FILE, 'utf8'));
   const args = process.argv.slice(2);
   if (args[0] === 'verify') { await verify(); return; }
 

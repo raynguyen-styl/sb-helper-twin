@@ -106,6 +106,7 @@ function _logSam(label, value) {
 function _contextPreamble(context) {
   if (!context || typeof context !== "object") return "";
   const bits = [];
+  if (context.scope) bits.push(context.scope);   // e.g. "month 2026-03" — tells the agent which month
   if (context.role && context.role !== "all") bits.push(`role ${context.role}`);
   const v = context.viewing || {};
   if (v.school) bits.push(`viewing school ${v.school}`);

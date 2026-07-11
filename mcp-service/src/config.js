@@ -25,5 +25,5 @@ export const QUERY_TIMEOUT_MS = Number(process.env.MCP_QUERY_TIMEOUT_MS) || 1500
 // shared instance (bytes). Default 2 GB.
 export const MAX_MEMORY_BYTES = Number(process.env.MCP_MAX_MEMORY_BYTES) || 2_000_000_000;
 
-// The dataset is a fixed historical month; the time tools anchor here, NOT "now".
-export const DATASET = { from: "2026-02-01", to: "2026-02-28", tz: "Asia/Singapore (SGT, UTC+8)" };
+// The dataset is two fixed historical months; the time tools anchor here, NOT "now".
+export const DATASET = { months: ["2026-02", "2026-03"], from: "2026-02-01", to: "2026-03-31", tz: "Asia/Singapore (SGT, UTC+8)" };
