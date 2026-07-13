@@ -1,4 +1,4 @@
-// Per-school detail window: Stalls & Spending / Terminals tabs. February 2026.
+// Per-school detail window: Stalls & Spending / Terminals tabs. Month-aware (uses the selected month).
 import { openWindow } from './windowing.js';
 import { mk, opts, ax, line, C, CAT_COLOR } from './charts.js';
 import { vchip } from './stall-window.js';

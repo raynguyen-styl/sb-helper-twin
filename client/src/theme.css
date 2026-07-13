@@ -31,6 +31,14 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 600; }
 .month-picker { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.22);
   border-radius: 7px; padding: 5px 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .month-picker option { color: #1d1d1f; }
+/* per-month data-coverage strip: ✓ present (green) / – absent (dimmed). Makes the platform's
+   adaptiveness visible next to the picker. Hidden on narrow screens so the nav never reflows. */
+.month-cov { display: flex; align-items: center; gap: 5px; }
+.month-cov .cov { font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: var(--r-pill);
+  white-space: nowrap; letter-spacing: .01em; }
+.month-cov .cov-on { background: rgba(52,199,89,.20); color: #d6ffe4; }
+.month-cov .cov-off { background: rgba(255,255,255,.07); color: rgba(255,255,255,.42); }
+@media (max-width: 1180px) { .month-cov { display: none; } }
 .up-files { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 
 /* Upload modal — fixed, centered. Solid dim scrim (paints instantly — no backdrop-filter lag) that

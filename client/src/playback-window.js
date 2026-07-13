@@ -1,7 +1,7 @@
-// Playback window — scrub / play the February timeline. Uses the tree-twin-style engine
+// Playback window — scrub / play the selected month's daily timeline. Uses the tree-twin-style engine
 // (playback.js) over series from sb-api (sbApi.js → shared ClickHouse, with offline demo fallback).
-// Both subjects are a daily Feb-2026 timeline: School (txns + revenue — watch the CNY drop and the
-// weekday rhythm) and Wearables (cohort steps + active users).
+// Both subjects are a daily timeline for the chosen month: School (txns + revenue) and Wearables
+// (cohort steps + active users, where a month has wearable data).
 import { openWindow } from './windowing.js';
 import { mk, opts, ax, line, C } from './charts.js';
 import { createPlaybar } from './playback.js';

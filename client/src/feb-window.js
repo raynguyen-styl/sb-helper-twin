@@ -1,5 +1,5 @@
-// February Insights window — first month where wearable + transaction data overlap.
-// Every filter re-slices precomputed aggregates from feb.json (no backend).
+// Wearables & Health window — the month where wearable + transaction data overlap (Feb only).
+// Every filter re-slices the precomputed `wearable` insight bundle (built from ClickHouse).
 import { openWindow } from './windowing.js';
 import { mk, opts, ax, bar, line, C, CAT_COLOR } from './charts.js';
 
@@ -28,11 +28,16 @@ function fbar(el, name, items, cur, onPick) {
 }
 
 export function openFeb(FEB, tab) {
-    const body = openWindow({ id: 'feb', title: 'February Insights', sub: 'health × transactions · the overlap month', chips: ['<span class="chip chip-flag">NEW DATA</span>'] });
+    const body = openWindow({ id: 'feb', title: 'Wearables & Health', sub: 'health × transactions · the overlap month', chips: ['<span class="chip chip-flag">NEW DATA</span>'] });
     if (!body) return;
     const tw = body.closest('.tw');
     tw.style.width = '740px'; tw.style.left = '40px'; tw.style.top = '14px';
 
+    if (!FEB || !FEB.meta) {
+        body.innerHTML = `<div class="cap">No wearable / heart-rate data for this month. Upload the
+          <b>Wearable activity</b> and <b>Heart rate</b> datasets, then rebuild insights.</div>`;
+        return;
+    }
     const m = FEB.meta;
     body.innerHTML = `
       <div class="stats">

@@ -54,6 +54,16 @@ const VIEWS = {
 const viewAvailable = (k) => VIEWS[k].kind == null || curKinds.includes(VIEWS[k].kind);
 let role = localStorage.getItem('sb-role') || null;
 
+// Canonical datasets shown in the per-month coverage strip. Each maps to the insight-bundle `kind`
+// that proves it was loaded, so the strip reflects exactly what THIS month has — making the
+// platform's per-month adaptiveness visible instead of silently hiding views.
+const COVERAGE = [
+    ['global', 'Transactions'],
+    ['wearable', 'Wearables'],
+    ['items', 'Purchases'],
+    ['savings', 'Savings'],
+];
+
 function setRole(r, openPrimary = true) {
     role = r;
     localStorage.setItem('sb-role', r);
@@ -77,6 +87,28 @@ function renderNav() {
         b.addEventListener('click', () => VIEWS[b.dataset.view].open()));
     nv.querySelector('#role-btn').addEventListener('click', () => openHub(setRole));
     renderMonthPicker();
+    renderCoverage();
+}
+
+// A compact "what this month has" strip beside the month picker. Driven by the current month's
+// bundle `kinds` — present datasets read ✓, absent ones read – (dimmed). This is the visible proof
+// that the platform understands each month's data rather than treating a gap as an error.
+function renderCoverage() {
+    const right = document.querySelector('.nav-right');
+    if (!right) return;
+    let el = document.getElementById('month-cov');
+    if (!MONTHS.length || !curMonth) { el?.remove(); return; }
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'month-cov'; el.className = 'month-cov';
+        const picker = document.getElementById('month-picker');
+        right.insertBefore(el, picker ? picker.nextSibling : right.firstChild);
+    }
+    el.title = 'Datasets loaded for the selected month';
+    el.innerHTML = COVERAGE.map(([kind, label]) => {
+        const on = curKinds.includes(kind);
+        return `<span class="cov ${on ? 'cov-on' : 'cov-off'}" title="${label} ${on ? 'loaded' : 'not present this month'}">${on ? '✓' : '–'} ${label}</span>`;
+    }).join('');
 }
 
 // Month picker in the top-right nav. Hidden until ≥1 month exists.
@@ -135,7 +167,11 @@ window.SB = {
     openStall: (id) => { samActive.stall = id; return openStall(STALLS, id); },
     openTerminal: (tid) => { samActive.terminal = tid; return openTerminal(STALLS, tid); },
     openStalls: (preset) => openStallExplorer(STALLS, preset),
-    openFeb: (tab) => openFeb(FEB, tab),
+    // Gate the data-dependent views: a SAM action or deep link that targets a view the CURRENT month
+    // lacks is a no-op rather than a crash (feb/items/savings each throw on a null bundle otherwise).
+    openFeb: (tab) => { if (viewAvailable('feb') && FEB) openFeb(FEB, tab); },
+    openItems: (tab) => { if (viewAvailable('items')) openItems(ITEMS, tab); },
+    openSavings: () => { if (viewAvailable('savings')) openSavings(SAVINGS); },
     openPlayback: (preset) => openPlayback(preset || {}),
 };
 
@@ -250,14 +286,19 @@ async function boot() {
     const mStall = h.match(/stall=([\w.]+)/);
     const mTerm = h.match(/terminal=([\w-]+)/);
     const mFeb = h.match(/feb(?:=(\w+))?/);
+    const mItems = h.match(/items(?:=(\w+))?/);
+    const mSav = h.match(/savings/);
     const mPlay = h.match(/playback/);
     if (mRole && ROLES[mRole[1]]) setRole(mRole[1]);
     if (mSchool) open(mSchool[1].toUpperCase());
     if (mStall) openStall(STALLS, mStall[1]);
     if (mTerm) openTerminal(STALLS, mTerm[1]);
     if (mFeb && viewAvailable('feb')) openFeb(FEB, mFeb[1]);
+    if (mItems && viewAvailable('items')) openItems(ITEMS, mItems[1]);
+    if (mSav && viewAvailable('savings')) openSavings(SAVINGS);
     if (mPlay) openPlayback({});
-    const openedByLink = mSchool || mStall || mTerm || (mFeb && viewAvailable('feb')) || mRole || mPlay;
+    const openedByLink = mSchool || mStall || mTerm || (mFeb && viewAvailable('feb')) ||
+        (mItems && viewAvailable('items')) || (mSav && viewAvailable('savings')) || mRole || mPlay;
     if (!openedByLink) {
         if (role) openFirstAvailable(role);
         else openHub(setRole);                        // pick a workspace (Upload stays a nav button)
@@ -321,7 +362,7 @@ function openUnmapped() {
     });
 }
 
-/* ---------- SAM data assistant (chat over the Feb ClickHouse store, via the mesh) ---------- */
+/* ---------- SAM data assistant (chat over the ClickHouse store, month-aware, via the mesh) ---------- */
 // Additive + fully optional: with no VITE_SOLACE_*/VITE_SAM_* env set, the panel
 // renders and simply shows "offline" — the rest of the app is unaffected.
 initSolace();

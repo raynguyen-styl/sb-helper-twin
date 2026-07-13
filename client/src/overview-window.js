@@ -7,6 +7,11 @@ const fmt = (n) => Number(n).toLocaleString('en-SG');
 const CATS = ['Drinks', 'Snacks & Desserts', 'Cooked Food', 'Mixed', 'Bookshop & Supplies', 'Unclassified'];
 
 export function openOverview(GLOBAL, SCHOOLS, onOpenSchool) {
+    if (!GLOBAL || !GLOBAL.meta) {
+        const b = openWindow({ id: 'overview', title: 'Network Overview', sub: 'no data', chips: [] });
+        if (b) b.innerHTML = `<div class="cap">No transaction data loaded for this month yet.</div>`;
+        return;
+    }
     const body = openWindow({ id: 'overview', title: 'Network Overview', sub: monthLabel(GLOBAL.meta.month), chips: [] });
     if (!body) return;
     body.closest('.tw').style.width = '700px';
@@ -134,11 +139,12 @@ function renderFood(el, G) {
     const MON = monthName(G.meta.month);
     el.innerHTML = `
       <h5>How much of ${MON} is name-verified?</h5>
-      <div class="cap">No item/SKU data exists, so a stall gets a category only if its registered name says what
-      it sells, and only if its own prices don't contradict the claim (a "cooked food" name trading at a
-      $0.60 modal is not counted as cooked food). Generic names ("Stall 1") and bare company names
-      ("BL Marketing Pte Ltd") stay Unclassified — never guessed. Names naming two food groups
-      ("Hot Drinks and Snacks") count as <b>Mixed</b>. That leaves most of the volume unverified:</div>
+      <div class="cap">This view classifies a stall by its <b>registered name</b> only — and only if its own
+      prices don't contradict the claim (a "cooked food" name trading at a $0.60 modal is not counted as
+      cooked food). Generic names ("Stall 1") and bare company names ("BL Marketing Pte Ltd") stay
+      Unclassified — never guessed. Names naming two food groups ("Hot Drinks and Snacks") count as
+      <b>Mixed</b>. That leaves most of the volume unverified (receipt-level item data, where present, is
+      shown in the Purchases &amp; Nutrition view):</div>
       <div style="display:flex;height:22px;border-radius:5px;overflow:hidden;margin:6px 0 2px;font-size:10px;color:#fff">
         <div style="width:${verPct}%;background:${C.blue};display:flex;align-items:center;justify-content:center;white-space:nowrap">${verPct.toFixed(1)}% verified</div>
         <div style="flex:1;background:#b9b8b3;display:flex;align-items:center;justify-content:center">${(100 - verPct).toFixed(1)}% Unclassified — category unknown</div>

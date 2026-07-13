@@ -1,5 +1,5 @@
 // Stall Explorer — browse every canteen stall by school, category, price band or
-// machine number; click through to a per-stall detail window. February 2026 data.
+// machine number; click through to a per-stall detail window. Month-aware (uses the selected month).
 // Filtering is client-side over the precomputed stalls array (no backend).
 import { openWindow } from './windowing.js';
 import { mk, opts, ax, bar, line, C, CAT_COLOR } from './charts.js';

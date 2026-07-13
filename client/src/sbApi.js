@@ -1,5 +1,5 @@
 // Client for sb-api (the SMART Buddy read API, backed by the shared ClickHouse `smartbuddy` db).
-// Playback is a DAILY February timeline. Calls carry the Keycloak Bearer (the /smartbuddy-api/ proxy
+// Playback is a DAILY timeline for the selected month. Calls carry the Keycloak Bearer (the /smartbuddy-api/ proxy
 // route validates it), so we wait for auth to settle before the first request. With no VITE_SB_API_URL
 // set (offline dev) it falls back to deterministic DEMO data so the Playback UI is still usable.
 import { authReady, authToken } from './auth.js';

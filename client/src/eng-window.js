@@ -1,5 +1,5 @@
 // Engineering — terminal (machine) fleet health. Filter by verdict / network /
-// school; click a machine for the machine-vs-location diagnostic. February 2026.
+// school; click a machine for the machine-vs-location diagnostic. Month-aware (uses the selected month).
 // Verdicts were precomputed against school peers: bad unit + healthy peers = the
 // machine; bad unit + struggling peers = the site (location/network).
 import { openWindow } from './windowing.js';
