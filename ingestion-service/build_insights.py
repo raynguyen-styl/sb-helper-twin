@@ -477,7 +477,7 @@ def _linkage_core(con) -> dict:
     schools) via a majority-vote schoolName→schoolId map."""
     con.execute("""CREATE OR REPLACE TABLE lk_baskets AS
       SELECT schoolName, storeName, dt, sum(qty*price_c) AS amt_c, sum(qty) AS units
-      FROM items_v WHERE dt IS NOT NULL GROUP BY 1,2,3""")   -- drop rows with a malformed txn_datetime
+      FROM items_v WHERE dt IS NOT NULL GROUP BY 1,2,3""")   # drop rows with a malformed txn_datetime
     con.execute("""CREATE OR REPLACE VIEW lk_tx AS
       SELECT schoolId, storeId, storeName,
              TRY_CAST(CAST(txn_date AS VARCHAR) || ' ' || CAST(txn_time AS VARCHAR) AS TIMESTAMP) AS dt,
