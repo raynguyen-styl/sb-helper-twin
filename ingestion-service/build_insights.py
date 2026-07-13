@@ -462,7 +462,7 @@ def build_linkage(con, client, month: str):
         return None
     con.register("items_raw", it)
     con.execute("""CREATE OR REPLACE VIEW items_v AS
-      SELECT schoolName, storeName, CAST(txn_datetime AS TIMESTAMP) AS dt,
+      SELECT schoolName, storeName, TRY_CAST(txn_datetime AS TIMESTAMP) AS dt,
              TRY_CAST(quantity AS INTEGER) AS qty, TRY_CAST(itemPrice AS INTEGER) AS price_c,
              upper(itemType) AS itemType, TRY_CAST(healthyChoice AS INTEGER) AS healthy
       FROM items_raw""")
@@ -477,10 +477,10 @@ def _linkage_core(con) -> dict:
     schools) via a majority-vote schoolName→schoolId map."""
     con.execute("""CREATE OR REPLACE TABLE lk_baskets AS
       SELECT schoolName, storeName, dt, sum(qty*price_c) AS amt_c, sum(qty) AS units
-      FROM items_v GROUP BY 1,2,3""")
+      FROM items_v WHERE dt IS NOT NULL GROUP BY 1,2,3""")   -- drop rows with a malformed txn_datetime
     con.execute("""CREATE OR REPLACE VIEW lk_tx AS
       SELECT schoolId, storeId, storeName,
-             CAST(CAST(txn_date AS VARCHAR) || ' ' || CAST(txn_time AS VARCHAR) AS TIMESTAMP) AS dt,
+             TRY_CAST(CAST(txn_date AS VARCHAR) || ' ' || CAST(txn_time AS VARCHAR) AS TIMESTAMP) AS dt,
              CAST(amount AS BIGINT) AS amt_c, cardId
       FROM tx""")
     con.execute("""CREATE OR REPLACE TABLE lk_school_map AS
