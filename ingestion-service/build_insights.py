@@ -508,6 +508,12 @@ def _linkage_core(con) -> dict:
     nb = con.execute("SELECT count(*) FROM lk_baskets").fetchone()[0] or 1
     nm = con.execute("SELECT count(*) FROM lk_matched").fetchone()[0]
     n1c = con.execute("SELECT count(*) FROM lk_matched WHERE n_cards=1").fetchone()[0]
+    if nm == 0:
+        # No basket matched a transaction — the items feed and the txn feed use different storeName
+        # vocabularies ("Stall 10" vs "Fruits and Drinks - Stall 1"), so the storeName join finds
+        # nothing on this data. Skip the linkage cleanly (empty aggregates would be NaN → invalid JSON).
+        print(f"  linkage: 0/{nb:,} baskets matched — items↔txn storeName vocab differs; skipping linkage")
+        return None
 
     # per-stall receipt contents — item-type mix + healthy share (NOT itemName: ~2/3 are generic POS
     # buttons like "Food Set Meal", so type/health are the trustworthy signal)
@@ -544,10 +550,11 @@ def _linkage_core(con) -> dict:
         round(100.0*sum(CASE WHEN hu*1.0/ru >= 0.8 THEN 1 ELSE 0 END)/count(*),1) AS mostly_healthy,
         round(100.0*sum(CASE WHEN hu*1.0/ru <  0.5 THEN 1 ELSE 0 END)/count(*),1) AS mostly_unhealthy
       FROM lk_cardh WHERE ru>0""").iloc[0]
-    habits = {"cards": int(hb["cards"]), "med_baskets": float(hb["med_baskets"]),
-              "med_stalls": float(hb["med_stalls"]), "avg_loyalty": float(hb["avg_loyalty"] or 0),
-              "mostly_healthy_pct": float(coh["mostly_healthy"] or 0),
-              "mostly_unhealthy_pct": float(coh["mostly_unhealthy"] or 0),
+    _n = lambda x: (float(x) if pd.notna(x) else 0.0)   # NaN/None → 0.0 (invalid JSON otherwise)
+    habits = {"cards": int(hb["cards"]), "med_baskets": _n(hb["med_baskets"]),
+              "med_stalls": _n(hb["med_stalls"]), "avg_loyalty": _n(hb["avg_loyalty"]),
+              "mostly_healthy_pct": _n(coh["mostly_healthy"]),
+              "mostly_unhealthy_pct": _n(coh["mostly_unhealthy"]),
               "match_pct": round(100.0 * nm / nb, 1), "single_card_pct": round(100.0 * n1c / nb, 1),
               "stalls_with_receipts": len(receipts)}
     print(f"  linkage: {nm:,}/{nb:,} baskets matched ({habits['match_pct']}%), "
