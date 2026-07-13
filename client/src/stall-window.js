@@ -109,6 +109,12 @@ export function openStall(DATA, sid) {
         <div class="stat"><div class="v">$${s.ticket.toFixed(2)}</div><div class="l">avg ticket</div></div>
         <div class="stat"><div class="v">${s.terms.length}</div><div class="l">machine${s.terms.length > 1 ? 's' : ''}</div></div>
       </div>
+      ${s.receipt ? `<h5>What's sold here <span class="chip chip-flag">RECEIPTS</span></h5>
+        <div class="cap" style="margin-bottom:6px">From ${fmt(s.receipt.units)} matched receipt units — the
+          real item-type mix (not guessed from the name) and Healthier-Choice share.</div>
+        <span class="mixbar tall">${mixSegs(s.receipt)}</span>
+        <div class="cap" style="margin:4px 0 6px">Drink ${s.receipt.drink_sh}% · Food ${s.receipt.food_sh}% ·
+          Book ${s.receipt.book_sh}% · <b>Healthier ${s.receipt.healthy_sh ?? '–'}%</b></div>` : ''}
       <h5>Daily revenue — ${monthName(DATA.meta.month)}</h5><div class="cwrap"><canvas></canvas></div>
       <h5>Revenue by hour (school days) &amp; price mix</h5>
       <div style="display:flex;gap:10px"><div class="cwrap" style="flex:1.4"><canvas></canvas></div>
@@ -139,6 +145,12 @@ export function openStall(DATA, sid) {
     body.querySelectorAll('tr[data-tid]').forEach((tr) =>
         tr.addEventListener('click', () => window.SB?.openTerminal(tr.dataset.tid)));
     body.querySelector('[data-school]').addEventListener('click', (e) => { e.preventDefault(); window.SB?.openSchool(s.school); });
+}
+
+// Segments of an item-type mix bar (drink/food/book) for a stall's receipt panel.
+function mixSegs(r) {
+    const seg = (w, c, t) => (w > 0 ? `<span title="${t} ${w}%" style="width:${w}%;background:${c}"></span>` : '');
+    return `${seg(r.drink_sh, C.blue, 'Drink')}${seg(r.food_sh, C.aqua, 'Food')}${seg(r.book_sh, C.violet, 'Book')}`;
 }
 
 export function vchip(v) {

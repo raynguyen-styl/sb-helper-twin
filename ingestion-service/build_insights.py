@@ -431,6 +431,112 @@ def build_savings(client, month: str) -> dict:
     return OUT
 
 
+# ── linkage: items ⟷ transactions ⟷ cards (the school-aware 99% basket match) ────
+# Turns receipt line-items into "what each STALL actually sells" + per-CARD habits. Aggregate and
+# hashed-token only — this never builds a card⟷user bridge and never emits a raw id. Runs only when a
+# month has BOTH transactions (registered as `tx`) and an `items` table.
+def build_linkage(con, client, month: str):
+    """Pull the month's items into DuckDB and match them to `tx`. Returns a dict with per-stall
+    receipt contents, top stalls, and per-card habits — or None if there are no items to match."""
+    cols = "schoolName, storeName, txn_datetime, quantity, itemPrice, itemType, healthyChoice"
+    it = client.query_df(f"SELECT {cols} FROM {CH_DB}.items WHERE month = %(m)s", parameters={"m": month})
+    if it is None or len(it) == 0:
+        return None
+    con.register("items_raw", it)
+    con.execute("""CREATE OR REPLACE VIEW items_v AS
+      SELECT schoolName, storeName, CAST(txn_datetime AS TIMESTAMP) AS dt,
+             TRY_CAST(quantity AS INTEGER) AS qty, TRY_CAST(itemPrice AS INTEGER) AS price_c,
+             upper(itemType) AS itemType, TRY_CAST(healthyChoice AS INTEGER) AS healthy
+      FROM items_raw""")
+    return _linkage_core(con)
+
+
+def _linkage_core(con) -> dict:
+    """The DuckDB half — assumes views `items_v` (schoolName,storeName,dt,qty,price_c,itemType,healthy)
+    and `tx` (schoolId,storeId,storeName,txn_date,txn_time,amount,cardId) exist. Split out so it can be
+    unit-tested off CSVs without a ClickHouse connection. Basket = (schoolName,storeName,exact-second)
+    with Σqty×price = the transaction `amount`; the join is school-aware (storeNames collide across
+    schools) via a majority-vote schoolName→schoolId map."""
+    con.execute("""CREATE OR REPLACE TABLE lk_baskets AS
+      SELECT schoolName, storeName, dt, sum(qty*price_c) AS amt_c, sum(qty) AS units
+      FROM items_v GROUP BY 1,2,3""")
+    con.execute("""CREATE OR REPLACE VIEW lk_tx AS
+      SELECT schoolId, storeId, storeName,
+             CAST(CAST(txn_date AS VARCHAR) || ' ' || CAST(txn_time AS VARCHAR) AS TIMESTAMP) AS dt,
+             CAST(amount AS BIGINT) AS amt_c, cardId
+      FROM tx""")
+    con.execute("""CREATE OR REPLACE TABLE lk_school_map AS
+      SELECT schoolName, schoolId FROM (
+        SELECT b.schoolName, t.schoolId,
+               row_number() OVER (PARTITION BY b.schoolName ORDER BY count(*) DESC) AS rk
+        FROM lk_baskets b JOIN lk_tx t
+          ON t.storeName=b.storeName AND t.dt=b.dt AND t.amt_c=b.amt_c
+        GROUP BY 1,2) WHERE rk=1""")
+    con.execute("""CREATE OR REPLACE TABLE lk_matched AS
+      SELECT b.schoolName, b.storeName, b.dt, b.units, m.schoolId,
+             any_value(t.storeId) AS storeId, count(*) AS n_cand,
+             count(DISTINCT t.cardId) AS n_cards, any_value(t.cardId) AS cardId
+      FROM lk_baskets b JOIN lk_school_map m USING (schoolName)
+      JOIN lk_tx t ON t.schoolId=m.schoolId AND t.storeName=b.storeName
+                  AND t.dt=b.dt AND t.amt_c=b.amt_c
+      GROUP BY 1,2,3,4,5""")
+    # one materialised item×match join feeds both the per-stall and per-card rollups
+    con.execute("""CREATE OR REPLACE TABLE lk_mi AS
+      SELECT m.schoolId, m.storeId, m.storeName, m.cardId, m.n_cards,
+             i.itemType, i.qty, i.price_c, i.healthy
+      FROM lk_matched m JOIN items_v i
+        ON i.schoolName=m.schoolName AND i.storeName=m.storeName AND i.dt=m.dt""")
+
+    nb = con.execute("SELECT count(*) FROM lk_baskets").fetchone()[0] or 1
+    nm = con.execute("SELECT count(*) FROM lk_matched").fetchone()[0]
+    n1c = con.execute("SELECT count(*) FROM lk_matched WHERE n_cards=1").fetchone()[0]
+
+    # per-stall receipt contents — item-type mix + healthy share (NOT itemName: ~2/3 are generic POS
+    # buttons like "Food Set Meal", so type/health are the trustworthy signal)
+    stalls = q(con, """SELECT storeId, schoolId, any_value(storeName) AS name, sum(qty) AS units,
+        round(sum(qty*price_c)/100.0) AS rev,
+        round(100.0*sum(CASE WHEN itemType='DRINK' THEN qty ELSE 0 END)/sum(qty),1) AS drink_sh,
+        round(100.0*sum(CASE WHEN itemType='FOOD'  THEN qty ELSE 0 END)/sum(qty),1) AS food_sh,
+        round(100.0*sum(CASE WHEN itemType='BOOK'  THEN qty ELSE 0 END)/sum(qty),1) AS book_sh,
+        round(100.0*sum(CASE WHEN healthy=1 THEN qty ELSE 0 END)/
+              nullif(sum(CASE WHEN healthy IN (0,1) THEN qty ELSE 0 END),0),1) AS healthy_sh
+      FROM lk_mi GROUP BY storeId, schoolId""")
+    receipts = {r["storeId"]: {"units": int(r["units"]), "rev": int(r["rev"] or 0),
+                               "drink_sh": r["drink_sh"], "food_sh": r["food_sh"],
+                               "book_sh": r["book_sh"], "healthy_sh": r["healthy_sh"]}
+                for _, r in stalls.iterrows()}
+    top_stalls = recs(stalls.sort_values("units", ascending=False).head(30)
+                      [["storeId", "schoolId", "name", "units", "rev",
+                        "drink_sh", "food_sh", "book_sh", "healthy_sh"]])
+
+    # per-card habits (single-card baskets only) — baskets, stall loyalty, healthy cohort
+    con.execute("""CREATE OR REPLACE TABLE lk_cardstore AS
+      SELECT cardId, storeId, count(*) AS b FROM lk_matched
+      WHERE n_cards=1 AND cardId IS NOT NULL GROUP BY 1,2""")
+    con.execute("""CREATE OR REPLACE TABLE lk_card AS
+      SELECT cardId, sum(b) AS baskets, count(*) AS stalls, round(100.0*max(b)/sum(b)) AS loyalty
+      FROM lk_cardstore GROUP BY 1""")
+    con.execute("""CREATE OR REPLACE TABLE lk_cardh AS
+      SELECT cardId, sum(CASE WHEN healthy=1 THEN qty ELSE 0 END) AS hu,
+             sum(CASE WHEN healthy IN (0,1) THEN qty ELSE 0 END) AS ru
+      FROM lk_mi WHERE n_cards=1 AND cardId IS NOT NULL GROUP BY 1""")
+    hb = q(con, """SELECT count(*) AS cards, round(median(baskets),1) AS med_baskets,
+        round(median(stalls),1) AS med_stalls, round(avg(loyalty)) AS avg_loyalty FROM lk_card""").iloc[0]
+    coh = q(con, """SELECT
+        round(100.0*sum(CASE WHEN hu*1.0/ru >= 0.8 THEN 1 ELSE 0 END)/count(*),1) AS mostly_healthy,
+        round(100.0*sum(CASE WHEN hu*1.0/ru <  0.5 THEN 1 ELSE 0 END)/count(*),1) AS mostly_unhealthy
+      FROM lk_cardh WHERE ru>0""").iloc[0]
+    habits = {"cards": int(hb["cards"]), "med_baskets": float(hb["med_baskets"]),
+              "med_stalls": float(hb["med_stalls"]), "avg_loyalty": float(hb["avg_loyalty"] or 0),
+              "mostly_healthy_pct": float(coh["mostly_healthy"] or 0),
+              "mostly_unhealthy_pct": float(coh["mostly_unhealthy"] or 0),
+              "match_pct": round(100.0 * nm / nb, 1), "single_card_pct": round(100.0 * n1c / nb, 1),
+              "stalls_with_receipts": len(receipts)}
+    print(f"  linkage: {nm:,}/{nb:,} baskets matched ({habits['match_pct']}%), "
+          f"{len(receipts):,} stalls, {habits['cards']:,} cards")
+    return {"receipts": receipts, "top_stalls": top_stalls, "habits": habits}
+
+
 def run(month: str, client=None) -> list:
     """(Re)build every bundle a month has data for. Returns [(kind, bytes)]. Safe to call in-process
     (e.g. from the upload service after a load) or from the CLI."""
@@ -439,6 +545,7 @@ def run(month: str, client=None) -> list:
     client = client or ch_client()
 
     built = []
+    link = None                       # items⟷txn⟷card linkage (needs both txn + items this month)
     if table_has_month(client, "txn", month):
         con = duckdb.connect()
         register_facts(con, client, month)
@@ -453,6 +560,17 @@ def run(month: str, client=None) -> list:
         built.append(("global", put(client, month, "global", g)))
         built.append(("schools", put(client, month, "schools", {"days": days, "schools": sc["schools"]})))
         st = build_stalls(con, days)
+        # Where a month has receipts too, attach each stall's real contents (what it actually sells).
+        if table_has_month(client, "items", month):
+            try:
+                link = build_linkage(con, client, month)   # con still holds `tx`
+                if link:
+                    for s in st["stalls"]:
+                        r = link["receipts"].get(s["id"])
+                        if r:
+                            s["receipt"] = r
+            except Exception as e:                          # best-effort — never fail the base bundles
+                print(f"  (linkage skipped: {str(e).splitlines()[0]})")
         st["meta"]["month"] = month
         st["days"] = days
         built.append(("stalls", put(client, month, "stalls", st)))
@@ -461,7 +579,11 @@ def run(month: str, client=None) -> list:
         print(f"  (no transactions for {month}; skipping global/schools/stalls)")
 
     if table_has_month(client, "items", month):
-        built.append(("items", put(client, month, "items", {**build_items(client, month), "month": month})))
+        items_bundle = {**build_items(client, month), "month": month}
+        if link:                                            # receipt-linked stalls + per-card habits
+            items_bundle["top_stalls"] = link["top_stalls"]
+            items_bundle["habits"] = link["habits"]
+        built.append(("items", put(client, month, "items", items_bundle)))
     if table_has_month(client, "saving_spending", month):
         built.append(("savings", put(client, month, "savings", {**build_savings(client, month), "month": month})))
 

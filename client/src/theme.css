@@ -39,6 +39,11 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 600; }
 .month-cov .cov-on { background: rgba(52,199,89,.20); color: #d6ffe4; }
 .month-cov .cov-off { background: rgba(255,255,255,.07); color: rgba(255,255,255,.42); }
 @media (max-width: 1180px) { .month-cov { display: none; } }
+/* inline stacked bar for an item-type mix (drink/food/book) inside tables */
+.mixbar { display: inline-flex; height: 9px; width: 120px; border-radius: 4px; overflow: hidden;
+  vertical-align: middle; background: #eceada; }
+.mixbar span { display: block; height: 100%; }
+.mixbar.tall { height: 16px; width: 100%; border-radius: 5px; }
 .up-files { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 
 /* Upload modal — fixed, centered. Solid dim scrim (paints instantly — no backdrop-filter lag) that
