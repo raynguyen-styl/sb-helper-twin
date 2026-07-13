@@ -65,9 +65,12 @@ Availability differs by month:
   hour = `toHour(toDateTime(recorded_time))`. Resting HR ≈ `min(bpm_number)` per user per day.
 - `items` — **March only** purchase line items. `itemPrice`=cents, `quantity`=count, `calories`=int,
   `healthyChoice ∈ {0,1}` (1 = Healthier Choice), `itemType ∈ {FOOD,DRINK,BOOK,STAMP,OTHER}`,
-  `itemCategory` = nutrition label. `schoolName` is the full name (not `schoolId`).
+  `itemCategory` = nutrition label. **`itemName` is a generic till button** ('Food Set Meal','Open Item')
+  — never quote it as a dish; use `itemType` + `healthyChoice`. Keyed by `schoolName` (full name, not
+  `schoolId`) + `storeName`: analyse a stall by BOTH; no `cardId` here (no per-card item attribution).
 - `saving_spending` — **March only** per-student monthly totals. `total_saving`/`total_spending`=cents;
-  `month_1` = calendar-month int. Saving rate = saving / (saving + spending).
+  `month_1` = calendar-month int. Saving rate = saving / (saving + spending). `total_spending` is the
+  **wallet** ledger's spend (reconciles to the tx `Smart Buddy/ATM` rail ~92%), NOT total canteen spend.
 - `schools` — 158 MOE-matched schools (`type` = the 'atas' governance axis, `level`, `zone`, lat/lng).
 
 **Personal ids are anonymised.** `cardId`, `studentId`, `user_id`, `sync_id` are one-way salted-hash
@@ -124,8 +127,18 @@ RULES THAT KEEP ANSWERS CORRECT (follow exactly):
 - Wearables are FEBRUARY only. Heart rate: keep bpm_number BETWEEN 30 AND 220 (0/255 are error
   sentinels); recorded_time is an epoch; resting HR ≈ min(bpm_number) per user per day.
 - Purchase items + saving_spending are MARCH only. healthyChoice ∈ {0,1} (1 = Healthier Choice).
+- itemName is a GENERIC till button ('Food Set Meal','Open Item','Drinks') — NEVER quote it as a dish;
+  describe purchases by itemType (FOOD/DRINK/BOOK) + healthyChoice (+ itemSubCategory where present).
+  items are keyed by schoolName (full name) + storeName — analyse a stall by BOTH (storeName alone
+  collides across schools). There is no cardId in items: do NOT attempt per-card item attribution.
+- Payment rails: paymentType 'Smart Buddy/ATM' is the wearable WALLET (its cardId is a wallet token,
+  not null); its monthly spend reconciles to saving_spending.total_spending (~92%, aggregate). That
+  total_spending is the wallet ledger, NOT all canteen card spend (wallet ≈ a quarter of canteen volume).
+- storeId is SCHOOL-SCOPED (unique only within a school) — group by (schoolId, storeId), never alone.
 - Transaction speed: from txn_perf, always guard startToFinish > 0. The 3.0 ASCAN reader stack is ~2x
-  slower than 2.0. Negative posSignalStrength is WiFi RSSI in dBm (unit mix).
+  slower than 2.0. Negative posSignalStrength is WiFi RSSI in dBm (unit mix). Terminal verdict: a
+  machine is faulty if error-rate ≥10% over ≥300 txns OR median startToFinish ≥4000ms; it's a SITE
+  issue (not the unit) when the school's peer machines are also bad (peer-median err ≥8% or ≥4000ms).
 - 'Atas'/governance comparisons use schools.type and only cover MOE-matched schools (158 of ~334) —
   state the coverage; don't imply the whole network.
 

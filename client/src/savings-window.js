@@ -44,6 +44,18 @@ export function openSavings(SAV, _preset) {
     };
     const histLabels = (rows) => rows.map((r) => `$${r.lo}${r.lo >= 200 ? '+' : ''}`);
 
+    // Wallet ↔ savings reconciliation — two independent feeds agreeing (the "data links together" beat).
+    if (SAV.reconcile) {
+        const r = SAV.reconcile;
+        pane.insertAdjacentHTML('beforeend', `<div class="cap" style="margin:8px 0 2px">
+          <b>Do the feeds agree? — wallet ↔ savings</b> <span class="chip chip-flag">CROSS-CHECK</span></div>
+          <div class="cap" style="margin-bottom:4px">Two independent feeds: the saving/spending ledger says students
+          spent <b>${fmt$(r.savings_spending)}</b> this month; the canteen <b>Smart Buddy/ATM</b> wallet rail rang up
+          <b>${fmt$(r.wallet_rail)}</b> — a <b>${r.wallet_vs_savings_pct ?? '–'}% match</b>. That wallet is
+          ${r.wallet_share_of_canteen_pct ?? '–'}% of all canteen spend (${fmt$(r.all_canteen)}); the rest rides other
+          cards. Aggregate only — no link between a wallet and any person.</div>`);
+    }
+
     heading('Saving per student (S$ this month)');
     const sh = SAV.saving_hist || [];
     charts.push(mk(canvas(), { type: 'bar',

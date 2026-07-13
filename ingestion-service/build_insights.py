@@ -428,6 +428,24 @@ def build_savings(client, month: str) -> dict:
     OUT["rate_hist"] = _rows(client,
         f"SELECT round(least(greatest({S}/nullIf({S}+{P},0),0),1)/0.1)*0.1 AS rate, count() AS n "
         f"FROM {CH_DB}.saving_spending WHERE month=%(m)s AND ({S}+{P})>0 GROUP BY rate ORDER BY rate", m)
+
+    # Wallet-rail reconciliation (aggregate only): the 'Smart Buddy/ATM' payment rail is the wearable
+    # wallet; its canteen spend should ≈ this feed's total_spending — two INDEPENDENT feeds agreeing.
+    # (cardId is NOT null on this rail; identify it by paymentType, not a null card.) No per-user join.
+    try:
+        rec = client.query(
+            f"SELECT round(sum(amount)/100.0,0) AS all_canteen, "
+            f"  round(sum(amount * (paymentType='Smart Buddy/ATM'))/100.0,0) AS wallet_rail "
+            f"FROM {CH_DB}.tx WHERE month=%(m)s", parameters=m).first_row
+        all_c, wallet = float(rec[0] or 0), float(rec[1] or 0)
+        sav_spend = OUT["totals"]["spending"]
+        OUT["reconcile"] = {
+            "wallet_rail": wallet, "savings_spending": sav_spend, "all_canteen": all_c,
+            "wallet_vs_savings_pct": round(100.0 * wallet / sav_spend, 1) if sav_spend else None,
+            "wallet_share_of_canteen_pct": round(100.0 * wallet / all_c, 1) if all_c else None,
+        }
+    except Exception as e:
+        print(f"  (savings reconciliation skipped: {str(e).splitlines()[0]})")
     return OUT
 
 
