@@ -204,9 +204,14 @@ Keycloak (local dev / internal-only), leave `VITE_KEYCLOAK_URL` empty and gate a
 
 ## 9 · Safety notes (shared instance — keep these)
 
-- **Personal ids anonymised at ingest** — `cardId`, `user_id`, `sync_id` become one-way salted-hash
-  tokens (`sb_…`) before rows ever reach ClickHouse (pin `SB_ID_SALT` to keep them stable). Grouping/
-  counting is preserved; the real 16-digit card / wearable id can never be emitted.
+- **Identity masked at ingest** — `studentId` and student **names are DROPPED entirely** (not loaded,
+  not even as a token). `cardId`, `user_id`, `sync_id` become one-way salted-hash tokens (`sb_…`)
+  before rows ever reach ClickHouse (pin `SB_ID_SALT` to keep them stable) — used only for grouping/
+  counting; the real card / wearable id can never be emitted.
+- **SAM answers strictly aggregate** — the prompt + `schema.js` forbid printing any token or returning
+  a single-person / single-card / single-user row, and make SAM refuse requests to identify an
+  individual. (The dashboard already sends only aggregates to the browser — no personal token reaches
+  the client.)
 - **Own `smartbuddy` database** — walled off from atlantic's raw UWB/camera tables.
 - **Dedicated read-only user** (`smartbuddy_ro`, `SELECT` only on `smartbuddy.*`) — the read services
   cannot touch the other demos' tables.

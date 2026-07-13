@@ -66,7 +66,10 @@ Pieces:
   renders) + Playback series (`pb_*` tables), as the read-only `smartbuddy_ro` user.
 - **Dashboard** (`client/`): map + per-school/stall/terminal windows, Network Overview, Terminal Health,
   **Wearables** (Feb), **Purchases & Nutrition** + **Saving vs Spending** (March), a **Playback** window
-  and a **SAM chat** panel — each fetched per selected month.
+  and a **SAM chat** panel — each fetched per selected month. A **data-coverage strip** by the month
+  picker shows which datasets each month has (the platform adapts, never errors on a gap). Where a month
+  has both transactions and receipts, the ~99% basket→stall→card link surfaces **"what each stall
+  actually sells"** + per-card habits, and Saving-vs-Spending shows a **wallet↔savings cross-check**.
 - **Data assistant** (`mcp-service` = `smartbuddy-mcp`): a **SAM agent** answers NL questions by writing
   read-only **ClickHouse SQL** over the `smartbuddy` tables via MCP (read-only user). Wire: shared Solace
   topic `STYL/iot/smartbuddy/system/shared/v1/sam/chat/{request,response,error}`, JSON `{correlationId,
