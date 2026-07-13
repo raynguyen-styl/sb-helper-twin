@@ -13,6 +13,11 @@ const dayLabels = (arr) => (arr || []).map((_, i) => i + 1);   // 1..N days, mat
 const secs = (ms) => ms == null ? '–' : (ms / 1000).toFixed(1) + 's';
 
 export function openEng(DATA, preset = {}) {
+    if (!DATA || !DATA.meta || !(DATA.terminals && DATA.terminals.length)) {
+        const b = openWindow({ id: 'eng', title: 'Terminal Health', sub: 'no data', chips: ['<span class="chip chip-flag">ENGINEERING</span>'] });
+        if (b) b.innerHTML = `<div class="cap">No terminal / transaction data loaded for this month yet.</div>`;
+        return;
+    }
     const body = openWindow({ id: 'eng', title: 'Terminal Health', sub: `machine-vs-location diagnostics · ${monthLabel(DATA.meta.month)}`, chips: ['<span class="chip chip-flag">ENGINEERING</span>'] });
     if (!body) return;
     const tw = body.closest('.tw');
@@ -82,7 +87,7 @@ export function openEng(DATA, preset = {}) {
 }
 
 export function openTerminal(DATA, tid) {
-    const t = DATA.terminals.find((x) => x.id === tid);
+    const t = DATA && DATA.terminals && DATA.terminals.find((x) => x.id === tid);
     if (!t) return;
     const body = openWindow({ id: `term-${tid}`, title: mach(t.id), sub: `${t.storeName || t.store} · ${t.school}`,
         chips: [vchip(t.verdict)] });
