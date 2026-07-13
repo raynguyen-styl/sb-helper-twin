@@ -40,9 +40,10 @@ MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 # student-traffic gate — identical to analyze_*/build_* (keeps `tx` == the analysis working set)
 TX_FILTER = "schoolId != 'STYL' AND storeName NOT ILIKE '%retrieve%' AND amount <= 20000"
 
-# one-way hash these id columns wherever they appear; DROP these free-text personal names entirely
-HASH_COLS = {"cardId", "studentId", "user_id", "sync_id"}
-DROP_COLS = {"studentName"}
+# one-way hash these pseudonymous id columns wherever they appear (needed for aggregate analysis);
+# DROP these direct student-identity columns entirely — never loaded, not even as a token.
+HASH_COLS = {"cardId", "user_id", "sync_id"}
+DROP_COLS = {"studentName", "studentId"}
 
 # per-txn network-speed columns — split out of a wide transactions file into `txn_perf`
 PERF_COLS = [

@@ -18,7 +18,7 @@ export const TABLES = {
       "paymentMode = 'OFFLINE' marks offline-authorised taps. txn_date is DATE, txn_time is a TIME string.",
       "paymentType 'Smart Buddy/ATM' is the wearable WALLET rail (its cardId is a wallet token, NOT null); its monthly spend reconciles to saving_spending.total_spending in aggregate (~92%). Other paymentTypes are card taps.",
       "storeId is SCHOOL-SCOPED (unique only within a school) — group by (schoolId, storeId), never storeId alone.",
-      "cardId is an ANONYMISED salted-hash token ('sb_…') — count/group freely (distinct token = distinct card), never a person. studentId is likewise hashed; student names were dropped.",
+      "cardId is an ANONYMISED salted-hash token ('sb_…') — use it ONLY to count/group (distinct token = distinct card); it is never a person and must NEVER be printed in an answer. studentId and student names are DROPPED at ingest (not in the data at all).",
     ],
   },
   txn: {
@@ -28,7 +28,7 @@ export const TABLES = {
     notes: [
       "`month` column ('2026-02' | '2026-03') — always filter it.",
       "amount = CENTS SGD (÷100). Speed/network columns are NOT here — see `txn_perf` (join on month + id).",
-      "cardId / studentId are ANONYMISED salted-hash tokens ('sb_…'); names are absent.",
+      "cardId is an ANONYMISED salted-hash token ('sb_…') for grouping only — never printed. studentId and names are DROPPED at ingest (absent).",
     ],
   },
   txn_perf: {
@@ -80,7 +80,7 @@ export const TABLES = {
       "healthyChoice ∈ {0,1} (1 = Healthier Choice). Cast defensively: toInt32OrNull(toString(healthyChoice)).",
       "itemType ∈ {FOOD, DRINK, BOOK, STAMP, OTHER} (+ noise). itemCategory = nutrition label ('Healthier Choice','Everyday Food','Everyday Food - Snack', …).",
       "itemName is a GENERIC TILL BUTTON ('Food Set Meal','Open Item','Drinks','Add On/Side Dishes') — NOT a dish. NEVER quote it as what was eaten; describe purchases by itemType + healthyChoice (+ itemSubCategory where present).",
-      "Keyed by schoolName (full name, NOT schoolId — cannot join `schools`) + storeName. To analyse ONE stall, filter schoolName AND storeName (storeName alone collides across schools). No cardId here — do NOT attempt per-card item attribution (that link is aggregate-only, precomputed for the dashboard). studentId hashed; names dropped.",
+      "Keyed by schoolName (full name, NOT schoolId — cannot join `schools`) + storeName. To analyse ONE stall, filter schoolName AND storeName (storeName alone collides across schools). No cardId here — do NOT attempt per-card item attribution (that link is aggregate-only, precomputed for the dashboard). studentId and names are DROPPED at ingest (absent).",
     ],
   },
   saving_spending: {
@@ -112,7 +112,7 @@ export const GLOBAL_NOTES = [
   "Scope: TWO months — February 2026 and March 2026 (SGT). EVERY fact table has a `month` String column ('2026-02' | '2026-03'). ALWAYS filter WHERE month = '2026-0X', or GROUP BY month to compare. `schools` has no month.",
   "Availability by month: transactions/speed/stalls exist for BOTH months. Wearables (health, heart_rate) are FEBRUARY only. Item-level purchases (items) and saving_spending are MARCH only. If asked for the wrong month, say it isn't available.",
   "Money: amount / itemPrice / total_saving / total_spending are all CENTS SGD — divide by 100.",
-  "Personal ids are ANONYMISED: cardId, studentId, user_id, sync_id are one-way salted-hash tokens ('sb_…'), never real ids. Group/count them freely; they are safe to show but do not identify a person and cannot be reversed. Student names were dropped at ingest.",
+  "Identity masking (STRICT): studentId and student names are DROPPED at ingest — they do not exist in the data. cardId, user_id, sync_id are one-way salted-hash tokens ('sb_…') for GROUPING/COUNTING ONLY. ALWAYS answer at the aggregate level: NEVER print a token, and NEVER return a single-person / single-card / single-user row. If asked to identify, name, list, or single out an individual (student/card/user), refuse and explain the data is anonymised and aggregate-only.",
   "No per-person linkage: cardId (payments) and user_id (wearables) are different id spaces; only day-aligned AGGREGATE comparison is valid, never a row-level join between txn and health.",
   "Food categories: verified stall NAME only (taxonomy v2). Most txns are Unclassified — report by price band, never invent a food type. Use verified-only denominators for category shares.",
   "Purchase items (March): itemName is a GENERIC till button ('Food Set Meal','Open Item') — never quote it as a dish; use itemType + healthyChoice. Items carry schoolName+storeName (not schoolId/cardId); analyse a stall by schoolName AND storeName; do NOT attempt per-card item attribution.",
