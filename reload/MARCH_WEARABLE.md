@@ -32,9 +32,9 @@ Verified single-month (the `202603*` daily files concatenated). Schema is identi
 git pull
 
 # 2) rebuild the changed images + restart the running services
-#    client  -> feb-window.js change ;  ch-insights/smartbuddy-ingest -> builder change
-docker compose -f docker-compose.yml -f docker-compose.agent.yml build client ch-insights smartbuddy-ingest
-docker compose -f docker-compose.yml -f docker-compose.agent.yml up -d client smartbuddy-ingest
+#    smartbuddy-frontend -> feb-window.js change ;  ch-insights/smartbuddy-ingest -> builder change
+docker compose -f docker-compose.yml -f docker-compose.agent.yml build smartbuddy-frontend ch-insights smartbuddy-ingest
+docker compose -f docker-compose.yml -f docker-compose.agent.yml up -d smartbuddy-frontend smartbuddy-ingest
 
 # 3) ingest March wearables (health rebuilds pb_wearable_daily for March)
 B=/path/to/unzipped/bundle
