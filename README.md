@@ -6,15 +6,15 @@ Analysis of the SMART Buddy school payment + wearable ecosystem for STYL Solutio
 > and **all data is read live from the shared ClickHouse `smartbuddy` database** (nothing is baked into
 > the JS bundle). Data arrives through the dashboard's **chunked Upload feature** (any size), is loaded
 > per-month (`month` partition), and the per-month insight bundles are precomputed into an `insights`
-> table. A top-bar **month picker** switches everything. Feb has canteen + wearable (activity/heart-rate);
-> March has canteen + purchase line-items + saving/spending. Runbook + pipeline: **DEPLOY.md** / below.
+> table. A top-bar **month picker** switches everything. Feb + March both have canteen + wearable
+> (activity/heart-rate); March also has purchase line-items + saving/spending. Runbook + pipeline: **DEPLOY.md** / below.
 >
 > The historical analysis notes below (Feb-only scope, local parquet pipeline, frozen HTML/PDF reports)
 > describe the ORIGINAL offline analysis and are kept as a record.
 
-The dataset: **~4.0M canteen transactions/month** (334 schools) + Feb **~5.3M wearable records**
-(2.95M activity + 2.39M heart-rate, ~13,600 users) + March **~4.3M purchase line-items** and
-**~145k student saving/spending** rows.
+The dataset: **~4.0M canteen transactions/month** (334 schools) + **wearable records both months**
+(Feb 2.95M activity + 2.39M heart-rate, ~13,600 users; March 2.48M + 2.26M, ~12,460 users) + March
+**~4.3M purchase line-items** and **~145k student saving/spending** rows.
 
 ## Deliverables
 
@@ -60,12 +60,12 @@ Pieces:
   **size-unlimited** files to the `smartbuddy-ingest` service, which hashes PII, loads them into the
   target table's `month` partition (`ingest_core.py`, atomic REPLACE/append), and rebuilds aggregates.
   `init_db.py` (one-shot) creates the db + `insights` table + scoped `smartbuddy_ro`/`smartbuddy_rw`
-  users. `build_insights.py` (+ `build_insights_wearable.py` for Feb) precompute each month's dashboard
-  bundles into the `insights` table. (`scripts/vm-load.sh` / `sb-upload.mjs` do the same load from a CLI.)
+  users. `build_insights.py` (+ `build_insights_wearable.py`, run per month with wearables) precompute
+  each month's dashboard bundles into the `insights` table. (`scripts/vm-load.sh` / `sb-upload.mjs` do the same load from a CLI.)
 - **Read API** (`api-service/`): `/api/months`, `/api/insights?month=&kind=` (the bundles every window
   renders) + Playback series (`pb_*` tables), as the read-only `smartbuddy_ro` user.
 - **Dashboard** (`client/`): map + per-school/stall/terminal windows, Network Overview, Terminal Health,
-  **Wearables** (Feb), **Purchases & Nutrition** + **Saving vs Spending** (March), a **Playback** window
+  **Wearables** (Feb + March), **Purchases & Nutrition** + **Saving vs Spending** (March), a **Playback** window
   and a **SAM chat** panel — each fetched per selected month. A **data-coverage strip** by the month
   picker shows which datasets each month has (the platform adapts, never errors on a gap). Where a month
   has both transactions and receipts, the ~99% basket→stall→card link surfaces **"what each stall

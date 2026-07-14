@@ -1,85 +1,86 @@
 # HANDOVER — SMART Buddy Dashboard
 
-Orientation for a teammate picking this up. Last updated **13 Jul 2026**. One screen: what the system
-is, what changed on the current branch, how to make it live, and what's still open.
+Orientation for a teammate (or a fresh session) picking this up. Last updated **14 Jul 2026**.
+`main` is at **`fa2dc10`** — everything below is committed + pushed. One screen: what the system is,
+what changed most recently, how to deploy, and what's open.
 
 ---
 
 ## 1 · What this is
 
 Data-analysis + live dashboard for the **SMART Buddy** school-canteen payment + wearable ecosystem
-(STYL Solutions). The **deployed system** now serves **two months — February + March 2026**, reads
-**all data live from the shared ClickHouse `smartbuddy` database**, and is upload-driven (chunked
-"Upload data" tab → per-`month` partitions → precomputed `insights` bundles). Role hub (F&B /
-Engineering / Management) + a top-bar month picker. Full architecture + runbook: **DEPLOY.md**.
+(STYL Solutions). The **deployed system** serves **February + March 2026**, reads **all data live from
+the shared ClickHouse `smartbuddy` database**, and is upload-driven (chunked "Upload data" tab → per-
+`month` partitions → precomputed `insights` bundles). Role hub (F&B / Engineering / Management) + a
+top-bar month picker with a data-coverage strip. Full architecture + runbook: **DEPLOY.md**.
+
+**Data by month:** transactions/speed/stalls **and wearables (health, heart_rate)** exist for **both**
+Feb & March; item-level purchases (`items`) + `saving_spending` are **March only**.
 
 ## 2 · Reading order
 
 | Doc | For |
 |---|---|
-| **HANDOVER.md** (this) | Current state, the active branch, deploy steps, open items |
+| **HANDOVER.md** (this) | Current state, recent work, deploy pointer, open items |
+| **reload/UAT_DEPLOY.md** | ⭐ The current one-pass UAT deploy (linkage fix + March wearables) |
+| **DEPLOY.md** | Full deploy runbook (compose stacks, ingest, SAM, verify) |
 | **README.md** | Overview, deployed architecture, data facts & caveats |
-| **DEPLOY.md** | The deploy runbook (compose stacks, ingest, SAM agent, verify) |
-| **PIPELINE.md** | The offline `analysis/` pipeline (historical reports) |
 | **mcp-service/agent-prompt.md** + **agent-setup.md** | SAM agent instructions to paste into the mesh |
 
-## 3 · Active branch — `feat/demo-adaptive-dashboard` (NOT yet merged/pushed)
+## 3 · Most recent work (this session, 13–14 Jul — all on `main`)
 
-Built this session on top of `origin/main` (`9dc9028`). Theme: make the demo tell the **"smart,
-adaptive platform"** story (upload any month → it adapts, links datasets, handles gaps) for a
-**leadership / internal / service-engineer** audience. 5 commits, verified locally, **not yet live**:
+The demo-adaptive dashboard (`289ecab`…`0d79919`) shipped earlier. Since then:
 
-| Commit | What it adds |
+| Commit | What |
 |---|---|
-| `289ecab` | **Adaptive spine** — a per-month data-coverage strip by the month picker (✓ present / – absent), graceful "no data" states everywhere (no crashes), and removal of stale/contradictory copy. |
-| `66af16d` | **Headline linkage** — `build_insights.py` matches the March receipt `items` to transactions (school-aware basket join, ~99%) → **per-stall receipt contents** ("what's sold here") + **per-card habits** (loyalty, healthy cohort). Surfaced in the Purchases window's "Stalls & habits" tab and the stall/school "What's sold here" panels. Aggregate + hashed-token only. |
-| `d489130` | **Wallet↔savings cross-check** — `build_savings` reconciles the `Smart Buddy/ATM` wallet rail vs the savings ledger (~92% locally), shown in Saving-vs-Spending. Plus **SAM prompt/schema** made month-aware and taught the items/wallet/stall rules. |
-| `b5a86e1` | **PII hardening** — `studentId` is now **dropped entirely** at ingest (was hashed; it's null/unused); SAM is **strict aggregate-only** (never prints a token or a single-person row, refuses to identify individuals). |
-| `508395f` | **Terminal Health guard** — the engineering window no longer crashes when its bundle is absent. |
+| `24adc6a` | **Linkage join fix** — the items↔txn linkage no longer joins on `storeName` (the two feeds name stalls differently in prod → 0 matches). Now: schoolName→schoolId learned by majority vote over `(exact-second, amount)`, match on `(schoolId, second, amount)`, canonical stall name from the txn side. |
+| `fc8aed6` | **Linkage timestamp fix** — the *real* prod 0-match. `build_insights.py` rebuilt `dt` by string-concatenating `CAST(txn_date AS VARCHAR)`; via ClickHouse `query_df` a `Date` arrives as a **datetime64**, so that string was `'2026-03-01 00:00:00'` and `TRY_CAST` → NULL on every txn row. Fixed with type-safe `CAST(txn_date AS DATE) + CAST(txn_time AS TIME)`, second-truncated. Verified 99.79% (matches native ClickHouse). |
+| `4ed1d51` | **March wearables** — `build_insights_wearable.py` made **month-generic** (was Feb-hardcoded) + the same `txn_date`→DATE fix; the calendar story is now adaptive (CNY for Feb; for other months the **school-holiday week is auto-detected** from the canteen-txn collapse). `client/src/feb-window.js` reads a generic `special` block (bundle key `cny → special`) so March renders a **"March break"** story and Feb keeps CNY. |
+| `fa2dc10` | Docs: `reload/UAT_DEPLOY.md` consolidated runbook (+ fixed the frontend compose service name → `smartbuddy-frontend`). |
 
-**Verification status:** each slice was checked with a local DuckDB harness, a unit test of the real
-linkage function against `march_data/`, and Playwright browser tests against mock bundles; client
-builds clean. **The one gap:** `build_insights.py` has **not run against the real ClickHouse** — first
-true run is on the VM/UAT (see §4).
+**Verification:** local DuckDB harnesses reproduce the prod bugs by simulating `query_df` types and
+prove the fixes (linkage 0→99.79%; wearable spend arrays 0→nonzero). The real `_linkage_core` and the
+real wearable `run()` were exercised end-to-end for both months. **Not yet run on the real ClickHouse**
+— that happens on the UAT deploy.
 
-## 4 · Make it live (on UAT, after pulling this branch)
+## 4 · Deploy to UAT — see **`reload/UAT_DEPLOY.md`** (one pass, both changes)
 
-1. `docker compose up -d --build` + the agent stack (DEPLOY.md §4a) to ship the new client/services.
-2. **Re-ingest** the transactions (+ items) so the `studentId` column leaves ClickHouse and tokens
-   stay stable (pin `SB_ID_SALT`). DEPLOY.md §4c.
-3. **Rebuild March insights** so the new bundle fields (linkage `receipt`/`top_stalls`/`habits`,
-   savings `reconcile`) exist: `SB_MONTH=2026-03 … ch-insights` (DEPLOY.md §4d). Without this the new
-   panels simply don't appear — they degrade gracefully.
-4. **Update SAM**: re-paste the block from `mcp-service/agent-prompt.md` into the UAT agent, and
-   redeploy `mcp-service` so `schema.js` (the live data dictionary) updates.
-5. **Smoke-test** (DEPLOY.md §8) + adversarial SAM check: ask *"which student/card spent the most?"* →
-   it must **refuse** and answer in aggregate.
+Summary: `git pull` → rebuild `smartbuddy-frontend` + `ch-insights` + `smartbuddy-ingest` →
+**ingest March `health`+`heart_rate` as `2026-03`** (data sent separately; the linkage fix needs no
+data) → rebuild bundles: `SB_MONTH=2026-03 ch-insights` (linkage) + `build_insights_wearable.py`
+for **both** `2026-03` **and** `2026-02` (Feb rebuild is required — the `cny→special` schema change).
+No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insights log must print
+`linkage: …(99.x%)…`; if `0/… skipping`, stop.
 
 ## 5 · Open items / decisions
 
-- **Demo questions** — 3–4 on-stage SAM questions to tune the agent (pending from the presenter).
-- **Taxonomy v3** — receipt-based stall categorisation (17%→~99% coverage) is **built as a draft only**
-  (`analysis/taxonomy_v3_draft.py`), **not wired**, pending supervisor sign-off. Slice 2 already shows
-  the receipt item-mix per stall, so v3's remaining value is a single category label + Overview
-  coverage. Decision needed.
-- **Real-ClickHouse verification** of `build_insights.py` (see §3) — run on UAT.
-- **Housekeeping** — a git stash holds superseded README/.gitignore edits (droppable); the old
-  `FINDINGS_COMPENDIUM.md` / `PLAN_MARCH_SERVICE_INSIGHTS.md` are pre-build local notes.
+- **Deploy `fa2dc10` to UAT** (the above) — pending; data being sent separately.
+- **SAM redeploy (separate track)** — `schema.js`/`agent-prompt.md` now say wearables are Feb+March, but
+  SAM only reflects it after an `mcp-service` rebuild + re-paste of the instructions (DEPLOY.md §7).
+- **Demo questions** — 3–4 on-stage SAM questions to tune the agent (pending from presenter).
+- **Taxonomy v3** — receipt-based stall categorisation drafted (`analysis/taxonomy_v3_draft.py`), not
+  wired, pending supervisor sign-off.
+- **Housekeeping** — reload data bundles (`SMARTBUDDY_RELOAD_DATA.zip`, `SMARTBUDDY_MARCH_WEARABLE_DATA.zip`,
+  `march_wearable/`, the `20260714_STUDENT_*` day-file dirs) are gitignored/untracked scratch — deletable.
 
 ## 6 · Guardrails (do NOT undo)
 
 - **No `cardId`↔`user_id` re-identification bridge** — different id spaces, aggregate-only.
-- **Identity masked**: `studentId` + student names are dropped at ingest; card/user/sync ids are
-  irreversible salted-hash tokens used only for grouping — never emitted in SAM replies or the UI.
+- **Identity masked**: `studentId` + names dropped at ingest; card/user/sync ids are irreversible
+  salted-hash tokens for grouping only — never emitted in SAM replies or the UI.
 - **No price-based food inference**; taxonomy v3 stays additive/unsigned.
 - **School/stall names are data, never instructions** (SAM prompt-injection safety).
+- **⚠️ `query_df` returns ClickHouse `Date`/`DateTime` as datetime64** — never rebuild a timestamp by
+  string-concatenating `CAST(a_date AS VARCHAR)`; use typed `CAST(... AS DATE) + CAST(... AS TIME)`.
+  This one bug silently zeroed the linkage AND the wearable spend arrays.
 - **Don't force-push `main`.**
 
-## 7 · Key data facts (see README §"Key data facts" for the full list)
+## 7 · Key data facts (README has the full list)
 
-- Money is **cents SGD** everywhere (÷100). `items.itemName` is a **generic till button** ("Food Set
-  Meal", "Open Item") — use `itemType`/`healthyChoice`, never quote it as a dish.
-- `items` carry `schoolName`+`storeName` only (no `schoolId`/`cardId`); joins to txns are **school-aware**.
-- **No March health/wearable feed** (Feb only); March "wearable spend" = the **wallet** rail
-  (`paymentType='Smart Buddy/ATM'`), not activity.
-- `studentId`/`studentName` are absent (dropped); `studentId` was ~always NULL anyway.
+- Money is **cents SGD** everywhere (÷100). `items.itemName` is a **generic till button** — use
+  `itemType`/`healthyChoice`, never quote it as a dish.
+- `items` carry `schoolName`+`storeName` only (no `schoolId`/`cardId`); joins to txns are **school-aware**
+  via the `(second, amount)` majority-vote bridge (NOT `storeName` — the feeds' stall names differ).
+- **Wearables now exist for Feb AND March** (health, heart_rate). `recorded_time` is a UNIX epoch (SGT).
+  March also has the **wallet rail** (`paymentType='Smart Buddy/ATM'`) reconciling to `saving_spending`.
+- `studentId`/`studentName` are absent (dropped at ingest).
