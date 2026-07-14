@@ -462,8 +462,9 @@ def build_linkage(con, client, month: str):
         return None
     con.register("items_raw", it)
     con.execute("""CREATE OR REPLACE VIEW items_v AS
-      SELECT schoolName, storeName, TRY_CAST(txn_datetime AS TIMESTAMP) AS dt,
-             TRY_CAST(quantity AS INTEGER) AS qty, TRY_CAST(itemPrice AS INTEGER) AS price_c,
+      SELECT schoolName, storeName, date_trunc('second', TRY_CAST(txn_datetime AS TIMESTAMP)) AS dt,
+             CAST(TRY_CAST(quantity AS DOUBLE) AS BIGINT) AS qty,
+             CAST(TRY_CAST(itemPrice AS DOUBLE) AS BIGINT) AS price_c,
              upper(itemType) AS itemType, TRY_CAST(healthyChoice AS INTEGER) AS healthy
       FROM items_raw""")
     return _linkage_core(con)
@@ -487,10 +488,16 @@ def _linkage_core(con) -> dict:
     con.execute("""CREATE OR REPLACE TABLE lk_baskets AS
       SELECT schoolName, storeName, dt, sum(qty*price_c) AS amt_c, sum(qty) AS units
       FROM items_v WHERE dt IS NOT NULL GROUP BY 1,2,3""")   # drop rows with a malformed txn_datetime
+    # Build dt type-safely from the date + time components. Do NOT string-concat txn_date: via ClickHouse
+    # `query_df`, a Date column arrives as a datetime64, so CAST(txn_date AS VARCHAR) yields
+    # '2026-03-01 00:00:00' and the concatenation '…00:00:00 10:04:50' fails TRY_CAST → NULL dt on EVERY
+    # row → 0 matches (base bundles don't rebuild dt, so only the linkage was hit). CAST→DATE + CAST→TIME
+    # works whether the columns arrive as date/time (CSV unit tests) or datetime64/String (query_df, prod).
+    # amt_c via DOUBLE→BIGINT so an Int64 that pandas widened to float still equals the integer-cent basket.
     con.execute("""CREATE OR REPLACE VIEW lk_tx AS
       SELECT schoolId, storeId, storeName,
-             TRY_CAST(CAST(txn_date AS VARCHAR) || ' ' || CAST(txn_time AS VARCHAR) AS TIMESTAMP) AS dt,
-             CAST(amount AS BIGINT) AS amt_c, cardId
+             date_trunc('second', CAST(txn_date AS DATE) + CAST(txn_time AS TIME)) AS dt,
+             CAST(TRY_CAST(amount AS DOUBLE) AS BIGINT) AS amt_c, cardId
       FROM tx""")
     # schoolName→schoolId learned by majority vote over (exact-second, amount) matches — NO storeName.
     con.execute("""CREATE OR REPLACE TABLE lk_school_map AS
