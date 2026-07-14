@@ -55,9 +55,9 @@ export const TABLES = {
   },
   health: {
     kind: "table",
-    purpose: "Wearable activity intervals — FEBRUARY 2026 ONLY (month = '2026-02'), one row per 30-min interval, ~2.95M rows.",
+    purpose: "Wearable activity intervals — February AND March 2026 (month IN ('2026-02','2026-03')), one row per 30-min interval (~2.95M Feb, ~2.48M Mar). ALWAYS filter month.",
     notes: [
-      "`month` = '2026-02' only (no March wearables). recorded_time is a UNIX epoch (seconds) → use toDateTime(recorded_time); day = toDate(toDateTime(recorded_time)).",
+      "`month` ∈ {'2026-02','2026-03'} — filter it (or GROUP BY to compare). recorded_time is a UNIX epoch (seconds) → use toDateTime(recorded_time); day = toDate(toDateTime(recorded_time)).",
       "calories = MILLICAL (÷1000 → kcal). distances = CENTIMETRES. steps = count. Daily totals = SUM per user_id per day.",
       "data_type ∈ {0,1} are valid; filter data_type IN (0,1). Sane caps: steps<=4000, calories<=500000 per interval.",
       "user_id is an ANONYMISED salted-hash token ('sb_…') — count/group freely, never a person. NOT linkable to cardId (different id space).",
@@ -65,9 +65,9 @@ export const TABLES = {
   },
   heart_rate: {
     kind: "table",
-    purpose: "Heart-rate readings — FEBRUARY 2026 ONLY (month = '2026-02'), one row per reading, ~2.39M rows.",
+    purpose: "Heart-rate readings — February AND March 2026 (month IN ('2026-02','2026-03')), one row per reading (~2.39M Feb, ~2.26M Mar). ALWAYS filter month.",
     notes: [
-      "`month` = '2026-02' only. recorded_time is a UNIX epoch (seconds) → hour = toHour(toDateTime(recorded_time)).",
+      "`month` ∈ {'2026-02','2026-03'} — filter it. recorded_time is a UNIX epoch (seconds) → hour = toHour(toDateTime(recorded_time)).",
       "bpm_number is a single heart-rate reading. Keep a physiological range (e.g. bpm_number BETWEEN 30 AND 220); 0 and 255 are sensor/firmware error sentinels — exclude from averages.",
       "Resting HR ≈ min(bpm_number) per user_id per day. user_id + sync_id are ANONYMISED salted-hash tokens (same user_id space as health).",
     ],
@@ -110,7 +110,7 @@ export const LISTED = ["tx", "txn", "txn_perf", "stallcat", "health", "heart_rat
 // Cross-cutting rules injected into the run_sql tool description.
 export const GLOBAL_NOTES = [
   "Scope: TWO months — February 2026 and March 2026 (SGT). EVERY fact table has a `month` String column ('2026-02' | '2026-03'). ALWAYS filter WHERE month = '2026-0X', or GROUP BY month to compare. `schools` has no month.",
-  "Availability by month: transactions/speed/stalls exist for BOTH months. Wearables (health, heart_rate) are FEBRUARY only. Item-level purchases (items) and saving_spending are MARCH only. If asked for the wrong month, say it isn't available.",
+  "Availability by month: transactions/speed/stalls AND wearables (health, heart_rate) exist for BOTH Feb and March. Item-level purchases (items) and saving_spending are MARCH only. If asked for the wrong month, say it isn't available.",
   "Money: amount / itemPrice / total_saving / total_spending are all CENTS SGD — divide by 100.",
   "Identity masking (STRICT): studentId and student names are DROPPED at ingest — they do not exist in the data. cardId, user_id, sync_id are one-way salted-hash tokens ('sb_…') for GROUPING/COUNTING ONLY. ALWAYS answer at the aggregate level: NEVER print a token, and NEVER return a single-person / single-card / single-user row. If asked to identify, name, list, or single out an individual (student/card/user), refuse and explain the data is anonymised and aggregate-only.",
   "No per-person linkage: cardId (payments) and user_id (wearables) are different id spaces; only day-aligned AGGREGATE comparison is valid, never a row-level join between txn and health.",

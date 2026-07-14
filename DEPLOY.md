@@ -129,6 +129,7 @@ docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile inges
 SB_MONTH=2026-03 docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-insights
 SB_MONTH=2026-02 docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-insights
 docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-insights python build_insights_wearable.py 2026-02   # Feb wearable tab
+docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-insights python build_insights_wearable.py 2026-03   # March wearable tab (health/heart_rate now Feb+March; see reload/MARCH_WEARABLE.md)
 ```
 
 **`init_db.py`** creates the `smartbuddy` db, the `insights(month,kind,json)` table, and two scoped

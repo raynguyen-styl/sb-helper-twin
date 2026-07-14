@@ -6,7 +6,8 @@ import { mk, opts, ax, bar, line, C, CAT_COLOR } from './charts.js';
 const fmt = (n) => Number(n).toLocaleString('en-SG');
 const fmt$ = (v) => v >= 1e6 ? '$' + (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? '$' + Math.round(v / 1e3) + 'K' : '$' + Math.round(v);
 const SEG_COLOR = [C.blue, C.aqua, C.yellow, C.muted];
-const DT_COLOR = { School: C.blue, Weekend: C.violet, CNY: C.red, All: C.ink2 };
+const DT_COLOR = { School: C.blue, Weekend: C.violet, CNY: C.red, Holiday: C.red, All: C.ink2 };
+const MONTHNAME = (ym) => ['January','February','March','April','May','June','July','August','September','October','November','December'][(+String(ym).slice(5, 7) || 1) - 1] || '';
 const SLOTS = [...Array(48).keys()].map((i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`);
 const HOURS = [...Array(24).keys()].map((h) => h + ':00');
 const charts = {};   // pane -> [Chart]; destroyed on re-render
@@ -39,24 +40,26 @@ export function openFeb(FEB, tab) {
         return;
     }
     const m = FEB.meta;
+    const SP = FEB.special;                       // per-month calendar story (CNY / school break) or null
+    const MON = MONTHNAME(m.month);
     body.innerHTML = `
       <div class="stats">
         <div class="stat"><div class="v">${(m.h_rows / 1e6).toFixed(1)}M</div><div class="l">activity rows</div></div>
         <div class="stat"><div class="v">${fmt(m.h_users)}</div><div class="l">wearable users</div></div>
         <div class="stat"><div class="v">${(m.r_rows / 1e6).toFixed(1)}M</div><div class="l">HR rows</div></div>
-        <div class="stat"><div class="v">${fmt$(m.t_rev)}</div><div class="l">Feb canteen spend</div></div>
-        <div class="stat"><div class="v">28</div><div class="l">shared days</div></div>
+        <div class="stat"><div class="v">${fmt$(m.t_rev)}</div><div class="l">${MON} canteen spend</div></div>
+        <div class="stat"><div class="v">${m.days || SP?.periods?.length || ''}</div><div class="l">days in month</div></div>
       </div>
       <div class="tabs">
         <button data-tab="act" class="on">Activity</button>
         <button data-tab="wear">Wear &amp; adoption</button>
         <button data-tab="hr">Heart rate</button>
         <button data-tab="spend">Spending</button>
-        <button data-tab="cny">CNY story</button>
+        ${SP ? `<button data-tab="special">${SP.label}</button>` : ''}
       </div>
       <div data-pane="act"></div><div data-pane="wear" style="display:none"></div>
       <div data-pane="hr" style="display:none"></div><div data-pane="spend" style="display:none"></div>
-      <div data-pane="cny" style="display:none"></div>`;
+      ${SP ? '<div data-pane="special" style="display:none"></div>' : ''}`;
 
     body.querySelectorAll('.tabs button').forEach((b) =>
         b.addEventListener('click', () => {
@@ -69,7 +72,7 @@ export function openFeb(FEB, tab) {
     renderWear(body.querySelector('[data-pane="wear"]'), FEB);
     renderHR(body.querySelector('[data-pane="hr"]'), FEB);
     renderSpend(body.querySelector('[data-pane="spend"]'), FEB);
-    renderCNY(body.querySelector('[data-pane="cny"]'), FEB);
+    if (SP) renderSpecial(body.querySelector('[data-pane="special"]'), FEB);
     if (tab) body.querySelector(`.tabs button[data-tab="${tab}"]`)?.click();
 }
 
@@ -78,7 +81,8 @@ function renderAct(el, FEB) {
     let dt = 'All', sg = 'All';
     el.innerHTML = '';
     fbar(el, 'Day type', [{ v: 'All', t: 'All days' }, { v: 'School', t: 'School days' },
-        { v: 'Weekend', t: 'Weekends' }, { v: 'CNY', t: 'CNY 16–18' }], dt, (v) => { dt = v; paint(); });
+        { v: 'Weekend', t: 'Weekends' }, ...(FEB.special ? [{ v: FEB.special.daytype, t: FEB.special.daytype_label }] : [])],
+        dt, (v) => { dt = v; paint(); });
     fbar(el, 'Segment', [{ v: 'All', t: 'All users' },
         ...FEB.segments.map((s) => ({ v: String(s.id), t: s.name }))], sg, (v) => { sg = v; paint(); });
     const box = document.createElement('div'); el.appendChild(box);
@@ -104,7 +108,7 @@ function renderAct(el, FEB) {
           <div class="cap">Avg hours per user-day: sedentary (&lt;50 steps/h) · light · active (&gt;500 steps/h). Selected segment across day types.</div>
           <div class="cwrap" style="height:130px"><canvas></canvas></div>
           <h5>The spread — daily steps percentiles (all users)</h5>
-          <div class="cap">Median (line), p25–p75 (band), p10–p90 (faint). Weekends dip; CNY days marked red on the axis.</div>
+          <div class="cap">Median (line), p25–p75 (band), p10–p90 (faint). Weekends dip${FEB.special ? '; ' + FEB.special.daytype.toLowerCase() + ' days marked red on the axis' : ''}.</div>
           <div class="cwrap"><canvas></canvas></div>`;
         const [c1, c2, c3] = box.querySelectorAll('canvas');
 
@@ -113,8 +117,8 @@ function renderAct(el, FEB) {
             { label: 'all users · all days', data: REF.intraday, ...line(C.muted, { borderDash: [4, 4], borderWidth: 1.5 }) },
         ] }, options: opts({ legend: true, indexMode: true, scales: { x: ax({ ticks: { maxTicksLimit: 10 } }), y: ax({ title: { display: true, text: 'steps/30min', font: { size: 10 } } }) } }) }));
 
-        const dts = ['School', 'Weekend', 'CNY'];
-        const bud = (z) => dts.map((d) => (FEB.activity[`${d}|${sg}`].budget || {})[z] ?? 0);
+        const dts = ['School', 'Weekend', ...(FEB.special ? [FEB.special.daytype] : [])];
+        const bud = (z) => dts.map((d) => (FEB.activity[`${d}|${sg}`]?.budget || {})[z] ?? 0);
         keep('act', mk(c2, { type: 'bar', data: { labels: dts, datasets: [
             { label: 'sedentary', data: bud('sed'), ...bar(C.muted + '88') },
             { label: 'light', data: bud('light'), ...bar(C.yellow) },
@@ -130,7 +134,7 @@ function renderAct(el, FEB) {
             { label: 'p25', data: D.map((x) => x.p25), ...line('transparent') },
             { label: 'p10', data: D.map((x) => x.p10), ...line('transparent') },
         ] }, options: opts({ indexMode: true, scales: {
-            x: ax({ ticks: { autoSkip: false, font: { size: 8.5 }, color: D.map((x) => x.daytype === 'CNY' ? C.red : x.daytype === 'Weekend' ? C.violet : '#898781') } }),
+            x: ax({ ticks: { autoSkip: false, font: { size: 8.5 }, color: D.map((x) => x.daytype === 'Weekend' ? C.violet : x.daytype === 'School' ? '#898781' : C.red) } }),
             y: ax() } }) }));
     };
     paint();
@@ -176,7 +180,8 @@ function renderHR(el, FEB) {
     if ((FEB.hr.firmwares || []).length > 1)
         fbar(el, 'Firmware', FEB.hr.firmwares.map((f) => ({ v: f, t: f === 'All' ? 'All firmware' : f })), fw, (v) => { fw = v; paint(); });
     fbar(el, 'Day type', [{ v: 'All', t: 'All days' }, { v: 'School', t: 'School' },
-        { v: 'Weekend', t: 'Weekend' }, { v: 'CNY', t: 'CNY' }], dt, (v) => { dt = v; paint(); });
+        { v: 'Weekend', t: 'Weekend' }, ...(FEB.special ? [{ v: FEB.special.daytype, t: FEB.special.daytype }] : [])],
+        dt, (v) => { dt = v; paint(); });
     const box = document.createElement('div'); el.appendChild(box);
 
     const paint = () => {
@@ -187,10 +192,10 @@ function renderHR(el, FEB) {
         box.innerHTML = `
           ${ft ? `<div class="cap" style="margin:2px 0 6px">${fw}: ${fmt(ft.n)} records · ${fmt(ft.users)} users · <b>${fmt(ft.err255)}</b> whole-record 255 errors · <b>${fmt(ft.lt40)}</b> sub-40 readings ${ft.err255 > 0 ? '<span class="chip chip-indep">FAULTY</span>' : '<span class="chip chip-sec">CLEAN</span>'}</div>` : ''}
           <h5>Average bpm by hour</h5>
-          <div class="cap">Valid readings (30–220 bpm, Feb payload dates). 23:00 is a known sparse-sampling artifact. Grey: all firmware, all days.</div>
+          <div class="cap">Valid readings (30–220 bpm). 23:00 is a known sparse-sampling artifact. Grey: all firmware, all days.</div>
           <div class="cwrap tall"><canvas></canvas></div>
           <h5>Share of readings in elevated zones, by hour</h5>
-          <div class="cap">% of hourly readings ≥100 bpm on school days vs weekends vs CNY — PE &amp; recess hours light up on school days.</div>
+          <div class="cap">% of hourly readings ≥100 bpm by day type — PE &amp; recess hours light up on school days.</div>
           <div class="cwrap"><canvas></canvas></div>
           ${FEB.hr.fw_table.length ? `<h5>Firmware fleet — February</h5>
           <table class="mini"><tr><th>Firmware</th><th style="text-align:right">Records</th>
@@ -230,8 +235,9 @@ function renderSpend(el, FEB) {
         '<b>Unclassified</b> — most of the volume, never guessed.';
     el.appendChild(pol);
     const box = document.createElement('div'); el.appendChild(box);
-    const days = [...Array(28).keys()].map((i) => i + 1);
-    const CNYD = new Set([16, 17, 18]);
+    const MON = MONTHNAME(FEB.meta.month);
+    const days = [...Array(FEB.meta.days || S.daily['All|All'].length).keys()].map((i) => i + 1);
+    const MARKED = new Set((FEB.special && FEB.special.marked_days) || []);
 
     const paint = () => {
         kill('spend');
@@ -245,8 +251,8 @@ function renderSpend(el, FEB) {
             <div class="stat"><div class="v">${k.ticket != null ? '$' + k.ticket.toFixed(2) : '–'}</div><div class="l">avg ticket</div></div>
             <div class="stat"><div class="v">${fmt(k.cards)}</div><div class="l">cards</div></div>
           </div>
-          <h5>Daily revenue — February</h5>
-          <div class="cap">CNY days in red (eve half-day 16th, holidays 17–18th). Weekends are near-zero by design — school canteens.</div>
+          <h5>Daily revenue — ${MON}</h5>
+          <div class="cap">${MARKED.size ? (FEB.special.daytype.toLowerCase() + ' days in red. ') : ''}Weekends are near-zero by design — school canteens.</div>
           <div class="cwrap"><canvas></canvas></div>
           <h5>Revenue by hour — school days</h5>
           <div class="cap">The recess economy: 9–11am carries about half of school-day revenue.</div>
@@ -259,7 +265,7 @@ function renderSpend(el, FEB) {
                   <td class="num">${(100 * x.sgd / tot).toFixed(1)}%</td></tr>`).join(''); })()}</table>`;
         const [c1, c2] = box.querySelectorAll('canvas');
         keep('spend', mk(c1, { type: 'bar', data: { labels: days, datasets: [
-            { label: 'revenue', data: S.daily[key], backgroundColor: days.map((d) => CNYD.has(d) ? C.red : col), borderRadius: 2 },
+            { label: 'revenue', data: S.daily[key], backgroundColor: days.map((d) => MARKED.has(d) ? C.red : col), borderRadius: 2 },
         ] }, options: opts({ tooltip: { callbacks: { label: (c) => fmt$(c.parsed.y) } }, scales: { x: ax(), y: ax({ ticks: { callback: (v) => fmt$(v) } }) } }) }));
         keep('spend', mk(c2, { type: 'bar', data: { labels: [...Array(15).keys()].map((h) => (h + 5) + ':00'), datasets: [
             { label: 'revenue', data: S.hourly[key], ...bar(col) },
@@ -268,38 +274,37 @@ function renderSpend(el, FEB) {
     paint();
 }
 
-/* ================= CNY STORY ================= */
-function renderCNY(el, FEB) {
-    const Y = FEB.cny;
+/* ============ CALENDAR STORY (CNY for Feb, school-break for other months) ============ */
+function renderSpecial(el, FEB) {
+    const Y = FEB.special;
     const PC = [C.blue, C.red, C.yellow, C.aqua];
-    charts['cny'] = [];
+    charts['special'] = [];
     const kp = Y.periods.map((p) => Y.kpis[p]);
     el.innerHTML = `
-      <div class="cap" style="margin-bottom:8px">Four weekday windows around Chinese New Year (17–18 Feb, public holidays;
-      16 Feb was a half-day). How students spent their time — and money — before, during, and after.</div>
+      <div class="cap" style="margin-bottom:8px">${Y.intro}</div>
       <table class="mini"><tr><th>Window</th><th style="text-align:right">Steps/user-day</th>
         <th style="text-align:right">Users</th><th style="text-align:right">Canteen revenue</th></tr>
-        ${Y.periods.map((p, i) => `<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${PC[i]};margin-right:6px"></span><b>${p}</b></td>
+        ${Y.periods.map((p, i) => `<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${PC[i % PC.length]};margin-right:6px"></span><b>${p}</b></td>
           <td class="num">${fmt(kp[i].steps)}</td><td class="num">${fmt(kp[i].users)}</td>
           <td class="num">${fmt$(kp[i].rev)}</td></tr>`).join('')}</table>
       <h5 style="margin-top:12px">The shape of the day, window by window</h5>
-      <div class="cap">Steps per 30 min. During CNY the school-day skeleton vanishes: no 7am commute spike, movement starts late and spreads flat — visiting-day rhythm, not timetable rhythm.</div>
+      <div class="cap">Steps per 30 min. When school's out the timetable skeleton vanishes: no 7am commute spike, movement starts later and spreads flat.</div>
       <div class="cwrap tall"><canvas></canvas></div>
       <h5>Heart rate through the day</h5>
-      <div class="cap">CNY mornings run lower (sleeping in), evenings match school-day levels.</div>
+      <div class="cap">Break-day mornings run lower (sleeping in); evenings converge with school-day levels.</div>
       <div class="cwrap"><canvas></canvas></div>
       <h5>What the money bought</h5>
-      <div class="cap">Spend share by category. CNY-break trading is tiny ($20K, mostly the eve half-day) but shifts toward drinks &amp; snacks; the full-meal share recovers with the timetable.</div>
+      <div class="cap">Spend share by category (name-verified stalls only). Break-week canteen trading is tiny; the full-meal share recovers as the timetable resumes.</div>
       <div class="cwrap"><canvas></canvas></div>`;
     const [c1, c2, c3] = el.querySelectorAll('canvas');
-    keep('cny', mk(c1, { type: 'line', data: { labels: SLOTS, datasets: Y.periods.map((p, i) =>
-        ({ label: p, data: Y.intraday[p], ...line(PC[i], i === 1 ? { borderWidth: 2.5 } : {}) })) },
+    keep('special', mk(c1, { type: 'line', data: { labels: SLOTS, datasets: Y.periods.map((p, i) =>
+        ({ label: p, data: Y.intraday[p], ...line(PC[i % PC.length], i === 1 ? { borderWidth: 2.5 } : {}) })) },
         options: opts({ legend: true, indexMode: true, scales: { x: ax({ ticks: { maxTicksLimit: 10 } }), y: ax({ title: { display: true, text: 'steps/30min', font: { size: 10 } } }) } }) }));
-    keep('cny', mk(c2, { type: 'line', data: { labels: HOURS, datasets: Y.periods.map((p, i) =>
-        ({ label: p, data: Y.hr[p], ...line(PC[i]), spanGaps: true })) },
+    keep('special', mk(c2, { type: 'line', data: { labels: HOURS, datasets: Y.periods.map((p, i) =>
+        ({ label: p, data: Y.hr[p], ...line(PC[i % PC.length]), spanGaps: true })) },
         options: opts({ legend: true, indexMode: true, scales: { x: ax({ ticks: { maxTicksLimit: 12 } }), y: ax({ title: { display: true, text: 'bpm', font: { size: 10 } } }) } }) }));
     const cats = Object.keys(CAT_COLOR);
-    keep('cny', mk(c3, { type: 'bar', data: { labels: Y.periods, datasets: cats.map((c) =>
+    keep('special', mk(c3, { type: 'bar', data: { labels: Y.periods, datasets: cats.map((c) =>
         ({ label: c, data: Y.periods.map((p) => Y.catmix[p][c] ?? 0), ...bar(CAT_COLOR[c]) })) },
         options: opts({ legend: true, indexMode: true, scales: {
             x: { stacked: true, ...ax() }, y: { stacked: true, ...ax({ title: { display: true, text: '% of spend', font: { size: 10 } }, max: 100 }) } } }) }));

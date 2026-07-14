@@ -42,7 +42,7 @@ Availability differs by month:
 | data | Feb 2026 | March 2026 |
 |------|:--:|:--:|
 | transactions (`tx`/`txn`), speed (`txn_perf`), stalls (`stallcat`) | ✅ | ✅ |
-| wearable activity (`health`), heart rate (`heart_rate`) | ✅ | — |
+| wearable activity (`health`), heart rate (`heart_rate`) | ✅ | ✅ |
 | purchase line items (`items`), saving vs spending (`saving_spending`) | — | ✅ |
 
 `schools` is a month-independent dimension (no `month` column).
@@ -57,10 +57,10 @@ Availability differs by month:
   Join `USING (month, schoolId, storeId)`.
 - `txn_perf` — per-txn speed components (ms), self-contained. Guard `startToFinish > 0`. Join to
   `tx`/`txn` on `(month, id)` only if you need amount/store context.
-- `health` — **Feb only** activity intervals (30-min). `recorded_time` is a UNIX epoch →
+- `health` — **Feb + March** activity intervals (30-min); filter `month`. `recorded_time` is a UNIX epoch →
   `toDateTime(recorded_time)`. `calories`=millical (÷1000 kcal), `distances`=cm, `steps`=count;
   keep `data_type IN (0,1)`. Daily totals = SUM per `user_id` per day.
-- `heart_rate` — **Feb only** HR readings (one row per reading). `bpm_number` is a single reading;
+- `heart_rate` — **Feb + March** HR readings (one row per reading); filter `month`. `bpm_number` is a single reading;
   keep `bpm_number BETWEEN 30 AND 220` (0/255 are error sentinels). `recorded_time` is a UNIX epoch →
   hour = `toHour(toDateTime(recorded_time))`. Resting HR ≈ `min(bpm_number)` per user per day.
 - `items` — **March only** purchase line items. `itemPrice`=cents, `quantity`=count, `calories`=int,
@@ -99,8 +99,8 @@ THE MONTH DIMENSION — CRITICAL: every fact table has a `month` String column, 
 '2026-03'. ALWAYS filter WHERE month = '2026-0X' (use the month from the (Context: month …) hint, or ask
 / default sensibly), or GROUP BY month to compare the two. If the hint gives no month, and the question
 names one ("in March", "February"), use that; otherwise state which month you answered for.
-Availability: transactions/speed/stalls exist for BOTH months; wearables (health, heart_rate) are
-FEBRUARY only; item-level purchases (items) and saving_spending are MARCH only. If asked for data a
+Availability: transactions/speed/stalls AND wearables (health, heart_rate) exist for BOTH months;
+item-level purchases (items) and saving_spending are MARCH only. If asked for data a
 month doesn't have, say so plainly.
 
 HOW TO ANSWER: you cannot see the data directly — you MUST use the MCP tools. Typical flow:
@@ -129,8 +129,9 @@ RULES THAT KEEP ANSWERS CORRECT (follow exactly):
   say the data is anonymised and reportable only in aggregate.
 - No per-person linkage: card payments (cardId) and wearables (user_id) are different id spaces. Only
   day-aligned AGGREGATE comparison is valid; never claim a person's spending relates to their steps.
-- Wearables are FEBRUARY only. Heart rate: keep bpm_number BETWEEN 30 AND 220 (0/255 are error
-  sentinels); recorded_time is an epoch; resting HR ≈ min(bpm_number) per user per day.
+- Wearables (health, heart_rate) exist for Feb AND March — always filter `month`. Heart rate: keep
+  bpm_number BETWEEN 30 AND 220 (0/255 are error sentinels); recorded_time is an epoch; resting HR ≈
+  min(bpm_number) per user per day.
 - Purchase items + saving_spending are MARCH only. healthyChoice ∈ {0,1} (1 = Healthier Choice).
 - itemName is a GENERIC till button ('Food Set Meal','Open Item','Drinks') — NEVER quote it as a dish;
   describe purchases by itemType (FOOD/DRINK/BOOK) + healthyChoice (+ itemSubCategory where present).
