@@ -68,8 +68,12 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
 - **Taxonomy v3** — **DEFERRED (15 Jul, conscious decision):** v2 name-verified classification stays
   live; the receipt-evidence v3 upgrade (`analysis/taxonomy_v3_draft.py`, 17%→~99% coverage) is kept as
   an unwired draft, revisit if/when the supervisor signs off the policy change. Not an active task.
-- **Housekeeping** — reload data bundles (`SMARTBUDDY_RELOAD_DATA.zip`, `SMARTBUDDY_MARCH_WEARABLE_DATA.zip`,
-  `march_wearable/`, the `20260714_STUDENT_*` day-file dirs) are gitignored/untracked scratch — deletable.
+- **Housekeeping — DONE 15 Jul:** dropped the stale stash; git-ignored `litellmkey.txt`; deleted the
+  scratch bundles/zips, the per-month sliced CSVs (`march_data`/`feb_data`/`march_wearable`), the old
+  `PLAN_MARCH_SERVICE_INSIGHTS.md`, and the raw multi-month extracts incl. April (`Feb-Apr transactions`,
+  `Student_items`, `health data`, `20260714_*_MAR_APR_2026`) — ~17 GB. **April source is gone** (re-request
+  from the data team if an April rollout is needed). Kept `FINDINGS_COMPENDIUM.md` (referenced by the v3
+  draft + memory). A `txn/` dir (~1.2 GB) remains — decide separately.
 
 ## 6 · Guardrails (do NOT undo)
 
