@@ -1,6 +1,7 @@
 # ── Raw data drops (multi-GB + contain real card/device/user IDs) — NEVER commit ──
 /txn/
 /health data/
+/Feb-Mar_Data/
 # Isolated Feb-only CSV exports (real card/device/user IDs) — NEVER commit
 /feb_data/
 

@@ -99,6 +99,8 @@ select.up-in { cursor: pointer; }
 .nav-btn { height: 28px; border: none; border-radius: var(--r-pill); padding: 0 13px; cursor: pointer;
     background: rgba(255,255,255,.14); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .nav-btn:hover { background: var(--primary); }
+/* icon-only utility buttons (Upload) — compact so the bar stays short */
+.nav-btn.nav-icon { padding: 0 10px; font-size: 15px; line-height: 1; }
 .nav-role { height: 28px; border: 1px solid rgba(255,255,255,.3); border-radius: var(--r-pill); padding: 0 12px;
     cursor: pointer; background: transparent; color: rgba(255,255,255,.85); font-size: 12px; white-space: nowrap; }
 .nav-role:hover { border-color: #fff; color: #fff; }

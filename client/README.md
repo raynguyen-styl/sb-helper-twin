@@ -16,10 +16,10 @@ all data is bundled locally in `src/data/`.
 
 ## What's in it
 
-- **Map** — 158 schools with markers (MOE-matched + OneMap-geocoded). Dot **size** = spend per
-  student-day; dot **colour** switches between School Level / Error rate / Transaction speed
-  (legend, bottom-left). The remaining 176 schools have no confident MOE match — click
-  "unmapped" in the legend to browse and open them.
+- **Map** — 331 schools with markers (MOE-directory-matched + OneMap-geocoded; incl. 11 special-education
+  schools geocoded by name). Dot **size** = spend per student-day; dot **colour** switches between School
+  Level / Error rate / Transaction speed (legend, bottom-left). The remaining 3 (APSN Katong + two
+  non-schools) have no reliable position — click "unmapped" in the legend to browse and open them.
 - **Search** (top bar) — by school ID or name; works for unmapped schools too.
 - **School window** (click a marker) — spend/ticket/cards/error/speed stats, MOE badges
   (Independent · IP · GEP · SAP), and three tabs:
@@ -37,7 +37,7 @@ narrowed to Feb only (March/April + the May health drop were removed 8 Jul 2026;
 `../PIPELINE.md`). For findings and full method/caveats see the Feb reports in the
 project root (`SMART_Buddy_Feb2026_Service_Report.pdf`, `SMART_Buddy_Feb2026_Insights.html`).
 Exclusions: STYL vendor test terminals, "Retrieve…" maintenance flows, amounts >$200.
-School names/types: MOE School Directory (data.gov.sg), acronym-matched (158/334, 4 hand-verified);
+School names/types: MOE School Directory (data.gov.sg), receipt-verified (331/334 geocoded);
 coordinates via OneMap postal-code geocoding. **Food categories use verified stall names only**
 (taxonomy v2) — a stall is classified only when its registered name says what it sells and its
 own prices don't contradict it; generic-named stalls are **Unclassified** (price bands only).

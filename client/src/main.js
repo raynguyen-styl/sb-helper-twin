@@ -42,14 +42,17 @@ let curMonth = null, curKinds = [];
 /* ---------- views & roles ---------- */
 // Each view maps to an insight-bundle kind; renderNav only shows the ones the current month has
 // (Feb → wearable; March → items/savings). Playback + Upload are always available.
+// `label` is the compact nav text; `title` is the full name shown on hover. Keeping labels short
+// stops the top bar from overflowing when a role shows several views (see renderNav). `icon: true`
+// renders a compact icon-only button for utility actions (grouped after the analytical views).
 const VIEWS = {
-    overview: { label: 'Network Overview',      kind: 'global',   open: () => openOverview(GLOBAL, SCHOOLS, open) },
-    eng:      { label: 'Terminal Health',       kind: 'stalls',   open: (p) => openEng(STALLS, p || {}) },
-    feb:      { label: 'Wearables & Health',    kind: 'wearable', open: (p) => openFeb(FEB, p) },
-    items:    { label: 'Purchases & Nutrition', kind: 'items',    open: (p) => openItems(ITEMS, p) },
-    savings:  { label: 'Saving vs Spending',    kind: 'savings',  open: (p) => openSavings(SAVINGS, p) },
-    playback: { label: 'Playback',              kind: null,       open: (p) => openPlayback(p || {}) },
-    upload:   { label: '⬆ Upload data',         kind: null,       open: () => openUpload(onUploaded) },
+    overview: { label: 'Overview',   title: 'Network Overview',      kind: 'global',   open: () => openOverview(GLOBAL, SCHOOLS, open) },
+    eng:      { label: 'Terminals',  title: 'Terminal Health',       kind: 'stalls',   open: (p) => openEng(STALLS, p || {}) },
+    feb:      { label: 'Wearables',  title: 'Wearables & Health',    kind: 'wearable', open: (p) => openFeb(FEB, p) },
+    items:    { label: 'Purchases',  title: 'Purchases & Nutrition', kind: 'items',    open: (p) => openItems(ITEMS, p) },
+    savings:  { label: 'Saving',     title: 'Saving vs Spending',    kind: 'savings',  open: (p) => openSavings(SAVINGS, p) },
+    playback: { label: 'Playback',   title: 'Timeline playback',     kind: null,       open: (p) => openPlayback(p || {}) },
+    upload:   { label: '⬆', title: 'Upload data', icon: true,        kind: null,       open: () => openUpload(onUploaded) },
 };
 const viewAvailable = (k) => VIEWS[k].kind == null || curKinds.includes(VIEWS[k].kind);
 let role = localStorage.getItem('sb-role') || null;
@@ -81,7 +84,7 @@ function renderNav() {
     let keys = [...(role ? ROLES[role].views : Object.keys(VIEWS))].filter((k) => VIEWS[k] && viewAvailable(k));
     if (!keys.includes('playback')) keys.push('playback');  // always
     if (!keys.includes('upload')) keys.push('upload');      // always
-    nv.innerHTML = keys.map((k) => `<button class="nav-btn" data-view="${k}">${VIEWS[k].label}</button>`).join('') +
+    nv.innerHTML = keys.map((k) => `<button class="nav-btn${VIEWS[k].icon ? ' nav-icon' : ''}" data-view="${k}" title="${VIEWS[k].title || VIEWS[k].label}">${VIEWS[k].label}</button>`).join('') +
         `<button class="nav-role" id="role-btn" title="Switch workspace">${role ? ROLES[role].icon + ' ' + ROLES[role].label : '☰ All views'} ▾</button>`;
     nv.querySelectorAll('[data-view]').forEach((b) =>
         b.addEventListener('click', () => VIEWS[b.dataset.view].open()));

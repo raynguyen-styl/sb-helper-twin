@@ -95,7 +95,7 @@ export const TABLES = {
   schools: {
     kind: "table",
     purpose:
-      "School dimension (no month column): 158 MOE-matched schools. Join to tx/txn USING (schoolId). Unmatched schools simply have no row here.",
+      "School dimension (no month column): 331 schools with map coordinates (320 matched to the MOE directory + 11 special-education schools geocoded by name). Join to tx/txn USING (schoolId). Unmatched schools simply have no row here.",
     notes: [
       "type = MOE governance ('INDEPENDENT SCHOOL' / 'GOVERNMENT-AIDED SCH' / 'GOVERNMENT SCHOOL' …) — the 'atas' axis.",
       "level = PRIMARY / SECONDARY / JUNIOR COLLEGE / …; zone/area = geography; lat/lng for mapping.",

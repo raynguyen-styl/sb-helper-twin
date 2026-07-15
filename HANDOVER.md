@@ -1,8 +1,10 @@
 # HANDOVER — SMART Buddy Dashboard
 
 Orientation for a teammate (or a fresh session) picking this up. Last updated **15 Jul 2026**.
-`main` is at **`9a258c7`**; the code (through `4ed1d51`) is **live on UAT — deployed + verified
-15 Jul** (linkage 99.7%, March wearables). One screen: what the system is, what changed most
+`main` is at **`279f3ec`** live on UAT (linkage 99.7%, March wearables). **Uncommitted on top (this
+session):** the **map expansion 158→331 markers (+7 misplaced dots corrected)**, a nav-bar consolidation,
+a stall-copy fix + SAM count text — built & verified against the raw `Feb-Mar_Data` feed, **not yet on
+UAT** (see §3a / `reload/MAP_EXPANSION_DEPLOY.md`). One screen: what the system is, what changed most
 recently, how to deploy, and what's open.
 
 ---
@@ -23,12 +25,36 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
 | Doc | For |
 |---|---|
 | **HANDOVER.md** (this) | Current state, recent work, deploy pointer, open items |
-| **reload/UAT_DEPLOY.md** | ⭐ The current one-pass UAT deploy (linkage fix + March wearables) |
+| **reload/MAP_EXPANSION_DEPLOY.md** | ⭐ NEW — deploy the 158→331 map markers (+7 corrected) + stall-copy + SAM count |
+| **reload/UAT_DEPLOY.md** | The prior one-pass UAT deploy (linkage fix + March wearables) |
 | **DEPLOY.md** | Full deploy runbook (compose stacks, ingest, SAM, verify) |
 | **README.md** | Overview, deployed architecture, data facts & caveats |
 | **mcp-service/agent-prompt.md** + **agent-setup.md** | SAM agent instructions to paste into the mesh |
 
-## 3 · Most recent work (this session, 13–14 Jul — all on `main`)
+## 3a · This session (15 Jul — NOT yet committed/deployed)
+
+- **Map expansion 158 → 331 markers (+7 corrected).** Rebuilt `ingestion-service/school_geo.json` from the
+  authoritative `schoolId→school` mapping, **verified against the raw `Feb-Mar_Data` feed**: the basket→txn
+  linkage reproduces at **99.68%**, and the `items` receipts (which carry NO `schoolId`) match transaction
+  `schoolId`s to the exact second+cent — so they identify each school independently and confirm
+  `school_moe_map.csv` exactly (0 disagreements). +173 new markers (OneMap: postal from `moe_schools.json`;
+  11 SPED by name). `reload/schools.csv` regenerated (331 rows). Diff vs HEAD: **+173 added, 7 changed, 0
+  removed.** Unmapped: 3 by design (APSN Katong — no OneMap hit; PBS + Self-Serve-Stamps — not schools).
+  Deploy = `reload/MAP_EXPANSION_DEPLOY.md` (rebuild ingest+insights both months + reload schools table).
+- **⚠️ Corrected 7 base-geo coordinate errors** (the base geo, not the csv, was wrong — confirmed with the
+  data owner 15 Jul): acronyms were misleading. `RVPS` River Valley→**Riverside** (17 km), `RLPS`
+  Rulang→**Rivervale** (21 km), `CCPS` Canossa→**Concord** (17 km), `CHS` Catholic High→**Chongfu**, `NJC`
+  Nanyang→**National**, `NBSS` Naval Base→**Northbrooks**, `GESS`→**Gan Eng Seng Primary**. Their namesakes
+  are separate IDs, now also mapped (RUPS=Rulang, CNPS=Canossa, NVBSS=Naval Base, CAHP/CAHS=Catholic High).
+- **Stall Explorer copy fix** (`client/src/stall-window.js`): the stale "No item/SKU data exists" caption
+  now reflects that March has receipts ("what's sold here").
+- **SAM school-count text** 158 → 331 (`schema.js`, `agent-prompt.md`) — needs an MCP rebuild + re-paste.
+- **Nav-bar consolidation** (`client/src/main.js`, `theme.css`): shortened the view labels (full names as
+  hover tooltips) + Upload as a compact icon, so the top bar no longer overflows.
+- **Taxonomy v3 stays DEFERRED** (user chose "leave as documented" — no sign-off yet). Only the honest
+  receipt view ("what's sold here", already live) is surfaced; no receipt-based category inference.
+
+## 3 · Most recent work (13–14 Jul — all on `main`)
 
 The demo-adaptive dashboard (`289ecab`…`0d79919`) shipped earlier. Since then:
 
@@ -57,7 +83,11 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
 
 ## 5 · Open items / decisions
 
-- ~~Deploy to UAT~~ — **DONE 15 Jul** (linkage + March wearables live & verified; see §3).
+- ~~Deploy to UAT~~ (linkage + March wearables) — **DONE 15 Jul** (live & verified; see §3).
+- **Deploy the map expansion + nav consolidation** (this session, §3a) — commit + `reload/MAP_EXPANSION_DEPLOY.md`. Not yet on UAT.
+- **School mapping — RESOLVED 15 Jul.** The data feed (receipts) is authoritative; `school_moe_map.csv` is
+  correct; the base geo's 7 errors are fixed and all siblings mapped. Only `APSN Katong` remains unmappable
+  (no OneMap hit). No csv reconcile needed.
 - **SAM redeploy** — `schema.js`/`agent-prompt.md`/`agent-setup.md` are current (wearables Feb+March,
   items/wallet/linkage, identity-masking). Redeploy = rebuild `smartbuddy-mcp` + re-paste the ```text
   block from `agent-prompt.md` § "Copy For AI Agent" (see `agent-setup.md` §4). **Note (fixed 15 Jul):**

@@ -41,10 +41,11 @@ export function openStallExplorer(DATA, preset = {}) {
         <button data-sort="ticket">Avg ticket</button></div>
       <div class="cap" id="st-count" style="margin:6px 0 4px"></div>
       <div id="st-list"></div>
-      <div class="cap" style="margin-top:8px">No item/SKU data exists — a stall gets a category only if its
-      registered name says what it sells AND its prices don't contradict the claim; generic or bare
-      company names stay <b>Unclassified</b>, never guessed; two-food-group names count as <b>Mixed</b>.
-      Price bands are the factual proxy for menu items.</div>`;
+      <div class="cap" style="margin-top:8px">A stall's <b>category</b> comes only from its registered name
+      (and prices can't contradict it); generic or bare company names stay <b>Unclassified</b>, never guessed;
+      two-food-group names count as <b>Mixed</b>. Where receipt data exists (March), open a stall to see
+      <b>what it actually sold</b> — item-type mix and healthier-choice share. Price bands are the factual
+      proxy for menu items.</div>`;
 
     const catsBar = body.querySelector('#st-cats');
     ['All', ...DATA.cats].forEach((c) => {

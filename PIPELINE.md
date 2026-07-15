@@ -384,9 +384,11 @@ file is **keyed by sync time** (40.3% backfill in Feb, dedup by latest `sync_id`
 4. **KMeans cluster indices are unstable across refits** — always assign persona labels by cluster
    *profile*, never by the raw index.
 5. `pandas.to_json` emits epoch-ms for date columns — cast dates to `VARCHAR` in SQL before export.
-6. **OneMap geocoding rate-limits hard** (≥1.4 s/call). `school_geo.json` is complete (158/334
-   confident matches); reuse it, don't regenerate casually. 176 IDs are unmatched **by design**
-   (ambiguous acronyms — not guessed).
+6. **OneMap geocoding rate-limits hard** (≥1.4 s/call). `school_geo.json` now holds **331/334**
+   (rebuilt 15 Jul from the receipt-verified `schoolId→school` mapping: +173 new markers by postal/name,
+   and **7 base-geo errors corrected** — the acronyms mislead, e.g. RLPS=Rivervale not Rulang, CHS=Chongfu
+   not Catholic High; verified against the raw feed at 99.68% linkage). Reuse it, don't regenerate casually.
+   The remaining 3 IDs are unmapped **by design** — APSN Katong (no reliable OneMap hit) + 2 non-schools.
 7. Parquet files are session-temporary and must be regenerated from the raw CSVs (§5).
 
 ---

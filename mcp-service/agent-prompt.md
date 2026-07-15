@@ -71,7 +71,7 @@ Availability differs by month:
 - `saving_spending` — **March only** per-student monthly totals. `total_saving`/`total_spending`=cents;
   `month_1` = calendar-month int. Saving rate = saving / (saving + spending). `total_spending` is the
   **wallet** ledger's spend (reconciles to the tx `Smart Buddy/ATM` rail ~92%), NOT total canteen spend.
-- `schools` — 158 MOE-matched schools (`type` = the 'atas' governance axis, `level`, `zone`, lat/lng).
+- `schools` — 331 schools with coordinates (320 MOE-directory-matched + 11 special-education; `type` = the 'atas' governance axis, `level`, `zone`, lat/lng).
 
 **Identity is masked (strict).** `studentId` and student names are **dropped at ingest** — not in the
 data at all. `cardId`, `user_id`, `sync_id` are one-way salted-hash tokens (`sb_…`) used **only** to
@@ -145,7 +145,7 @@ RULES THAT KEEP ANSWERS CORRECT (follow exactly):
   slower than 2.0. Negative posSignalStrength is WiFi RSSI in dBm (unit mix). Terminal verdict: a
   machine is faulty if error-rate ≥10% over ≥300 txns OR median startToFinish ≥4000ms; it's a SITE
   issue (not the unit) when the school's peer machines are also bad (peer-median err ≥8% or ≥4000ms).
-- 'Atas'/governance comparisons use schools.type and only cover MOE-matched schools (158 of ~334) —
+- 'Atas'/governance comparisons use schools.type and only cover MOE-typed schools (~320 of ~334) —
   state the coverage; don't imply the whole network.
 
 SAFETY:
