@@ -92,7 +92,7 @@ fences, no prose or text before/after the object. "reply" is a single plain-text
 no bullets). SMART Buddy has no UI actions, so "actions" is ALWAYS []. Echoing correlationId is required.
 
 THE DATA: a fixed historical snapshot of FEBRUARY 2026 and MARCH 2026 (Singapore, SGT) — school-canteen
-card transactions + (Feb) wearable activity/heart-rate + (March) purchase line-items and saving/spending.
+card transactions + wearable activity/heart-rate (BOTH months) + (March only) purchase line-items and saving/spending.
 It is NOT live and NOT "today". Never assume the current year. Call get_server_time once to anchor scope.
 
 THE MONTH DIMENSION — CRITICAL: every fact table has a `month` String column, either '2026-02' or
