@@ -1,8 +1,9 @@
 # HANDOVER — SMART Buddy Dashboard
 
-Orientation for a teammate (or a fresh session) picking this up. Last updated **14 Jul 2026**.
-`main` is at **`fa2dc10`** — everything below is committed + pushed. One screen: what the system is,
-what changed most recently, how to deploy, and what's open.
+Orientation for a teammate (or a fresh session) picking this up. Last updated **15 Jul 2026**.
+`main` is at **`9a258c7`**; the code (through `4ed1d51`) is **live on UAT — deployed + verified
+15 Jul** (linkage 99.7%, March wearables). One screen: what the system is, what changed most
+recently, how to deploy, and what's open.
 
 ---
 
@@ -38,10 +39,12 @@ The demo-adaptive dashboard (`289ecab`…`0d79919`) shipped earlier. Since then:
 | `4ed1d51` | **March wearables** — `build_insights_wearable.py` made **month-generic** (was Feb-hardcoded) + the same `txn_date`→DATE fix; the calendar story is now adaptive (CNY for Feb; for other months the **school-holiday week is auto-detected** from the canteen-txn collapse). `client/src/feb-window.js` reads a generic `special` block (bundle key `cny → special`) so March renders a **"March break"** story and Feb keeps CNY. |
 | `fa2dc10` | Docs: `reload/UAT_DEPLOY.md` consolidated runbook (+ fixed the frontend compose service name → `smartbuddy-frontend`). |
 
-**Verification:** local DuckDB harnesses reproduce the prod bugs by simulating `query_df` types and
-prove the fixes (linkage 0→99.79%; wearable spend arrays 0→nonzero). The real `_linkage_core` and the
-real wearable `run()` were exercised end-to-end for both months. **Not yet run on the real ClickHouse**
-— that happens on the UAT deploy.
+**Verification:** local DuckDB harnesses reproduced the prod bugs by simulating `query_df` types and
+proved the fixes (linkage 0→99.79%; wearable spend arrays 0→nonzero). **Confirmed live on UAT
+(15 Jul):** linkage `3,700,936/3,712,897 (99.7%)`, 2,562/2,562 stalls carry a receipt, items bundle
+has `top_stalls`+`habits`; March wearables loaded (health 2,481,501 / heart_rate 2,260,462),
+`/api/months` March includes `wearable`, bundle `special.label="March break"`; Feb rebuilt to the
+`special` schema (`"CNY story"`), no regression.
 
 ## 4 · Deploy to UAT — see **`reload/UAT_DEPLOY.md`** (one pass, both changes)
 
@@ -54,9 +57,10 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
 
 ## 5 · Open items / decisions
 
-- **Deploy `fa2dc10` to UAT** (the above) — pending; data being sent separately.
-- **SAM redeploy (separate track)** — `schema.js`/`agent-prompt.md` now say wearables are Feb+March, but
-  SAM only reflects it after an `mcp-service` rebuild + re-paste of the instructions (DEPLOY.md §7).
+- ~~Deploy to UAT~~ — **DONE 15 Jul** (linkage + March wearables live & verified; see §3).
+- **SAM redeploy (separate track, still open)** — `schema.js`/`agent-prompt.md` now say wearables are
+  Feb+March, but SAM only reflects it after an `mcp-service` rebuild + re-paste of the instructions
+  (DEPLOY.md §7). Not done yet.
 - **Demo questions** — 3–4 on-stage SAM questions to tune the agent (pending from presenter).
 - **Taxonomy v3** — receipt-based stall categorisation drafted (`analysis/taxonomy_v3_draft.py`), not
   wired, pending supervisor sign-off.
