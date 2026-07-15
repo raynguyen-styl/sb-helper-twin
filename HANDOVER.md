@@ -58,12 +58,16 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
 ## 5 · Open items / decisions
 
 - ~~Deploy to UAT~~ — **DONE 15 Jul** (linkage + March wearables live & verified; see §3).
-- **SAM redeploy (separate track, still open)** — `schema.js`/`agent-prompt.md` now say wearables are
-  Feb+March, but SAM only reflects it after an `mcp-service` rebuild + re-paste of the instructions
-  (DEPLOY.md §7). Not done yet.
+- **SAM redeploy** — `schema.js`/`agent-prompt.md`/`agent-setup.md` are current (wearables Feb+March,
+  items/wallet/linkage, identity-masking). Redeploy = rebuild `smartbuddy-mcp` + re-paste the ```text
+  block from `agent-prompt.md` § "Copy For AI Agent" (see `agent-setup.md` §4). **Note (fixed 15 Jul):**
+  `agent-setup.md` was a stale duplicate (Feb-only, dead table names, plain-text I/O) — now a pointer to
+  the single maintained block in `agent-prompt.md`, so there's no drift trap. Solace gateway confirmed
+  working. Being deployed now.
 - **Demo questions** — 3–4 on-stage SAM questions to tune the agent (pending from presenter).
-- **Taxonomy v3** — receipt-based stall categorisation drafted (`analysis/taxonomy_v3_draft.py`), not
-  wired, pending supervisor sign-off.
+- **Taxonomy v3** — **DEFERRED (15 Jul, conscious decision):** v2 name-verified classification stays
+  live; the receipt-evidence v3 upgrade (`analysis/taxonomy_v3_draft.py`, 17%→~99% coverage) is kept as
+  an unwired draft, revisit if/when the supervisor signs off the policy change. Not an active task.
 - **Housekeeping** — reload data bundles (`SMARTBUDDY_RELOAD_DATA.zip`, `SMARTBUDDY_MARCH_WEARABLE_DATA.zip`,
   `march_wearable/`, the `20260714_STUDENT_*` day-file dirs) are gitignored/untracked scratch — deletable.
 

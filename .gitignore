@@ -47,3 +47,6 @@ Thumbs.db
 
 # CLI upload auth (local only, never commit)
 /scripts/.sb-auth.json
+
+# secrets / keys (local only, never commit)
+litellmkey.txt

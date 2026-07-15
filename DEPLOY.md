@@ -180,10 +180,12 @@ Keycloak (local dev / internal-only), leave `VITE_KEYCLOAK_URL` empty and gate a
 
 ## 7 · Register the SAM agent (mesh owner)
 
-- Create the SAM agent (model `claude-opus-4-8`) from **`mcp-service/agent-prompt.md`** (design/schema
-  brief) and paste the instructions from **`mcp-service/agent-setup.md`** into the SAM "Instructions"
-  field, with the MCP endpoint + `SB_MCP_API_KEY` (§4/§5) and a **new** Anthropic API key (do not
-  reuse another project's key).
+- Create the SAM agent (model `claude-opus-4-8`). **Paste the ```text block from
+  `mcp-service/agent-prompt.md` § "Copy For AI Agent"** (the single maintained instruction copy) into
+  the SAM "Instructions" field; `mcp-service/agent-setup.md` has the surrounding setup + a redeploy
+  checklist. Configure the MCP endpoint + `SB_MCP_API_KEY` (§4/§5) and a **new** Anthropic API key (do
+  not reuse another project's key). **After any `schema.js` change, rebuild + redeploy `smartbuddy-mcp`
+  and re-paste the block** — the schema is baked into the image.
 - Add the Event Gateway rule: subscribe `STYL/iot/smartbuddy/system/*/v1/sam/chat/request`, reply on
   `.../system/{same}/v1/sam/chat/response` (and optionally `.../error`).
 - Point the FE at Solace via `VITE_SOLACE_*` and rebuild the `client` service; the chat panel goes
