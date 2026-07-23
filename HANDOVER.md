@@ -54,6 +54,33 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
 - **Taxonomy v3 stays DEFERRED** (user chose "leave as documented" — no sign-off yet). Only the honest
   receipt view ("what's sold here", already live) is surfaced; no receipt-based category inference.
 
+## 3b · This session (23 Jul — NOT yet committed/deployed)
+
+- **PBS/SSSTM spend-ranking bug, fixed at the source.** The 15 Jul map-expansion entry above (§3a)
+  already established that `PBS` (Pacific Bookstores, a bookshop concessionaire operating stalls inside
+  ~156+ schools) and `SSSTM` (Self-Serve-Stamps, same pattern) are **not schools** — but that fix only
+  touched the map/geocoding dimension. It never propagated to `TX_FILTER`
+  (`ingestion-service/ingest_core.py`), so `tx` / `pb_schools` / `pb_school_daily` kept grouping by
+  `schoolId` including these vendor codes — summing a vendor's revenue across every school it operates
+  in into one fake "school" that outranks any real one. This is why both the Playback "biggest
+  spenders" list (`/api/schools/PBS/playback`, DEPLOY.md §8) and the SAM agent's "which school spends
+  the most" answer returned **PBS, ~$321,334** instead of the real top school, **Methodist Girls'
+  School (Primary), ~$101,474** (caught during Super App POC-Hub orchestrator testing — see that repo's
+  `specs/super-app/sam-orchestrator-build-smartbuddy.md`).
+  - Fix: `TX_FILTER` now excludes `schoolId IN ('STYL','PBS','SSSTM')` (was `STYL` only).
+    `APSNK` (APSN Katong) is untouched — it's a real special-education school, just missing from the
+    MOE geocoding file, not a vendor code.
+  - Updated to match: `mcp-service/src/schema.js`, `mcp-service/agent-prompt.md`,
+    `mcp-service/agent-setup.md` (stale "PBS" sanity check corrected), `DEPLOY.md` §8.
+  - **Not yet live.** `tx` is a ClickHouse view and `pb_schools`/`pb_school_daily` are materialised
+    tables — the code fix above only takes effect once someone reruns the aggregate rebuild
+    (`ingest_core._rebuild(client, ['tx','pb_school_daily','pb_schools'], ...)`) against the live UAT
+    ClickHouse, and rebuilds+redeploys `smartbuddy-mcp` so the SAM agent picks up the corrected
+    `schema.js`/instructions. No raw-file reload needed — `stall_category`/`stallcat` (food-category
+    tagging) is unrelated and untouched by this fix.
+  - `analysis/school_moe_map.csv` (the reference proving PBS/SSSTM aren't schools) was sitting
+    **uncommitted** in this repo — worth committing alongside this fix so the evidence has a git history.
+
 ## 3 · Most recent work (13–14 Jul — all on `main`)
 
 The demo-adaptive dashboard (`289ecab`…`0d79919`) shipped earlier. Since then:

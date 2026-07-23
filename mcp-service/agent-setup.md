@@ -42,7 +42,10 @@ Per-tab Solace topics `STYL/iot/smartbuddy/system/*/v1/sam/chat/{request,respons
 - MCP up: `list_tables` returns `tx, txn, txn_perf, stallcat, health, heart_rate, items, saving_spending, schools`.
 - Month awareness: ask *"how many wearable users in March vs February?"* → it filters `month` and answers both.
 - Aggregate-only guardrail: ask *"which student spent the most?"* → it **refuses** and answers in aggregate.
-- Spend sanity: *"which school spends the most in February?"* → **PBS, ~$321,334**.
+- Spend sanity: *"which school spends the most in February?"* → **Methodist Girls' School (Primary),
+  ~$101,474** (MOE-verified). NOT "PBS" — that's Pacific Bookstores, a vendor code excluded from `tx`
+  as of the schoolId fix (see `ingestion-service/ingest_core.py` TX_FILTER); if you still see PBS on
+  top, the live `tx`/`pb_schools` aggregates haven't been rebuilt yet since that fix.
 
 ## Notes
 - `smartbuddy_ro` is SELECT-only on `smartbuddy`; the MCP enforces `readonly=2` + row/time/memory caps —

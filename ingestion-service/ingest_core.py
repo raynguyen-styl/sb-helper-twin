@@ -37,8 +37,13 @@ SB_ID_SALT = os.environ.get("SB_ID_SALT", "")   # pin to keep tokens stable acro
 BATCH = 50_000
 MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
-# student-traffic gate — identical to analyze_*/build_* (keeps `tx` == the analysis working set)
-TX_FILTER = "schoolId != 'STYL' AND storeName NOT ILIKE '%retrieve%' AND amount <= 20000"
+# student-traffic gate — identical to analyze_*/build_* (keeps `tx` == the analysis working set).
+# schoolId exclusions: 'STYL' (test terminal), 'PBS' (Pacific Bookstores — a ~156-school bookshop
+# concessionaire, not a school), 'SSSTM' (Self-Serve-Stamps — same pattern) — see
+# analysis/school_moe_map.csv (category='non_school') and reload/MAP_EXPANSION_DEPLOY.md. Without
+# this, GROUP BY schoolId sums a vendor's revenue across every school it operates in into one fake
+# "school", which outranks any real school in spend rankings (root cause of the PBS-on-top bug).
+TX_FILTER = "schoolId NOT IN ('STYL', 'PBS', 'SSSTM') AND storeName NOT ILIKE '%retrieve%' AND amount <= 20000"
 
 # one-way hash these pseudonymous id columns wherever they appear (needed for aggregate analysis);
 # DROP these direct student-identity columns entirely — never loaded, not even as a token.

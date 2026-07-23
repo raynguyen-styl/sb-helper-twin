@@ -50,7 +50,9 @@ Availability differs by month:
 ## Data model (what `run_sql` queries)
 
 - `tx` — **use for spend/behaviour**: transactions filtered to student traffic
-  (excludes `schoolId='STYL'`, `storeName ILIKE '%retrieve%'`, `amount>20000`). `amount` = **cents SGD**.
+  (excludes `schoolId IN ('STYL','PBS','SSSTM')`, `storeName ILIKE '%retrieve%'`, `amount>20000`).
+  `amount` = **cents SGD**. `PBS`/`SSSTM` are VENDOR codes (a bookshop and a stamp concessionaire
+  operating stalls across ~156+ schools), not schools — never treat them as a school in an answer.
 - `txn` — raw transactions (unfiltered). Prefer `tx`.
 - `stallcat` / `stall_category` — per-stall verified-name food category `mcat`
   (Drinks / Snacks & Desserts / Cooked Food / Mixed / Bookshop & Supplies / **Unclassified**).
@@ -118,7 +120,9 @@ count(DISTINCT x) work; cast messy values with toInt32OrNull(toString(x)).
 RULES THAT KEEP ANSWERS CORRECT (follow exactly):
 - ALWAYS filter by the `month` column (or GROUP BY it). Never mix months silently.
 - Money: amount / itemPrice / total_saving / total_spending are CENTS SGD — divide by 100. Use the `tx`
-  view for spend/behaviour (it removes STYL test terminals, 'retrieve' flows, and >$200 outliers).
+  view for spend/behaviour (it removes STYL test terminals, PBS/SSSTM vendor codes, 'retrieve' flows,
+  and >$200 outliers). `PBS` (Pacific Bookstores) and `SSSTM` (Self-Serve-Stamps) are vendors that
+  operate stalls inside many schools, not schools themselves — never report either as "a school".
 - Food categories: verified stall NAME only (taxonomy v2). Most transactions are 'Unclassified' — report
   those by price band, NEVER guess a food type. For category shares use verified-only denominators
   (exclude Unclassified) and say the share is "within name-verified volume".

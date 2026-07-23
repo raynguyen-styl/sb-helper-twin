@@ -9,9 +9,10 @@ export const TABLES = {
   tx: {
     kind: "view",
     purpose:
-      "PRIMARY analysis view for spend/behaviour — `txn` already filtered to student traffic (schoolId != 'STYL', storeName NOT ILIKE '%retrieve%', amount <= 20000), for BOTH months. Use THIS for money/behaviour, not `txn`. Always add WHERE month = '2026-02' (or '2026-03').",
+      "PRIMARY analysis view for spend/behaviour — `txn` already filtered to student traffic (schoolId NOT IN ('STYL','PBS','SSSTM'), storeName NOT ILIKE '%retrieve%', amount <= 20000), for BOTH months. Use THIS for money/behaviour, not `txn`. Always add WHERE month = '2026-02' (or '2026-03').",
     notes: [
       "Has a `month` String column ('2026-02' | '2026-03') — ALWAYS filter it (Feb ≈ 3.96M rows, Mar ≈ 3.70M).",
+      "schoolId 'PBS' (Pacific Bookstores) and 'SSSTM' (Self-Serve-Stamps) are VENDOR codes, not schools — a bookshop/stamp concessionaire that operates stalls inside ~156+ different real schools, all logged under one non-school schoolId. They are excluded here so 'which school spent the most' never returns a vendor. Their transactions ARE still in raw `txn` if vendor-level analysis is ever needed — just excluded from `tx` and from any schoolId-grouped result.",
       "amount is in CENTS SGD — divide by 100 for dollars.",
       "Join the stall food category with: JOIN stallcat USING (month, schoolId, storeId).",
       "errorCode: a transaction errored when errorCode IS NOT NULL AND errorCode != '0'.",
@@ -24,7 +25,7 @@ export const TABLES = {
   txn: {
     kind: "table",
     purpose:
-      "RAW transactions (both months) — includes STYL test terminals, 'retrieve' maintenance flows and >$200 outliers. Prefer the `tx` view unless you specifically need the unfiltered rows.",
+      "RAW transactions (both months) — includes STYL test terminals, PBS/SSSTM vendor codes (not schools — see `tx`), 'retrieve' maintenance flows and >$200 outliers. Prefer the `tx` view unless you specifically need the unfiltered rows.",
     notes: [
       "`month` column ('2026-02' | '2026-03') — always filter it.",
       "amount = CENTS SGD (÷100). Speed/network columns are NOT here — see `txn_perf` (join on month + id).",

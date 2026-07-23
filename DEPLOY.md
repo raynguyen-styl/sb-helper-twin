@@ -198,10 +198,15 @@ Keycloak (local dev / internal-only), leave `VITE_KEYCLOAK_URL` empty and gate a
 1. **ch-ingest ran:** ClickHouse `smartbuddy` has the agent tables + the `pb_*` playback tables.
 2. **api-service health:** `docker compose exec smartbuddy-api wget -qO- http://localhost:3320/health`
    → `{"status":"ok","store":"clickhouse","db":"smartbuddy"}`. `/api/schools` returns the school list
-   (biggest spenders first, PBS on top); `/api/schools/PBS/playback` returns a per-day series.
+   (biggest spenders first — a REAL school on top, e.g. Methodist Girls' School (Primary); `PBS`/`SSSTM`
+   are vendor codes excluded from `tx`/`pb_schools`, not schools — see `ingestion-service/ingest_core.py`
+   TX_FILTER). `/api/schools/<schoolId>/playback` returns a per-day series for any real school.
 3. **Playback:** dashboard → Playback → pick a school → the daily timeline animates real Feb data
    (watch the CNY 16–18 revenue drop).
-4. **SAM chat:** ask *"Which school spends the most?"* → **PBS, ~$321,334**.
+4. **SAM chat:** ask *"Which school spends the most?"* → **Methodist Girls' School (Primary),
+   ~$101,474** (MOE-verified; if you still see "PBS", the live `tx`/`pb_schools` aggregates haven't
+   been rebuilt since the schoolId fix — rerun `ingest_core._rebuild()` for `tx`/`pb_school_daily`/
+   `pb_schools`, no raw-file reload needed).
 
 ---
 
