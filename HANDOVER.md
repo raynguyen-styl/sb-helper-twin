@@ -1,11 +1,16 @@
 # HANDOVER — SMART Buddy Dashboard
 
-Orientation for a teammate (or a fresh session) picking this up. Last updated **15 Jul 2026**.
-`main` is at **`279f3ec`** live on UAT (linkage 99.7%, March wearables). **Uncommitted on top (this
-session):** the **map expansion 158→331 markers (+7 misplaced dots corrected)**, a nav-bar consolidation,
-a stall-copy fix + SAM count text — built & verified against the raw `Feb-Mar_Data` feed, **not yet on
-UAT** (see §3a / `reload/MAP_EXPANSION_DEPLOY.md`). One screen: what the system is, what changed most
-recently, how to deploy, and what's open.
+Orientation for a teammate (or a fresh session) picking this up. Last updated **28 Sep 2026**.
+`main` is at **`8a5d7df`** (basemap Carto → OneMap, §3c). Everything below is **committed & pushed**;
+`279f3ec` was the last build confirmed live on UAT (15 Jul). Whether the later commits (`21f1e16` map
+expansion, `79a3a82` PBS fix, `8a5d7df` basemap) have reached UAT is **unconfirmed — check the VM
+before assuming.** One screen: what the system is, what changed most recently, how to deploy, and
+what's open.
+
+**⚠️ Git remote moved:** the repo is now
+`git@git.styl.solutions:presales-prototypes/atlantic-platform/smart-buddy-data.git` (the old
+`rtls-demo/smart-buddy-data` path still redirects to the same project). Local `origin` was updated
+28 Sep; the **VM's clone may still point at the old path**. `git remote set-url origin <new>` there too.
 
 ---
 
@@ -25,13 +30,36 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
 | Doc | For |
 |---|---|
 | **HANDOVER.md** (this) | Current state, recent work, deploy pointer, open items |
-| **reload/MAP_EXPANSION_DEPLOY.md** | ⭐ NEW — deploy the 158→331 map markers (+7 corrected) + stall-copy + SAM count |
+| **ONEMAP_BASEMAP_FIX.md** | ⭐ NEW — paste-in prompt to apply the Carto→OneMap basemap fix to *other* map projects + OneMap licensing summary |
+| **reload/MAP_EXPANSION_DEPLOY.md** | Deploy the 158→331 map markers (+7 corrected) + stall-copy + SAM count |
 | **reload/UAT_DEPLOY.md** | The prior one-pass UAT deploy (linkage fix + March wearables) |
 | **DEPLOY.md** | Full deploy runbook (compose stacks, ingest, SAM, verify) |
 | **README.md** | Overview, deployed architecture, data facts & caveats |
 | **mcp-service/agent-prompt.md** + **agent-setup.md** | SAM agent instructions to paste into the mesh |
 
-## 3a · This session (15 Jul — NOT yet committed/deployed)
+## 3c · This session (28 Sep — committed & pushed `8a5d7df`, NOT yet on UAT)
+
+- **Basemap was showing "API KEY REQUIRED" watermarks.** Carto's CDN now requires an API key.
+  Keyless callers still get HTTP 200, but every tile is a ~2 KB watermark image. This hit every
+  STYL project on the same Carto tiles. No code or data regression.
+- **Fix:** `client/src/main.js` map init now uses **OneMap Grey** raster tiles
+  (`https://www.onemap.gov.sg/maps/tiles/Grey/{z}/{x}/{y}.png`). They are keyless, and the
+  project already relies on OneMap for geocoding. Tiles exist at **z11–19 only**, so `minZoom: 11`.
+  The **OneMap logo + "©2026 contributors | Singapore Land Authority" credit is mandatory**, so the
+  attribution control is back on (compact). DEPLOY.md §9 and client/README notes updated.
+- **Licensing (checked, not legal advice):** free for commercial use under the OneMap Terms of Use,
+  but "no charge *currently*": SLA can introduce fees or revoke access without notice. No
+  tile caching/re-hosting. **Get legal to confirm before production.** Details in `ONEMAP_BASEMAP_FIX.md`.
+- **Deploy:** frontend-only. On the VM: `git pull` → rebuild/restart `smartbuddy-frontend`. No
+  data, ingest, or SAM changes. Verify the map shows streets and the credit appears bottom-right.
+- **Other projects:** same fix via the paste-in prompt in `ONEMAP_BASEMAP_FIX.md` (covers MapLibre,
+  Leaflet, OpenLayers, the dark/voyager → Night/Default style mapping, and CSP gotchas). Not done yet.
+- **Local view:** `cd client && npm run dev` → http://localhost:5188. The basemap renders, but
+  **school dots won't**. The client fetches data from api-service (`VITE_SB_API_URL`), and this
+  machine has no `.env` files (only `.env.example`). The real `.env` lives on the VM. Supplying
+  one (never paste secrets into chat) + a reachable api-service/ClickHouse is needed for local data.
+
+## 3a · 15 Jul session (committed in `21f1e16`)
 
 - **Map expansion 158 → 331 markers (+7 corrected).** Rebuilt `ingestion-service/school_geo.json` from the
   authoritative `schoolId→school` mapping, **verified against the raw `Feb-Mar_Data` feed**: the basket→txn
@@ -54,7 +82,7 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
 - **Taxonomy v3 stays DEFERRED** (user chose "leave as documented" — no sign-off yet). Only the honest
   receipt view ("what's sold here", already live) is surfaced; no receipt-based category inference.
 
-## 3b · This session (23 Jul — NOT yet committed/deployed)
+## 3b · 23 Jul session (committed in `79a3a82`; UAT rebuild status unconfirmed)
 
 - **PBS/SSSTM spend-ranking bug, fixed at the source.** The 15 Jul map-expansion entry above (§3a)
   already established that `PBS` (Pacific Bookstores, a bookshop concessionaire operating stalls inside
@@ -78,8 +106,8 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
     ClickHouse, and rebuilds+redeploys `smartbuddy-mcp` so the SAM agent picks up the corrected
     `schema.js`/instructions. No raw-file reload needed — `stall_category`/`stallcat` (food-category
     tagging) is unrelated and untouched by this fix.
-  - `analysis/school_moe_map.csv` (the reference proving PBS/SSSTM aren't schools) was sitting
-    **uncommitted** in this repo — worth committing alongside this fix so the evidence has a git history.
+  - `analysis/school_moe_map.csv` (the reference proving PBS/SSSTM aren't schools) is now committed
+    (`79a3a82`), along with `reload/PBS_SCHOOLID_FIX_DEPLOY.md` (exact UAT SQL + MCP redeploy).
 
 ## 3 · Most recent work (13–14 Jul — all on `main`)
 
@@ -111,7 +139,12 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
 ## 5 · Open items / decisions
 
 - ~~Deploy to UAT~~ (linkage + March wearables) — **DONE 15 Jul** (live & verified; see §3).
-- **Deploy the map expansion + nav consolidation** (this session, §3a) — commit + `reload/MAP_EXPANSION_DEPLOY.md`. Not yet on UAT.
+- **Deploy the OneMap basemap fix** (§3c): frontend-only rebuild on the VM. Not yet on UAT.
+- **Apply the OneMap fix to the other STYL map projects** (§3c) using `ONEMAP_BASEMAP_FIX.md`.
+- **Legal check on OneMap terms** (free "currently", revocable, attribution mandatory) before production.
+- **Update the VM's git remote** to the `presales-prototypes/atlantic-platform/...` path (see header).
+- **Confirm on UAT** whether the map expansion (`21f1e16`, `reload/MAP_EXPANSION_DEPLOY.md`) and the PBS fix
+  (`79a3a82`, `reload/PBS_SCHOOLID_FIX_DEPLOY.md`) were deployed. Both are committed; UAT status unknown.
 - **School mapping — RESOLVED 15 Jul.** The data feed (receipts) is authoritative; `school_moe_map.csv` is
   correct; the base geo's 7 errors are fixed and all siblings mapped. Only `APSN Katong` remains unmappable
   (no OneMap hit). No csv reconcile needed.
