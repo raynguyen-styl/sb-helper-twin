@@ -194,18 +194,19 @@ let map = null;
 try {
     map = new maplibregl.Map({
         container: 'map',
-        attributionControl: false,
+        attributionControl: { compact: true },   // OneMap terms require the SLA attribution
         style: {
             version: 8,
-            sources: { carto: { type: 'raster',
-                tiles: ['https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-                        'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-                        'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png'],
-                tileSize: 256, attribution: '© OpenStreetMap © CARTO' } },
-            layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
+            // OneMap (SLA) — keyless; Carto's CDN now serves "API KEY REQUIRED" tiles. Singapore-only, z11–19.
+            sources: { onemap: { type: 'raster',
+                tiles: ['https://www.onemap.gov.sg/maps/tiles/Grey/{z}/{x}/{y}.png'],
+                tileSize: 256, minzoom: 11, maxzoom: 19,
+                attribution: '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" style="height:20px;width:20px;vertical-align:middle" alt="OneMap"> <a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener">OneMap</a> ©2026 contributors | <a href="https://www.sla.gov.sg/" target="_blank" rel="noopener">Singapore Land Authority</a>' } },
+            layers: [{ id: 'onemap', type: 'raster', source: 'onemap' }],
         },
         center: [103.832, 1.352],
         zoom: 11.15,
+        minZoom: 11,   // no OneMap tiles below z11 — stop users zooming out to a blank map
     });
     map.addControl(new maplibregl.NavigationControl(), 'top-left');
 } catch (e) {

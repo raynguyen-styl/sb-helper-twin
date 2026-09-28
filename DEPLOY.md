@@ -231,7 +231,7 @@ Keycloak (local dev / internal-only), leave `VITE_KEYCLOAK_URL` empty and gate a
   a heavy agent query can't starve the shared instance's live ingest.
 - **Bearer `SB_MCP_API_KEY`** on `/smartbuddy-mcp/`; the Solace creds in the FE bundle are public, so
   scope them low-privilege to the smartbuddy chat topics only.
-- **Basemap needs outbound internet** — MapLibre fetches Carto Positron tiles from a CDN at runtime;
+- **Basemap needs outbound internet** — MapLibre fetches OneMap (SLA) Grey raster tiles from `www.onemap.gov.sg` at runtime (keyless; Carto was dropped when its CDN began requiring an API key);
   on an air-gapped host the basemap is blank (all data/charts/tables/list still work).
 
 ---

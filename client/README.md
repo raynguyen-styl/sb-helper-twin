@@ -11,7 +11,7 @@ npm install     # first time only
 npm run dev     # then open http://localhost:5188
 ```
 
-Requires Node (tested on v24). Internet is needed for the basemap tiles (Carto Positron);
+Requires Node (tested on v24). Internet is needed for the basemap tiles (OneMap Grey, SLA — keyless);
 all data is bundled locally in `src/data/`.
 
 ## What's in it
