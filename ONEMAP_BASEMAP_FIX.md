@@ -79,6 +79,17 @@ and set `minZoom: 11` on the View.
 
 In every case, check the map's starting zoom. If it's below 11, raise it to 11.
 
+**Stop over-dragging into white (do this too).** OneMap's coverage shrinks at higher zoom
+(nothing north of lat 1.494 from z12; open-sea tiles are skipped from ~z16). For MapLibre, add
+`maxBounds: [[103.58, 1.12], [104.16, 1.494]]` to the map and put a sea-grey background layer
+*under* the raster: `{ id: 'sea', type: 'background', paint: { 'background-color': '#d1d1d1' } }`.
+Leaflet: `maxBounds` with the same corners (as `[[lat, lng], …]`) and `maxBoundsViscosity: 1`,
+plus `background: #d1d1d1` on the map container. For the `Night` style, sample its sea colour instead.
+
+**Optional, if markers are hard to see:** wash the basemap out (MapLibre raster layer paint:
+`'raster-saturation': -1, 'raster-brightness-min': 0.25, 'raster-contrast': -0.2`) and give
+markers a thin dark ring (`box-shadow: 0 0 0 1px rgba(0,0,0,.55)`). Ask me first. It changes the look.
+
 ### 5. Things that silently break the fix
 - **Content Security Policy** (nginx `add_header`, a `<meta http-equiv>` tag, helmet, or
   similar): allow `https://www.onemap.gov.sg` in `img-src`. For MapLibre, also allow it in

@@ -25,7 +25,7 @@ initAuth();
 // When auth settles, show who's signed in + a logout button in the nav.
 authReady.then(({ username }) => renderUser(username));
 
-const LV_COLOR = { Primary: '#2a78d6', Secondary: '#1baf7a', 'Junior College': '#7d5fd3', Other: '#8e8e93' };
+const LV_COLOR = { Primary: '#0a5fd8', Secondary: '#00955f', 'Junior College': '#6a3fd1', Other: '#48484d' };
 const HEALTH = (v, warn, bad) => (v >= bad ? '#ff3b30' : v >= warn ? '#ff9500' : '#34c759');
 let colorMode = 'level';
 const markerEls = new Map();
@@ -202,11 +202,18 @@ try {
                 tiles: ['https://www.onemap.gov.sg/maps/tiles/Grey/{z}/{x}/{y}.png'],
                 tileSize: 256, minzoom: 11, maxzoom: 19,
                 attribution: '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" style="height:20px;width:20px;vertical-align:middle" alt="OneMap"> <a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener">OneMap</a> ©2026 contributors | <a href="https://www.sla.gov.sg/" target="_blank" rel="noopener">Singapore Land Authority</a>' } },
-            layers: [{ id: 'onemap', type: 'raster', source: 'onemap' }],
+            layers: [
+                // OneMap's sea grey — tiles it skips (open sea at high zoom) blend in instead of showing white
+                { id: 'sea', type: 'background', paint: { 'background-color': '#d1d1d1' } },
+                // wash the basemap out to neutral grey so the coloured school dots stand out
+                { id: 'onemap', type: 'raster', source: 'onemap',
+                  paint: { 'raster-saturation': -1, 'raster-brightness-min': 0.25, 'raster-contrast': -0.2 } },
+            ],
         },
         center: [103.832, 1.352],
         zoom: 11.15,
         minZoom: 11,   // no OneMap tiles below z11 — stop users zooming out to a blank map
+        maxBounds: [[103.58, 1.12], [104.16, 1.494]],   // OneMap's tiled area — no dragging off into blank
     });
     map.addControl(new maplibregl.NavigationControl(), 'top-left');
 } catch (e) {

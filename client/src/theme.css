@@ -162,7 +162,7 @@ select.up-in { cursor: pointer; }
     font-size: 11px; padding: 0; }
 
 /* marker */
-.mk { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.3); cursor: pointer; }
+.mk { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 1px 4px rgba(0,0,0,.35); cursor: pointer; }
 .mk.open { outline: 3px solid rgba(0,102,204,.45); }
 
 /* draggable windows */

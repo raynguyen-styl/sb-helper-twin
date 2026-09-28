@@ -1,7 +1,7 @@
 # HANDOVER — SMART Buddy Dashboard
 
 Orientation for a teammate (or a fresh session) picking this up. Last updated **28 Sep 2026**.
-`main` is at **`8a5d7df`** (basemap Carto → OneMap, §3c). Everything below is **committed & pushed**;
+`main` has the **basemap Carto → OneMap** fix (`8a5d7df`) plus the **marker-contrast + drag-limit** follow-up (§3c). Everything below is **committed & pushed**;
 `279f3ec` was the last build confirmed live on UAT (15 Jul). Whether the later commits (`21f1e16` map
 expansion, `79a3a82` PBS fix, `8a5d7df` basemap) have reached UAT is **unconfirmed — check the VM
 before assuming.** One screen: what the system is, what changed most recently, how to deploy, and
@@ -37,7 +37,7 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
 | **README.md** | Overview, deployed architecture, data facts & caveats |
 | **mcp-service/agent-prompt.md** + **agent-setup.md** | SAM agent instructions to paste into the mesh |
 
-## 3c · This session (28 Sep — committed & pushed `8a5d7df`, NOT yet on UAT)
+## 3c · This session (28 Sep — basemap `8a5d7df` + contrast/drag-limit commit, pushed, NOT yet on UAT)
 
 - **Basemap was showing "API KEY REQUIRED" watermarks.** Carto's CDN now requires an API key.
   Keyless callers still get HTTP 200, but every tile is a ~2 KB watermark image. This hit every
@@ -47,6 +47,22 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
   project already relies on OneMap for geocoding. Tiles exist at **z11–19 only**, so `minZoom: 11`.
   The **OneMap logo + "©2026 contributors | Singapore Land Authority" credit is mandatory**, so the
   attribution control is back on (compact). DEPLOY.md §9 and client/README notes updated.
+- **Marker contrast (follow-up commit):** the basemap is washed out with MapLibre raster paint
+  (`raster-saturation: -1`, `raster-brightness-min: 0.25`, `raster-contrast: -0.2`). That also
+  removes the red restricted-area hatching and coloured MRT lines that competed with the dots.
+  `LV_COLOR` in `main.js` is darker/more saturated (legend follows), and `.mk` in `theme.css` gains a
+  1px dark ring outside the white border. `charts.js`'s own `LV_COLOR` (charts, not map) and the
+  Errors/Speed `HEALTH` colours are unchanged.
+- **Drag limit:** OneMap's tile coverage **shrinks at higher zoom** (e.g. nothing north of lat 1.494
+  from z12, and open-sea tiles are omitted from ~z16). So the map has
+  `maxBounds: [[103.58, 1.12], [104.16, 1.494]]`, the area covered at every zoom (east edge pulled
+  in to hide a hard tile cut over Johor), plus a `background` layer in OneMap's sea grey `#d1d1d1`
+  so skipped sea tiles don't show white. Side effect: on large screens the opening zoom is
+  clamped slightly above 11.15 so the view fits the bounds. The whole island still fits.
+- **Verified by screenshot** with headless Chrome over CDP (waiting for MapLibre `idle`; Chrome's
+  `--screenshot`/`--virtual-time-budget` captures before tiles finish and gives false blank strips).
+  The test used a scratch page with the real 331 school coordinates + identical map/marker settings,
+  because locally there's no API data (see Local view below).
 - **Licensing (checked, not legal advice):** free for commercial use under the OneMap Terms of Use,
   but "no charge *currently*": SLA can introduce fees or revoke access without notice. No
   tile caching/re-hosting. **Get legal to confirm before production.** Details in `ONEMAP_BASEMAP_FIX.md`.
@@ -139,7 +155,8 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
 ## 5 · Open items / decisions
 
 - ~~Deploy to UAT~~ (linkage + March wearables) — **DONE 15 Jul** (live & verified; see §3).
-- **Deploy the OneMap basemap fix** (§3c): frontend-only rebuild on the VM. Not yet on UAT.
+- **Deploy the OneMap basemap + contrast/drag-limit** (§3c): frontend-only rebuild on the VM. Not yet on UAT.
+  After deploying, check a real screen: dots visible on grey map, no white when dragging to any edge.
 - **Apply the OneMap fix to the other STYL map projects** (§3c) using `ONEMAP_BASEMAP_FIX.md`.
 - **Legal check on OneMap terms** (free "currently", revocable, attribution mandatory) before production.
 - **Update the VM's git remote** to the `presales-prototypes/atlantic-platform/...` path (see header).
