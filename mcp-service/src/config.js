@@ -1,9 +1,9 @@
 import "dotenv/config";
 
 // ── ClickHouse (shared platform instance `clickhouse`, in-network only) ──────────────────────────
-// SMART Buddy's Feb data lives in its OWN database `smartbuddy` on the shared ClickHouse. The MCP
+// SMART Buddy's Feb + March data lives in its OWN database `smartbuddy` on the shared ClickHouse. The MCP
 // connects as a DEDICATED READ-ONLY user (SELECT only, scoped to that database) so the agent's SQL
-// can never touch other demos' tables (raw UWB/camera) — defense-in-depth on top of readonly=1.
+// can never touch other demos' tables (raw UWB/camera) — defense-in-depth on top of readonly=2.
 export const CLICKHOUSE_URL = (process.env.CLICKHOUSE_URL || "http://clickhouse:8123").replace(/\/$/, "");
 export const CLICKHOUSE_DB = (process.env.CLICKHOUSE_DB || "smartbuddy").trim();
 export const CLICKHOUSE_USER = (process.env.CLICKHOUSE_USER || "smartbuddy_ro").trim();

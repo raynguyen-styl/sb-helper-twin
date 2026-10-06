@@ -39,7 +39,11 @@ Per-tab Solace topics `STYL/iot/smartbuddy/system/*/v1/sam/chat/{request,respons
 3. Verify (below).
 
 ## Verify
-- MCP up: `list_tables` returns `tx, txn, txn_perf, stallcat, health, heart_rate, items, saving_spending, schools`.
+- MCP up: `list_tables` returns `tx, txn, txn_perf, terminal_health, stallcat, health, heart_rate, items, saving_spending, schools`
+  (`terminal_health` has a row count only after `ch-insights` has run for the month).
+- Schools: *"how many schools have map coordinates?"* → **332**.
+- Service route: *"which terminals have machine faults in March?"* → uses `terminal_health` (159 machine faults);
+  *"plan a route to TKGS, RSYS, SCGSP and FHPS"* → calls `plan_service_route`: TKGS → RSYS → SCGSP → FHPS, ~28 km straight-line.
 - Month awareness: ask *"how many wearable users in March vs February?"* → it filters `month` and answers both.
 - Aggregate-only guardrail: ask *"which student spent the most?"* → it **refuses** and answers in aggregate.
 - Spend sanity: *"which school spends the most in February?"* → **Methodist Girls' School (Primary),

@@ -39,7 +39,7 @@ function runSqlDescription() {
     "This is the main tool — write ClickHouse SQL to answer the question, then cite the numbers you get.",
     "",
     "HARD RULES (enforced): a single statement, must start with SELECT or WITH, read-only. Anything else is rejected with an {error, hint}.",
-    "MONTH: every fact table has a `month` String column ('2026-02' | '2026-03'). ALWAYS filter WHERE month = '2026-0X' (or GROUP BY month). Wearables (health, heart_rate) are Feb-only; items + saving_spending are March-only; transactions/speed/stalls exist for both.",
+    "MONTH: every fact table has a `month` String column ('2026-02' | '2026-03'). ALWAYS filter WHERE month = '2026-0X' (or GROUP BY month). Transactions/speed/stalls AND wearables (health, heart_rate) exist for both; items + saving_spending are March-only.",
     "ClickHouse dialect: dates are toDate('2026-03-14') (NOT DATE '…'); day-of-week is toDayOfWeek(txn_date) (Mon=1..Sun=7); recorded_time is a UNIX epoch → toDateTime(recorded_time); median()/quantile() and count(DISTINCT x) work; cast messy values with toInt32OrNull(toString(x)).",
     "",
     "Tables / views (call describe_table for columns + units):",
@@ -91,14 +91,14 @@ function buildMcpServer() {
     {},
     async () => {
       const now = Date.now();
-      return { content: [{ type: "text", text: JSON.stringify({ serverNowMs: now, serverNowIso: new Date(now).toISOString(), dataset: DATASET, months: ["2026-02", "2026-03"], note: "Two months. Filter the `month` column. Wearables are Feb-only; items/saving_spending are March-only." }, null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ serverNowMs: now, serverNowIso: new Date(now).toISOString(), dataset: DATASET, months: ["2026-02", "2026-03"], note: "Two months. Filter the `month` column. Transactions and wearables exist for both; items/saving_spending are March-only." }, null, 2) }] };
     },
   );
 
   server.tool(
     "resolve_time_range",
-    "Turn a natural-language date phrase into exact dates (SGT) within a dataset month plus a ready-to-paste SQL predicate that pins the `month` column + a txn_date range. Detects 'March'/'February' (default Feb; CNY forces Feb). Handles: explicit dates (2026-03-14 or 3-14), 'CNY'/'Chinese New Year' (+ 'CNY week'), 'Valentine', 'first/second/third/last week', 'weekend', 'weekday'/'school day', and weekday names. Use its `predicate` directly in run_sql; it returns the `month` too.",
-    { text: z.string().describe("The date phrase, e.g. 'CNY week', 'first week', 'every Monday', '2-14', 'weekends'.") },
+    "Turn a natural-language date phrase into exact dates (SGT) within a dataset month plus a ready-to-paste SQL predicate that pins the `month` column + a txn_date range. Detects 'March'/'February' (default Feb; CNY forces Feb) — so when the user means March, put 'March' in the phrase (e.g. 'first week March'). Handles: explicit dates (2026-03-14 or 3-14), 'CNY'/'Chinese New Year' (+ 'CNY week'), 'Valentine', 'first/second/third/last week', 'weekend', 'weekday'/'school day', and weekday names. Use its `predicate` directly in run_sql; it returns the `month` too.",
+    { text: z.string().describe("The date phrase, incl. the month if not February, e.g. 'CNY week', 'first week March', 'every Monday', '2-14', 'weekends March'.") },
     async ({ text }) => {
       console.log(`[tool] resolve_time_range text=${String(text).slice(0, 60)}`);
       return { content: [{ type: "text", text: JSON.stringify(resolveTimeRange(text), null, 2) }] };

@@ -171,7 +171,7 @@ def coerce(value, ch_col_type: str):
 
 
 def _hash_sql(col: str, salt: str) -> str:
-    # DuckDB sha256 of salt||value → short token. NULL stays NULL. Matches build_feb_clickhouse.py.
+    # DuckDB sha256 of salt||value → short token. NULL stays NULL.
     s = salt.replace("'", "''")
     return (f"CASE WHEN \"{col}\" IS NULL THEN NULL "
             f"ELSE 'sb_' || substr(sha256(concat('{s}', CAST(\"{col}\" AS VARCHAR))), 1, 16) END")

@@ -65,6 +65,11 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
   first linked section, CAHP); Errors/Speed = the shop's own machine (busiest one if it has two). Bookshop-only
   places (Radin Mas, West View, Dazhong) have no school row → grey "Other". Verified locally (March): marker colours
   match a recount from the stalls bundle exactly.
+- **SAM consistency pass (needs the `smartbuddy-mcp` rebuild + re-paste, same deploy):** the `run_sql` and
+  `get_server_time` tool texts still said wearables were Feb-only (fixed); the wallet reconcile is now stated as
+  ~92% on raw `txn` / ~88% on `tx` everywhere (was "~92%" against `tx`); `schools.type` covers all 332 (was
+  "~320 of ~334"); `tx` row counts 3.84M / 3.59M; SAM told that `resolve_time_range` defaults to February;
+  `mcp-service/README.md` de-staled (old `feb_*` table names, deleted `build_feb_clickhouse.py`).
 - **Housekeeping:** legacy Feb-only pipeline data (`txn/` raw parts, `analysis/parquet/`, `analysis/appdata/` + the
   generated `analysis/*.json` / `pdf_report_spliced.html`), empty `smart-buddy-app/`, `__pycache__/`, `client/dist/`
   moved to the git-ignored `need to delete manually/` for manual deletion. **Consequence:** the old `analysis/`

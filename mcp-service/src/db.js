@@ -7,7 +7,7 @@ import {
 let _client = null;
 
 /** Open the ClickHouse client scoped to the `smartbuddy` database as the READ-ONLY user.
- *  readonly=1 + the SELECT-only grant on that DB make writes impossible at the engine level. */
+ *  readonly=2 + the SELECT-only grant on that DB make writes impossible at the engine level. */
 export async function initDb() {
   if (_client) return _client;
   _client = createClient({
