@@ -90,9 +90,10 @@ export async function runReadOnlySql(sqlRaw, maxRows) {
   }
 }
 
-/** Fast helper for internal metadata queries (list_tables/describe_table). */
-export async function queryRows(sql) {
+/** Fast helper for internal queries (list_tables/describe_table/plan_service_route). Values go in
+ *  query_params ({name:Type} placeholders) — never interpolated. */
+export async function queryRows(sql, query_params) {
   const client = await initDb();
-  const rs = await client.query({ query: sql, format: "JSONEachRow" });
+  const rs = await client.query({ query: sql, query_params, format: "JSONEachRow" });
   return rs.json();
 }

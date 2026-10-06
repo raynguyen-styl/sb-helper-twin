@@ -230,7 +230,7 @@ Every behavioural/spend metric is computed on a filtered view that removes non-s
 
 ```sql
 WHERE schoolId != 'STYL'                 -- vendor bench-test terminals
-  AND storeName NOT ILIKE '%retrieve%'   -- card-retrieval / maintenance flows
+  AND storeName NOT ILIKE '%retrieve%'   -- 'Retrieve…' = stall relabelled when its machine was pulled (real sales; kept in the terminal view)
   AND amount <= 20000                     -- cents → drop > $200 outliers
 ```
 `amount` is **cents SGD**; divide by 100 for dollars. Error rate = share of rows with
@@ -347,7 +347,7 @@ months.)*
 
 | Domain | Gate | Why |
 |---|---|---|
-| Transactions | exclude `STYL`, `%retrieve%`, `amount > 20000c` | vendor test rigs, maintenance flows, $200+ outliers |
+| Transactions | exclude `STYL`, `%retrieve%`, `amount > 20000c` | vendor test rigs, stalls whose machine was later pulled (real sales — see README fact 5), $200+ outliers |
 | Txn speed | `startToFinish > 0` | 0/NULL = timing not captured |
 | Weekly series | `txn_date BETWEEN 2026-02-02 AND 2026-02-28` | Feb starts Sun 1 Feb → the `date_trunc('week')` bucket `2026-01-26` holds a single day; this drops it |
 | Activity | `data_type IN (0,1)`, `calories ≤ 500000`, `steps ≤ 4000/interval`, Feb dates | drops sentinel/corrupt packets and non-Feb stragglers |
@@ -360,7 +360,7 @@ months.)*
 | HR = 255 sentinel | Firmware `1.1.9.0.0` produces 100% of them | Exclude from averages; **retire the firmware** |
 | HR file keyed by sync time | ~40% pre-Feb backfill | Filter `hr_date` to February |
 | No item/SKU data | Food categories can't be derived for most stalls | Verified-name-only (taxonomy v2); rest Unclassified |
-| STYL test terminals / 'retrieve' flows / >$200 | Non-student traffic | Excluded by the base gate |
+| STYL test terminals / 'Retrieve…' stalls / >$200 | Out of spend (retrieved stalls stay in the terminal view) | Excluded by the base gate |
 | 3.0 ASCAN reader stack | ~2× slower than 2.0 every week | Investigate the 3.0 stack |
 | No per-student linkage | `studentId` 100% NULL; cardId ≠ health user_id | Only day-aligned *aggregate* comparison is valid |
 
@@ -384,11 +384,12 @@ file is **keyed by sync time** (40.3% backfill in Feb, dedup by latest `sync_id`
 4. **KMeans cluster indices are unstable across refits** — always assign persona labels by cluster
    *profile*, never by the raw index.
 5. `pandas.to_json` emits epoch-ms for date columns — cast dates to `VARCHAR` in SQL before export.
-6. **OneMap geocoding rate-limits hard** (≥1.4 s/call). `school_geo.json` now holds **331/334**
+6. **OneMap geocoding rate-limits hard** (≥1.4 s/call). `school_geo.json` now holds **332** (every school ID)
    (rebuilt 15 Jul from the receipt-verified `schoolId→school` mapping: +173 new markers by postal/name,
    and **7 base-geo errors corrected** — the acronyms mislead, e.g. RLPS=Rivervale not Rulang, CHS=Chongfu
    not Catholic High; verified against the raw feed at 99.68% linkage). Reuse it, don't regenerate casually.
-   The remaining 3 IDs are unmapped **by design** — APSN Katong (no reliable OneMap hit) + 2 non-schools.
+   APSN Katong was added 1 Oct 2026 (OneMap postal 467354, listed as "KATONG SCHOOL"). The 2 remaining feed IDs,
+   PBS and SSSTM, are vendors, not schools — placed per stall via `pbs_hosts.csv` / `stamp_hosts.csv`.
 7. Parquet files are session-temporary and must be regenerated from the raw CSVs (§5).
 
 ---

@@ -5294,5 +5294,21 @@
   "lat": 1.37193180853315,
   "lng": 103.858793448272,
   "manual": true
+ },
+ "APSNK": {
+  "name": "APSN Katong School",
+  "postal": "467354",
+  "type": "SPED SCHOOL",
+  "level": "",
+  "zone": "",
+  "area": "",
+  "sap": false,
+  "autonomous": false,
+  "gifted": false,
+  "ip": false,
+  "nature": "",
+  "lat": 1.325319991681406,
+  "lng": 103.9429988567336,
+  "manual": true
  }
 }

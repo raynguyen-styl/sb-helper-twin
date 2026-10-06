@@ -21,7 +21,7 @@ the **`smartbuddy-mcp`** adapter as a **dedicated read-only user** (`smartbuddy_
 Attach the **`smartbuddy-mcp`** MCP endpoint
 (`https://smartbuddy-helper-uat.styl.solutions/smartbuddy-mcp/mcp`, Bearer `SB_MCP_API_KEY`). Tools:
 `get_server_time`, `resolve_time_range`, `list_tables`, `describe_table`, `sample_rows`, `run_sql`
-(the main tool — one read-only `SELECT`/`WITH` query). `describe_table`/`list_tables` serve the curated
+(the main tool — one read-only `SELECT`/`WITH` query), `plan_service_route` (service visit order). `describe_table`/`list_tables` serve the curated
 data dictionary from `src/schema.js` — **so after any `schema.js` change, rebuild + redeploy
 `smartbuddy-mcp`** (the file is baked into the image) for the agent to see it.
 

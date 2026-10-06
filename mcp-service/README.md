@@ -17,6 +17,7 @@ database (loaded by `../ingestion-service/build_feb_clickhouse.py`); this adapte
 | `describe_table` | Live column types **+ curated units/exclusions/gotchas**. |
 | `sample_rows` | First N rows (≤20) to see the shape. |
 | `run_sql` | **The main tool** — run one read-only `SELECT`/`WITH` query, get rows back. |
+| `plan_service_route` | Service staff: chosen machines (`terminal_health`) → ordered visit list, one stop per school, nearest-next from the STYL Service Center (straight-line km). Values bound as query params. |
 
 Data surface (all in the `smartbuddy` database): `tx` (student-traffic-filtered txn view — use for
 spend/behaviour), `feb_txn` (raw), `stallcat`/`stall_category` (verified-name food category),

@@ -41,3 +41,10 @@ export function openWindow({ id, title, sub, chips = [], onClose }) {
     });
     return win.querySelector('.tw-body');
 }
+
+// ⓘ tip: one-line captions on screen, method/caveat detail on hover (native title — never clipped by a
+// scrolling window) and to screen readers (aria-label). Usage: `<h5>Title ${info('detail…')}</h5>`.
+export const info = (text) => {
+    const t = String(text).replace(/\s+/g, ' ').trim().replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    return `<span class="info" tabindex="0" role="note" aria-label="${t}" title="${t}">ⓘ</span>`;
+};

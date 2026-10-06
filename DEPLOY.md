@@ -143,6 +143,9 @@ per-month bundles the dashboard reads. Tables (all MergeTree, NO TTL, `PARTITION
 - **playback** — `pb_school_daily`, `pb_schools`, `pb_wearable_daily`.
 - **bundles** — `insights(month, kind, json)`: `global` / `schools` / `stalls` / `items` / `savings` /
   `wearable`, served verbatim to the client by api-service.
+- **service** — `terminal_health` (one row per month × terminal: latest location, problem tags, school
+  postal/zone/coords). Written by `build_insights.py` alongside the `stalls` bundle (same rows), read by SAM
+  (`plan_service_route`). Created on first build; no `init_db.py` change.
 
 ---
 
@@ -207,6 +210,9 @@ Keycloak (local dev / internal-only), leave `VITE_KEYCLOAK_URL` empty and gate a
    ~$101,474** (MOE-verified; if you still see "PBS", the live `tx`/`pb_schools` aggregates haven't
    been rebuilt since the schoolId fix — rerun `ingest_core._rebuild()` for `tx`/`pb_school_daily`/
    `pb_schools`, no raw-file reload needed).
+5. **Service route:** `SELECT month, count() FROM smartbuddy.terminal_health GROUP BY month` → one row per
+   month with bundles (Mar 2,633 / Feb 2,621). SAM: *"which terminals have machine faults in March?"* then
+   *"route me to …"* → ordered stops from the STYL Service Center. Expected values: `reload/SERVICE_ROUTE_DEPLOY.md`.
 
 ---
 

@@ -1,7 +1,7 @@
 // Purchases & Nutrition window (March+) — line-item view: what students actually bought, the
 // Healthier-Choice split, calories, item types and the top items. Reads the precomputed `items`
 // bundle (ingestion-service/build_insights.py → ClickHouse). Empty/absent → a friendly note.
-import { openWindow } from './windowing.js';
+import { openWindow, info } from './windowing.js';
 import { mk, opts, ax, bar, C } from './charts.js';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-SG');
@@ -122,10 +122,10 @@ function renderLinkage(pane, ITEMS) {
     const h = ITEMS.habits || {};
     const stalls = ITEMS.top_stalls || [];
     heading(pane, 'How this links');
-    pane.insertAdjacentHTML('beforeend', `<div class="cap" style="margin-bottom:8px">Each receipt is matched
-      to its transaction by school, stall and exact second — <b>${h.match_pct ?? '–'}% of baskets</b> link,
-      and ${h.single_card_pct ?? '–'}% pin to a single (anonymised) card. That turns "how much" into
-      <b>what was actually bought</b>, per stall and per card — with no link between a card and any person.</div>`);
+    pane.insertAdjacentHTML('beforeend', `<div class="cap" style="margin-bottom:8px"><b>${h.match_pct ?? '–'}%</b> of receipts
+      link to a payment · ${h.single_card_pct ?? '–'}% to one anonymised card ${info(`Each receipt is matched to its payment by
+      school, stall and exact second, showing what was actually bought per stall and per card — with no link between a
+      card and any person.`)}</div>`);
 
     // per-card habits
     pane.insertAdjacentHTML('beforeend', `<div class="stats" style="margin:2px 0 12px">
@@ -142,8 +142,8 @@ function renderLinkage(pane, ITEMS) {
         <span title="Mixed" style="width:${mid}%;background:#cfd8dc"></span>
         <span title="Mostly everyday (<50% healthier)" style="width:${mu}%;background:${C.red}"></span>
       </div>
-      <div class="cap" style="margin-bottom:12px">${mh}% buy <b>mostly healthier</b> · ${mid}% mixed ·
-        <b>${mu}% mostly everyday</b> — an identifiable cohort for HPB-style nudges (aggregate, hashed cards only).</div>`);
+      <div class="cap" style="margin-bottom:12px">${mh}% <b>mostly healthier</b> · ${mid}% mixed · <b>${mu}% mostly everyday</b>
+        ${info('Per linked card: mostly healthier = at least 80% of units are Healthier Choice; mostly everyday = under 50%. Aggregate, hashed cards only.')}</div>`);
 
     heading(pane, 'Top stalls — what they actually sell');
     pane.insertAdjacentHTML('beforeend', `<table class="mini">

@@ -27,8 +27,7 @@ export function openHub(onPick) {
     tw.style.left = 'calc(50vw - 260px)'; tw.style.top = '15vh';
 
     body.innerHTML = `
-      <div class="cap" style="margin-bottom:10px">Choose the view set for your team — the top bar keeps only
-      what you need. You can switch roles anytime from the top bar; nothing is locked.</div>
+      <div class="cap" style="margin-bottom:10px">Pick your team's views — switch anytime from the top bar.</div>
       ${Object.entries(ROLES).map(([id, r]) => `
         <div class="role-card" data-role="${id}" style="border-left:3px solid ${r.color}">
           <div class="role-icon">${r.icon}</div>

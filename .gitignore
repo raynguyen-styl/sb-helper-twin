@@ -51,3 +51,9 @@ Thumbs.db
 
 # secrets / keys (local only, never commit)
 litellmkey.txt
+
+# opencode config with a literal API key (local only, never commit; .opencode.json reads litellmkey.txt instead)
+/opencode.json
+
+# housekeeping holding area — raw data moved here pending manual delete (real card/device IDs) — NEVER commit
+/need to delete manually/

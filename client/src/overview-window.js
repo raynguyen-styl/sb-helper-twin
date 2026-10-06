@@ -1,5 +1,5 @@
 // Network-wide overview window: opened on load. KPIs + the five requested views.
-import { openWindow } from './windowing.js';
+import { openWindow, info } from './windowing.js';
 import { mk, opts, ax, bar, line, C, CAT_COLOR, LV_COLOR } from './charts.js';
 import { monthLabel, monthName, isCNYMonth } from './sbData.js';
 
@@ -61,19 +61,20 @@ function renderNet(el, G) {
     const bands = BANDS.map((b) => ({ ...b,
         n: G.signal_dist.filter((r) => b.test(r.sig)).reduce((a, r) => a + r.n, 0) }));
     const MON = monthName(G.meta.month);
+    const wifi = (G.network_mix || []).find((r) => r.posNetworkType === 'WIFI')?.terminals;
     el.innerHTML = `
-      <h5>Daily error rate &amp; offline share — ${MON}</h5>
-      <div class="cap">Errors hold a flat 6–9% school-day baseline; offline processing ~30%.${isCNYMonth(G.meta.month) ? ' 17–18 Feb are the CNY holidays (no school).' : ''}</div>
+      <h5>Daily error rate &amp; offline share — ${MON} ${info(`Per day: % of payments that returned an error, and % processed
+        offline (stored and sent later).${isCNYMonth(G.meta.month) ? ' 17–18 Feb are the CNY holidays (no school).' : ''}`)}</h5>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>How good is the signal where terminals live?</h5>
-      <div class="cap">Share of ${MON}'s 4G transactions by the signal quality the terminal reported at the moment
-      of payment. 45 WiFi terminals measure differently (dBm) and are excluded here.</div>
+      <h5>Signal quality at the terminal — ${MON} ${info(`Share of 4G payments by the signal strength the terminal reported at
+        the moment of payment (0–31 scale).${wifi ? ` ${wifi} WiFi terminals measure in dBm and are excluded.` : ''}
+        ${bands.map((b) => `${b.label}: ${b.desc}.`).join(' ')}`)}</h5>
       <div class="cwrap" style="height:130px"><canvas></canvas></div>
-      <div class="cap">${bands.map((b) => `<span style="color:${b.color}">●</span> ${b.label} — ${b.desc}`).join(' &nbsp; ')}</div>
-      <h5>Terminals needing attention (≥1k ${MON} txns, worst error rate)</h5>
+      <h5>Terminals needing attention ${info(`Terminals with at least 1,000 ${MON} payments, highest error rate first.`)}</h5>
       <table class="mini"><tr><th>Terminal</th><th>School</th><th style="text-align:right">Txns</th>
         <th style="text-align:right">Err %</th><th style="text-align:right">Median</th></tr>
-        ${worst.map((t) => `<tr><td style="font-size:10.5px">…${t.terminalId.slice(-11)}</td><td><b>${t.school}</b></td>
+        ${worst.map((t) => `<tr><td style="font-size:10.5px">…${t.terminalId.slice(-11)}</td>
+          <td><b>${t.school === 'PBS' ? 'PBS bookshop' : t.school === 'SSSTM' ? 'Stamp point' : t.school}</b></td>
           <td class="num">${fmt(t.n)}</td><td class="num pill-bad">${t.err_pct}%</td>
           <td class="num">${(t.med_ms / 1000).toFixed(1)}s</td></tr>`).join('')}</table>`;
     const [c1, c2] = el.querySelectorAll('canvas');
@@ -95,13 +96,11 @@ function renderNet(el, G) {
 
 function renderSpeed(el, G) {
     el.innerHTML = `
-      <h5>Daily median &amp; p95 transaction time — ${monthName(G.meta.month)}</h5>
-      <div class="cap">Stable ~2.3s median all month — no degradation trend. The p95 tail is where queues form.</div>
+      <h5>Daily median &amp; p95 transaction time — ${monthName(G.meta.month)} ${info('Median = the typical payment; p95 = the slowest 5%, where queues form.')}</h5>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>Weekly median by payment stack</h5>
-      <div class="cap">The 3.0 ASCAN stack runs ~2× slower than 2.0 — consistently, not episodically.</div>
+      <h5>Weekly median by payment stack ${info('One line per card / payment technology.')}</h5>
       <div class="cwrap tall"><canvas></canvas></div>
-      <h5>Where the online time goes (median ms per step, by week)</h5>
+      <h5>Where the online time goes ${info('Median milliseconds per step of an online payment, by week.')}</h5>
       <div class="cwrap"><canvas></canvas></div>`;
     const [c1, c2, c3] = el.querySelectorAll('canvas');
     const d = G.daily;
@@ -138,26 +137,20 @@ function renderFood(el, G) {
     const verTot = ver.reduce((a, b) => a + b.n, 0);
     const MON = monthName(G.meta.month);
     el.innerHTML = `
-      <h5>How much of ${MON} is name-verified?</h5>
-      <div class="cap">This view classifies a stall by its <b>registered name</b> only — and only if its own
-      prices don't contradict the claim (a "cooked food" name trading at a $0.60 modal is not counted as
-      cooked food). Generic names ("Stall 1") and bare company names ("BL Marketing Pte Ltd") stay
-      Unclassified — never guessed. Names naming two food groups ("Hot Drinks and Snacks") count as
-      <b>Mixed</b>. That leaves most of the volume unverified (receipt-level item data, where present, is
-      shown in the Purchases &amp; Nutrition view):</div>
+      <h5>How much of ${MON} has a known category? ${info(`A stall is classified by its registered name only, and only if its
+        prices don't contradict it (a "cooked food" name trading at a $0.60 modal is not counted). Generic names ("Stall 1")
+        and bare company names stay Unclassified, never guessed. Two-food-group names count as Mixed. Receipt-level item
+        data, where present, is in Purchases & Nutrition.`)}</h5>
       <div style="display:flex;height:22px;border-radius:5px;overflow:hidden;margin:6px 0 2px;font-size:10px;color:#fff">
         <div style="width:${verPct}%;background:${C.blue};display:flex;align-items:center;justify-content:center;white-space:nowrap">${verPct.toFixed(1)}% verified</div>
         <div style="flex:1;background:#b9b8b3;display:flex;align-items:center;justify-content:center">${(100 - verPct).toFixed(1)}% Unclassified — category unknown</div>
       </div>
-      <div class="cap" style="margin-bottom:8px">Everything below reads <b>within the verified ${verPct.toFixed(0)}%</b> —
-      honest about what we know, silent about what we don't.</div>
+      <div class="cap" style="margin-bottom:8px">Charts below use only the verified ${verPct.toFixed(0)}%.</div>
       <h5>What sells — share within name-verified volume</h5>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>Category share by week — name-verified stalls, ${MON}</h5>
-      <div class="cap">Share within verified volume per week; the mix barely moves — the timetable sets demand.</div>
+      <h5>Category share by week — ${MON} ${info('Share of verified payments per week. Weeks with under 2,000 verified payments (holidays) are left blank.')}</h5>
       <div class="cwrap tall"><canvas></canvas></div>
-      <h5>Average price by week per verified category — ${MON}</h5>
-      <div class="cap">Flat across the month — no canteen inflation. Low-volume points are gapped, not charted.</div>
+      <h5>Average price by week — ${MON} ${info('Average payment per verified category. Points under 300 payments are left blank.')}</h5>
       <div class="cwrap"><canvas></canvas></div>`;
     const [c1, c2, c3] = el.querySelectorAll('canvas');
     mk(c1, { type: 'bar',
@@ -193,13 +186,14 @@ function renderAtas(el, G, SCHOOLS, onOpenSchool) {
     const ranked = Object.values(SCHOOLS).filter((s) => s.spend_day && s.cards >= 200)
         .sort((a, b) => b.spend_day - a.spend_day);
     el.innerHTML = `
-      <h5>Do "atas" schools spend more? (MOE-matched schools only)</h5>
-      <div class="cap">Independent schools average $${G.atas.by_type.find((r) => r.type === 'INDEPENDENT SCHOOL')?.spend_day.toFixed(2)}
-        per student-day with a $${G.atas.by_type.find((r) => r.type === 'INDEPENDENT SCHOOL')?.avg_ticket.toFixed(2)} ticket —
-        vs $${G.atas.by_type.find((r) => r.type === 'GOVERNMENT SCHOOL')?.spend_day.toFixed(2)} / $${G.atas.by_type.find((r) => r.type === 'GOVERNMENT SCHOOL')?.avg_ticket.toFixed(2)}
-        at government schools. Based on ${G.atas.coverage.matched} of ${G.atas.coverage.total} schools matched to the MOE directory.</div>
+      <h5>Spend by school type ${info(`$ per student per active day and average ticket, by MOE school type. Based on
+        ${G.atas.coverage.matched} of ${G.atas.coverage.total} schools matched to the MOE directory.`)}</h5>
+      <div class="cap">Independent $${G.atas.by_type.find((r) => r.type === 'INDEPENDENT SCHOOL')?.spend_day.toFixed(2)}/day
+        ($${G.atas.by_type.find((r) => r.type === 'INDEPENDENT SCHOOL')?.avg_ticket.toFixed(2)} ticket) ·
+        Government $${G.atas.by_type.find((r) => r.type === 'GOVERNMENT SCHOOL')?.spend_day.toFixed(2)}/day
+        ($${G.atas.by_type.find((r) => r.type === 'GOVERNMENT SCHOOL')?.avg_ticket.toFixed(2)} ticket)</div>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>Top spenders — $ per student per active day (≥200 cards)</h5>
+      <h5>Top spenders — $ per student per day ${info('Schools with at least 200 cards this month.')}</h5>
       <table class="mini"><tr><th>#</th><th>School</th><th>Level</th><th>Type</th>
         <th style="text-align:right">$/day</th><th style="text-align:right">Ticket</th></tr>
         ${ranked.slice(0, 12).map((s, i) => `<tr style="cursor:pointer" data-sid="${s.id}"><td>${i + 1}</td>
@@ -207,8 +201,8 @@ function renderAtas(el, G, SCHOOLS, onOpenSchool) {
           <td>${s.moe_type ? s.moe_type.replace(' SCHOOL', '').replace('-AIDED SCH', '-aided').toLowerCase() : '–'}</td>
           <td class="num"><b>$${s.spend_day.toFixed(2)}</b></td><td class="num">$${s.avg_ticket.toFixed(2)}</td></tr>`).join('')}
       </table>
-      <div class="note-box">Click a row to open the school. "Spend" is canteen + bookshop spending through SMART Buddy —
-      independent-school students both pay more per item and buy pricier categories.</div>`;
+      <div class="cap">Click a row to open the school ${info(`Spend = all SMART Buddy payments at the school's own stalls.
+        Pacific Bookstores and Self Serve Stamps are vendors filed under their own IDs, so they are not included.`)}</div>`;
     mk(el.querySelector('canvas'), { type: 'bar',
         data: { labels: G.atas.by_type.map((r) => r.type.replace(' SCHOOL', '').replace(' SCH', '')),
             datasets: [

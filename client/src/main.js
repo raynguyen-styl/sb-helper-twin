@@ -28,6 +28,23 @@ authReady.then(({ username }) => renderUser(username));
 const LV_COLOR = { Primary: '#0a5fd8', Secondary: '#00955f', 'Junior College': '#6a3fd1', Other: '#48484d' };
 const HEALTH = (v, warn, bad) => (v >= bad ? '#ff3b30' : v >= warn ? '#ff9500' : '#34c759');
 let colorMode = 'level';
+const vendorMarkers = [];
+// Map filter — stackable on/off pills, the Super App POC's project-filter pattern: any combination,
+// never zero, "All" turns every pill on; kept in the URL hash (#layers=…) so a view is shareable.
+// Vendor layers place a stall beside its host school only where build_insights set `host` (fact-only).
+const VENDOR = { pbs: { school: 'PBS', cls: 'mk-book', offset: [9, -9] },
+                 stamps: { school: 'SSSTM', cls: 'mk-stamp', offset: [-9, -9] } };
+const LAYERS = [
+    ...Object.entries(LV_COLOR).map(([id, color]) => ({ id, label: id, color })),
+    { id: 'pbs', label: 'PBS Bookstores', color: '#7d5fd3', shape: 'sq' },
+    { id: 'stamps', label: 'Stamp points', color: '#d6336c', shape: 'dia' },
+];
+const DEFAULT_LAYERS = Object.keys(LV_COLOR);
+let layersOn = (() => {
+    const m = /(?:^|[#&])layers=([^&]+)/.exec(location.hash);
+    const ids = m ? decodeURIComponent(m[1]).split(',').filter((id) => LAYERS.some((l) => l.id === id)) : [];
+    return new Set(ids.length ? ids : DEFAULT_LAYERS);
+})();
 const markerEls = new Map();
 const markers = new Map();
 let mapReady = false;
@@ -235,6 +252,7 @@ function paintMarkers() {
         const s = SCHOOLS[sid];
         el.style.background = markerColor(s);
     }
+    for (const [mk, s] of vendorMarkers) mk.getElement().style.setProperty('--c', markerColor(s));
     renderLegend();
 }
 
@@ -243,8 +261,7 @@ else renderLegend();
 
 // (Re)draw the school markers for the current month's SCHOOLS — called on load + on month switch.
 function rebuildMap() {
-    renderLegend();
-    if (!map || !mapReady) return;
+    if (!map || !mapReady) return renderLegend();
     for (const mk of markers.values()) mk.remove();
     markers.clear(); markerEls.clear();
     for (const s of Object.values(SCHOOLS)) {
@@ -252,12 +269,64 @@ function rebuildMap() {
         const el = document.createElement('div');
         el.className = 'mk';
         const d = markerSize(s);
-        el.style.cssText = `width:${d}px;height:${d}px;background:${markerColor(s)}`;
+        el.style.cssText = `width:${d}px;height:${d}px;background:${markerColor(s)}${layersOn.has(s.level) ? '' : ';display:none'}`;
         el.title = `${s.name || s.id} — $${s.spend_day ?? '?'} /day`;
         el.addEventListener('click', (e) => { e.stopPropagation(); open(s.id); });
         const mk = new maplibregl.Marker({ element: el }).setLngLat([s.lng, s.lat]).addTo(map);
         markers.set(s.id, mk); markerEls.set(s.id, el);
     }
+    paintVendors();
+    renderFilter();
+    renderLegend();                  // after the markers, so the "N schools mapped" count is current
+}
+
+const pbsShops = () => STALLS.stalls.filter((st) => st.school === 'PBS');
+const placed = (school) => STALLS.stalls.filter((st) => st.school === school && st.at);   // st.at = [lat, lng, name]
+// A vendor shop is coloured like a school: level of its host school, errors/speed of its own machine.
+// ponytail: busiest machine's figures only (1–2 shops have a second one); merge them if that grows.
+function vendorStat(st) {
+    const t = STALLS.terminals.filter((x) => st.terms.includes(x.id)).sort((a, b) => b.n - a.n)[0] || {};
+    return { level: SCHOOLS[st.host || st.campus?.[0]]?.level, err_pct: t.err_pct, med_ms: t.med_ms };
+}
+function paintVendors() {
+    vendorMarkers.splice(0).forEach(([m]) => m.remove());
+    if (!map || !mapReady) return;
+    for (const [id, v] of Object.entries(VENDOR)) {
+        if (!layersOn.has(id)) continue;
+        for (const st of placed(v.school)) {
+            const el = document.createElement('div');
+            el.className = v.cls;
+            const s = vendorStat(st);
+            el.style.setProperty('--c', markerColor(s));
+            el.title = `${st.name} — $${st.rev.toLocaleString('en-SG')} · ${st.n.toLocaleString('en-SG')} txns`;
+            el.addEventListener('click', (e) => { e.stopPropagation(); window.SB.openStall(st.id); });
+            vendorMarkers.push([new maplibregl.Marker({ element: el, offset: v.offset }).setLngLat([st.at[1], st.at[0]]).addTo(map), s]);
+        }
+    }
+}
+
+function renderFilter() {
+    const bar = document.getElementById('filterbar');
+    if (!bar) return;
+    const n = (l) => VENDOR[l.id] ? placed(VENDOR[l.id].school).length
+        : Object.values(SCHOOLS).filter((s) => s.level === l.id && s.lat != null).length;
+    const all = layersOn.size === LAYERS.length;
+    bar.innerHTML = `<button class="fpill${all ? ' on' : ''}" data-l="*" aria-pressed="${all}">All</button>` +
+        LAYERS.map((l) => { const on = layersOn.has(l.id);
+            return `<button class="fpill${on ? ' on' : ''}" data-l="${l.id}" aria-pressed="${on}" style="--pill:${l.color}">
+              <span class="fdot ${l.shape || ''}"></span>${l.label} <span class="fn">${n(l)}</span></button>`; }).join('');
+    bar.querySelectorAll('[data-l]').forEach((b) => b.addEventListener('click', () => {
+        const id = b.dataset.l;
+        if (id === '*') LAYERS.forEach((l) => layersOn.add(l.id));
+        else if (!layersOn.delete(id)) layersOn.add(id);
+        if (!layersOn.size) layersOn.add(id);                       // never zero
+        for (const [sid, el] of markerEls) el.style.display = layersOn.has(SCHOOLS[sid].level) ? '' : 'none';
+        paintVendors(); renderFilter();
+        const rest = location.hash.replace(/(?:^#|&)layers=[^&]*/, '').replace(/^[#&]/, '');
+        const same = layersOn.size === DEFAULT_LAYERS.length && DEFAULT_LAYERS.every((x) => layersOn.has(x));
+        const h = [same ? '' : 'layers=' + encodeURIComponent([...layersOn].join(',')), rest].filter(Boolean).join('&');
+        history.replaceState(null, '', location.pathname + location.search + (h ? '#' + h : ''));
+    }));
 }
 
 /* ---------- per-month data loading ---------- */
@@ -346,28 +415,75 @@ function renderLegend() {
       <div class="mode">${modes.map(([k, t]) =>
         `<button data-mode="${k}" class="${colorMode === k ? 'on' : ''}">${t}</button>`).join('')}</div>
       ${items}
+      <div class="foot">■ Bookstores · ◆ Stamp points: same colours (host school's level; own machine for errors/speed)</div>
       <div class="foot">${markerEls.size} schools mapped (MOE-matched) ·
-        <button id="unmapped-btn">${unmapped} unmapped</button></div>`;
+        <button id="unmapped-btn">${unmapped} unmapped</button></div>
+      <div class="foot">Lists: <button id="books-btn">PBS bookstores (${pbsShops().length})</button></div>`;
     lg.querySelectorAll('[data-mode]').forEach((b) =>
         b.addEventListener('click', () => { colorMode = b.dataset.mode; paintMarkers(); }));
     lg.querySelector('#unmapped-btn').addEventListener('click', openUnmapped);
+    lg.querySelector('#books-btn').addEventListener('click', openBookstores);
+}
+
+// Bookstores window: shops needing a decision first (highlighted), then placed shops. Every reviewed
+// placement/flag carries its evidence (ingestion-service/pbs_hosts.csv) in an ⓘ tip.
+const STATUS = { highlight: ['pill-warn', 'Primary/secondary conflict'], unlink: ['pill-warn', 'Not confirmed'],
+                 ask: ['pill-bad', 'Not identified'] };
+function openBookstores() {
+    import('./windowing.js').then(({ openWindow, info }) => {
+        const shops = pbsShops().sort((a, b) => b.rev - a.rev);
+        const body = openWindow({ id: 'bookstores', title: 'Pacific Bookstores (PBS)',
+            sub: `${shops.length} school bookshops`, chips: [] });
+        if (!body) return;
+        const fmt = (n) => Number(n).toLocaleString('en-SG');
+        const todo = shops.filter((st) => !st.host), done = shops.filter((st) => st.host);
+        const head = `<tr><th>Shop</th><th>School</th><th style="text-align:right">Txns</th>
+          <th style="text-align:right">Revenue</th><th style="text-align:right">Stamps</th></tr>`;
+        const nums = (st) => `<td class="num">${fmt(st.n)}</td><td class="num">$${fmt(st.rev)}</td>
+          <td class="num">${st.stamp ? '$' + fmt(st.stamp) : '–'}</td>`;
+        const school = (st) => {
+            const s = SCHOOLS[st.host];
+            const ev = st.evidence ? info(st.evidence) : '';
+            if (s) return `<a href="#" data-sid="${s.id}">${s.name || s.id}</a>${ev}`;
+            return `${st.at?.[2] || st.host} <span class="chip chip-other">bookshop only</span>${ev}`;
+        };
+        const flag = (st) => { const [cls, txt] = STATUS[st.status] || STATUS.ask;
+            const cand = SCHOOLS[st.candidate];
+            return `<span class="${cls}">${txt}</span>${cand ? ` likely ${cand.name}` : ` (name says “${st.code || '?'}”)`}
+              ${info(st.evidence || 'The code in the shop name is not one of our school IDs, and no reviewed decision exists yet.')}`; };
+        body.innerHTML = `<div class="cap" style="margin-bottom:8px">Each shop is placed at its school only when the evidence
+          agrees ${info(`The feed files every shop under vendor ID PBS and names it "Pacific Bookstores - <code>". A shop is
+          placed when that code is exactly one of our school IDs and card data agrees, or after a reviewed decision with
+          sources (PBS directory, MOE list, POSB list, card data). Bookshop sales are not counted in canteen figures.
+          Stamps = POSB Smiley Stamps sold (savings, not purchases).`)}</div>
+          ${todo.length ? `<h5>Needs a decision (${todo.length})</h5><table class="mini">${head}
+            ${todo.map((st) => `<tr style="cursor:pointer" data-stall="${st.id}"><td>${st.name}</td><td>${flag(st)}</td>${nums(st)}</tr>`).join('')}
+          </table>` : ''}
+          <h5>Placed (${done.length})</h5><table class="mini">${head}
+            ${done.map((st) => `<tr style="cursor:pointer" data-stall="${st.id}"><td>${st.name}</td><td>${school(st)}</td>${nums(st)}</tr>`).join('')}
+          </table>`;
+        body.querySelectorAll('tr[data-stall]').forEach((tr) =>
+            tr.addEventListener('click', (e) => { if (!e.target.closest('.info')) window.SB.openStall(tr.dataset.stall); }));
+        body.querySelectorAll('a[data-sid]').forEach((a) =>
+            a.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open(a.dataset.sid); }));
+    });
 }
 
 function openUnmapped() {
-    import('./windowing.js').then(({ openWindow }) => {
+    import('./windowing.js').then(({ openWindow, info }) => {
         const body = openWindow({ id: 'unmapped', title: 'Schools without a map position',
             sub: 'ID not confidently matched to the MOE directory', chips: [] });
         if (!body) return;
         const rows = Object.values(SCHOOLS).filter((s) => s.lat == null)
             .sort((a, b) => b.n - a.n);
-        body.innerHTML = `<div class="cap" style="margin-bottom:8px">These schools appear in all rankings and
-          can be opened from here or via search — they just have no marker. Matching used acronym inference
-          against the MOE school directory; ambiguous IDs were left unmapped rather than guessed.</div>
+        body.innerHTML = `<div class="cap" style="margin-bottom:8px">In rankings and search, just no map marker ${info(`Matching
+          used acronym inference against the MOE school directory; ambiguous IDs were left unmapped rather than guessed.`)}</div>
           <table class="mini"><tr><th>ID</th><th>Level</th><th style="text-align:right">Txns</th>
           <th style="text-align:right">$/day</th></tr>
           ${rows.map((s) => `<tr style="cursor:pointer" data-sid="${s.id}"><td><b>${s.id}</b></td>
             <td>${s.level}</td><td class="num">${s.n.toLocaleString()}</td>
-            <td class="num">${s.spend_day ? '$' + s.spend_day.toFixed(2) : '–'}</td></tr>`).join('')}</table>`;
+            <td class="num">${s.spend_day ? '$' + s.spend_day.toFixed(2) : '–'}</td></tr>`).join('')}</table>
+          ${rows.length ? '' : '<div class="note-box">Every school this month has a map position.</div>'}`;
         body.querySelectorAll('tr[data-sid]').forEach((tr) =>
             tr.addEventListener('click', () => open(tr.dataset.sid)));
     });

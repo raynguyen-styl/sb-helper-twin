@@ -1,5 +1,11 @@
 # UAT deploy — PBS/SSSTM schoolId exclusion fix (spend-ranking bug)
 
+> **Update 1 Oct 2026: this fix was incomplete.** It corrected `tx` / `pb_*` (Playback + SAM), but the **dashboard**
+> bundles are built by `build_insights.py`, which had its own `schoolId != 'STYL'` filters, so the dashboard still showed
+> PBS (110,544 March txns) and SSSTM as "schools". Fixed in `reload/VENDOR_LAYERS_DEPLOY.md`. Step 3 below is still the
+> prerequisite for that deploy if UAT hasn't run it. Also: SSSTM is 13–17 Self Serve Stamps points, not a "~156+
+> school" concessionaire.
+
 Ships one filter fix + doc corrections. **No raw transaction/items/saving/wearable file reload
 needed** — `txn` already has every month's rows; this only regenerates the derived `tx` view + two
 small aggregate tables from data already in ClickHouse.

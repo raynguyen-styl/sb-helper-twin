@@ -1,7 +1,7 @@
 // Stall Explorer — browse every canteen stall by school, category, price band or
 // machine number; click through to a per-stall detail window. Month-aware (uses the selected month).
 // Filtering is client-side over the precomputed stalls array (no backend).
-import { openWindow } from './windowing.js';
+import { openWindow, info } from './windowing.js';
 import { mk, opts, ax, bar, line, C, CAT_COLOR } from './charts.js';
 import { monthLabel, monthName, isCNYMonth } from './sbData.js';
 
@@ -41,11 +41,10 @@ export function openStallExplorer(DATA, preset = {}) {
         <button data-sort="ticket">Avg ticket</button></div>
       <div class="cap" id="st-count" style="margin:6px 0 4px"></div>
       <div id="st-list"></div>
-      <div class="cap" style="margin-top:8px">A stall's <b>category</b> comes only from its registered name
-      (and prices can't contradict it); generic or bare company names stay <b>Unclassified</b>, never guessed;
-      two-food-group names count as <b>Mixed</b>. Where receipt data exists (March), open a stall to see
-      <b>what it actually sold</b> — item-type mix and healthier-choice share. Price bands are the factual
-      proxy for menu items.</div>`;
+      <div class="cap" style="margin-top:8px">Category = from the stall's name ${info(`A stall's category comes only from its
+        registered name (and prices can't contradict it); generic or bare company names stay Unclassified, never guessed;
+        two-food-group names count as Mixed. Where receipts exist (March), open a stall to see what it actually sold.
+        Price bands are the factual proxy for menu items.`)}</div>`;
 
     const catsBar = body.querySelector('#st-cats');
     ['All', ...DATA.cats].forEach((c) => {
@@ -98,11 +97,13 @@ export function openStall(DATA, sid) {
     const s = DATA.stalls.find((x) => x.id === sid);
     if (!s) return;
     const body = openWindow({ id: `stall-${sid}`, title: s.name, sub: `${s.id} · ${s.school} · ${s.level}`,
-        chips: [`<span class="chip chip-sec">${s.cat}</span>`] });
+        chips: [`<span class="chip chip-sec">${s.school === 'SSSTM' ? 'Stamp point' : s.cat}</span>`] });
     if (!body) return;
     body.closest('.tw').style.width = '560px';
 
     const terms = s.terms.map((tid) => DATA.terminals.find((t) => t.id === tid)).filter(Boolean);
+    // vendor stall → its host school(s): one ID, both section IDs (campus), or none if unconfirmed
+    const homes = s.school === 'PBS' || s.school === 'SSSTM' ? (s.campus || (s.host ? [s.host] : [])) : [s.school];
     body.innerHTML = `
       <div class="stats">
         <div class="stat"><div class="v">${fmt$(s.rev)}</div><div class="l">revenue</div></div>
@@ -110,17 +111,17 @@ export function openStall(DATA, sid) {
         <div class="stat"><div class="v">$${s.ticket.toFixed(2)}</div><div class="l">avg ticket</div></div>
         <div class="stat"><div class="v">${s.terms.length}</div><div class="l">machine${s.terms.length > 1 ? 's' : ''}</div></div>
       </div>
-      ${s.receipt ? `<h5>What's sold here <span class="chip chip-flag">RECEIPTS</span></h5>
-        <div class="cap" style="margin-bottom:6px">From ${fmt(s.receipt.units)} matched receipt units — the
-          real item-type mix (not guessed from the name) and Healthier-Choice share.</div>
+      ${s.receipt ? `<h5>What's sold here <span class="chip chip-flag">RECEIPTS</span> ${info(`From ${fmt(s.receipt.units)}
+          matched receipt units: the real item-type mix (not guessed from the name) and Healthier-Choice share.`)}</h5>
         <span class="mixbar tall">${mixSegs(s.receipt)}</span>
         <div class="cap" style="margin:4px 0 6px">Drink ${s.receipt.drink_sh}% · Food ${s.receipt.food_sh}% ·
-          Book ${s.receipt.book_sh}% · <b>Healthier ${s.receipt.healthy_sh ?? '–'}%</b></div>` : ''}
+          Book ${s.receipt.book_sh}%${s.receipt.stamp_sh ? ` · Smiley Stamps ${s.receipt.stamp_sh}%` : ''}
+          ${s.receipt.drink_sh + s.receipt.food_sh > 0 ? ` · <b>Healthier ${s.receipt.healthy_sh ?? '–'}%</b>` : ''}</div>` : ''}
       <h5>Daily revenue — ${monthName(DATA.meta.month)}</h5><div class="cwrap"><canvas></canvas></div>
       <h5>Revenue by hour (school days) &amp; price mix</h5>
       <div style="display:flex;gap:10px"><div class="cwrap" style="flex:1.4"><canvas></canvas></div>
       <div class="cwrap" style="flex:1"><canvas></canvas></div></div>
-      <h5>Most common charge amounts <span class="cap" style="display:inline">(price points ≈ menu items)</span></h5>
+      <h5>Most common charge amounts ${info('Price points are the closest factual proxy for menu items.')}</h5>
       <table class="mini"><tr><th>Amount</th><th style="text-align:right">Times charged</th></tr>
         ${s.prices.map(([a, n]) => `<tr><td><b>$${(a / 100).toFixed(2)}</b></td><td class="num">${fmt(n)}</td></tr>`).join('')}</table>
       <h5 style="margin-top:10px">This stall's machine${terms.length > 1 ? 's' : ''}</h5>
@@ -130,7 +131,7 @@ export function openStall(DATA, sid) {
           <td>${t.net || '–'}</td><td class="num">${t.err_pct}%</td>
           <td class="num">${t.med_ms ? (t.med_ms / 1000).toFixed(1) + 's' : '–'}</td>
           <td>${vchip(t.verdict)}</td></tr>`).join('')}</table>
-      <div class="cap" style="margin-top:8px"><a href="#" data-school>Open ${s.school} school window →</a></div>`;
+      ${homes.map((h) => `<div class="cap" style="margin-top:8px"><a href="#" data-school="${h}">Open ${h} school window →</a></div>`).join('')}`;
 
     const [c1, c2, c3] = body.querySelectorAll('canvas');
     const DL = s.daily.map((_, i) => i + 1);                       // 1..N days (matches this month)
@@ -145,13 +146,13 @@ export function openStall(DATA, sid) {
 
     body.querySelectorAll('tr[data-tid]').forEach((tr) =>
         tr.addEventListener('click', () => window.SB?.openTerminal(tr.dataset.tid)));
-    body.querySelector('[data-school]').addEventListener('click', (e) => { e.preventDefault(); window.SB?.openSchool(s.school); });
+    body.querySelectorAll('[data-school]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); window.SB?.openSchool(a.dataset.school); }));
 }
 
 // Segments of an item-type mix bar (drink/food/book) for a stall's receipt panel.
 function mixSegs(r) {
     const seg = (w, c, t) => (w > 0 ? `<span title="${t} ${w}%" style="width:${w}%;background:${c}"></span>` : '');
-    return `${seg(r.drink_sh, C.blue, 'Drink')}${seg(r.food_sh, C.aqua, 'Food')}${seg(r.book_sh, C.violet, 'Book')}`;
+    return `${seg(r.drink_sh, C.blue, 'Drink')}${seg(r.food_sh, C.aqua, 'Food')}${seg(r.book_sh, C.violet, 'Book')}${seg(r.stamp_sh, '#d6336c', 'Smiley Stamps')}`;
 }
 
 export function vchip(v) {

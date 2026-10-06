@@ -10,6 +10,8 @@ one row: (month, kind, json). Kinds:
     items    purchase line items: nutrition / healthy-choice / top items   (months w/ an items table)
     savings  student saving vs spending                                    (months w/ saving_spending)
     wearable activity + heart-rate  — built by build_insights_wearable (deferred; Feb only)
+The stalls bundle's per-terminal rows are ALSO written to the `terminal_health` table (one row per month ×
+machine) so the SAM agent answers "which machines need servicing" from the exact rows the dashboard shows.
 
 Method: pull the month's transaction facts from ClickHouse as Arrow, register them in DuckDB, and run
 the SAME battle-tested SQL as the analysis pipeline (build_app_data / build_stalls_data) — only the
@@ -18,10 +20,13 @@ aggregated in ClickHouse directly (they can be many rows). Run:  SB_MONTH=2026-0
 """
 from __future__ import annotations
 
+import csv
 import json
 import os
+import re
 import calendar
 import sys
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -30,6 +35,7 @@ import pandas as pd
 import clickhouse_connect
 
 from taxonomy import STALLCAT_SQL, CATS as TAX_CATS
+from ingest_core import NON_SCHOOL
 
 HERE = Path(__file__).resolve().parent
 CH_URL = os.environ.get("CLICKHOUSE_URL", "http://clickhouse:8123")
@@ -37,6 +43,13 @@ CH_DB = os.environ.get("CLICKHOUSE_DB", "smartbuddy")
 CH_USER = os.environ.get("CLICKHOUSE_USER", "smartbuddy_rw")
 CH_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
 GEO = json.loads((HERE / "school_geo.json").read_text(encoding="utf-8"))
+# Reviewed PBS shop -> school decisions, each with its evidence (place | highlight | unlink | ask).
+PBS_HOSTS = {r["code"]: r for r in csv.DictReader((HERE / "pbs_hosts.csv").open(encoding="utf-8"))}
+# Same for Self Serve Stamps points whose name is not exactly one directory school (place | campus).
+STAMP_HOSTS = {r["store_name"]: r for r in csv.DictReader((HERE / "stamp_hosts.csv").open(encoding="utf-8"))}
+# Service tags on each terminal. PLACEHOLDER thresholds (1 Oct 2026) — the service team sets the real ones.
+STOPPED_DAYS = 3     # "stopped": no txns on >= N days its school still traded
+OFFLINE_PCT = 50     # "offline": >= N% of its taps authorised offline (~ the fleet's worst 10%, Mar 2026)
 
 LEVEL = """CASE
  WHEN schoolId = 'NYP' OR schoolId = 'SOTA' THEN 'Other'
@@ -66,6 +79,31 @@ def put(client, month: str, kind: str, obj: dict) -> int:
     return len(js)
 
 
+# terminal_health: the stalls bundle's terminal rows as a table, so SAM and the dashboard agree.
+TH_COLS = {
+    "month": "String", "terminalId": "String", "schoolId": "String", "school_name": "Nullable(String)",
+    "postal": "Nullable(String)", "zone": "Nullable(String)", "lat": "Nullable(Float64)", "lng": "Nullable(Float64)",
+    "storeId": "String", "storeName": "String", "first_day": "Date", "last_day": "Date", "sites": "Int32",
+    "txns": "Int64", "err_pct": "Float64", "offline_pct": "Float64", "med_ms": "Nullable(Int64)",
+    "p95_ms": "Nullable(Int64)", "peer_err": "Nullable(Float64)", "peer_ms": "Nullable(Int64)",
+    "days_silent": "Int32", "net": "Nullable(String)", "verdict": "String", "problems": "Array(String)",
+}
+TH_SRC = {"terminalId": "id", "schoolId": "school", "storeId": "store", "txns": "n",
+          "offline_pct": "off_pct", "days_silent": "silent"}          # table column -> bundle key
+
+
+def put_terminal_health(client, month: str, terminals: list) -> int:
+    cols = ", ".join(f"`{c}` {t}" for c, t in TH_COLS.items())
+    client.command(f"CREATE TABLE IF NOT EXISTS {CH_DB}.terminal_health ({cols}) "
+                   "ENGINE = MergeTree PARTITION BY month ORDER BY (schoolId, terminalId)")
+    client.command(f"ALTER TABLE {CH_DB}.terminal_health DROP PARTITION %(m)s", parameters={"m": month})
+    rows = [[month if c == "month" else
+             date.fromisoformat(t[c]) if c in ("first_day", "last_day") else t[TH_SRC.get(c, c)]
+             for c in TH_COLS] for t in terminals]
+    client.insert(f"{CH_DB}.terminal_health", rows, column_names=list(TH_COLS))
+    return len(rows)
+
+
 # ── transaction bundles (DuckDB, reusing the analysis SQL) ───────────────────────
 def register_facts(con, client, month: str) -> None:
     """Pull the month's txn + txn_perf as Arrow and register them + the tx/stallcat/txm views."""
@@ -73,7 +111,7 @@ def register_facts(con, client, month: str) -> None:
     con.execute(f"SET memory_limit='{os.environ.get('SB_DUCKDB_MEMORY', '1GB')}'")   # bound + spill to disk
     con.execute("SET temp_directory='/work'")   # /work volume (mounted in both ingest + ch-insights)
     keep_txn = ("id, schoolId, storeId, storeName, terminalId, amount, txn_date, txn_time, cardId, "
-                "paymentMode, paymentType, errorCode")
+                "paymentMode, paymentType, errorCode, stampValue")
     # query_df (pandas) → DuckDB register. Avoids the optional pyarrow dep; DuckDB queries the frame.
     txn = client.query_df(f"SELECT {keep_txn} FROM {CH_DB}.txn WHERE month = %(m)s", parameters={"m": month})
     perf = client.query_df(f"SELECT * FROM {CH_DB}.txn_perf WHERE month = %(m)s", parameters={"m": month})
@@ -89,7 +127,8 @@ def register_facts(con, client, month: str) -> None:
                 pass
     con.register("txn", txn)
     con.register("txn_perf", perf)
-    # tx: student-traffic working set + derived cols both build sections use
+    # tx: every real stall (incl. vendor stalls: PBS bookshops, SSSTM stamp points) + derived cols.
+    # School-level aggregates (build_schools) drop NON_SCHOOL so a vendor never appears as a "school".
     con.execute(f"""CREATE OR REPLACE VIEW tx AS
         SELECT *, {LEVEL} AS level, extract(hour FROM CAST(txn_time AS TIME)) AS hh,
                txn_date AS d, date_trunc('week', txn_date) AS wk,
@@ -98,6 +137,11 @@ def register_facts(con, client, month: str) -> None:
         WHERE schoolId != 'STYL' AND storeName NOT ILIKE '%retrieve%' AND amount <= 20000""")
     con.execute(STALLCAT_SQL)                                     # → view stallcat over tx
     con.execute("CREATE OR REPLACE VIEW txm AS SELECT tx.*, sc.mcat FROM tx JOIN stallcat sc USING (schoolId, storeId)")
+    # tt: per-machine traffic. Like tx but KEEPS 'Retrieve…' stalls — real sales at machines later pulled
+    # (the name is relabelled at retrieval), which the service view must see. Spend stays on tx/txm.
+    con.execute("""CREATE OR REPLACE VIEW tt AS
+        SELECT *, CAST(txn_date AS DATE) AS d, CAST(txn_date AS DATE) + CAST(txn_time AS TIME) AS ts
+        FROM txn WHERE schoolId != 'STYL' AND amount <= 20000""")
 
 
 def q(con, s):
@@ -111,7 +155,7 @@ def recs(df):
 def build_global(con) -> dict:
     OUT = {}
     OUT["daily"] = recs(q(con, """
-        SELECT t.txn_date::VARCHAR AS date, count(*) AS n, round(sum(t.amount)/100.0,0) AS sgd,
+        SELECT strftime(t.txn_date, '%Y-%m-%d') AS date, count(*) AS n, round(sum(t.amount)/100.0,0) AS sgd,
           round(100.0*count(*) FILTER (t.paymentMode='OFFLINE')/count(*),1) AS offline_pct,
           round(100.0*count(*) FILTER (t.errorCode IS NOT NULL AND t.errorCode != '0')/count(*),1) AS err_pct,
           round(median(p.startToFinish),0) AS med_ms, round(quantile_cont(p.startToFinish,0.95),0) AS p95_ms
@@ -150,9 +194,9 @@ def build_global(con) -> dict:
 
 
 def build_schools(con) -> dict:
-    base = q(con, """
+    base = q(con, f"""
         WITH c AS (SELECT schoolId, cardId, count(*) AS n, sum(amount) AS amt, count(DISTINCT txn_date) AS days
-          FROM txm WHERE cardId IS NOT NULL GROUP BY 1,2)
+          FROM txm WHERE cardId IS NOT NULL AND schoolId NOT IN {NON_SCHOOL} GROUP BY 1,2)
         SELECT schoolId, count(*) AS cards, round(avg(amt/days)/100.0,2) AS spend_day,
           round(avg(n*1.0/days),2) AS txns_day FROM c GROUP BY 1""")
     tots = q(con, f"""
@@ -161,20 +205,20 @@ def build_schools(con) -> dict:
           count(DISTINCT t.terminalId) AS terminals, count(DISTINCT t.storeId) AS stores,
           round(100.0*count(*) FILTER (t.paymentMode='OFFLINE')/count(*),1) AS offline_pct,
           round(100.0*count(*) FILTER (t.errorCode IS NOT NULL AND t.errorCode != '0')/count(*),1) AS err_pct
-        FROM txn t WHERE t.schoolId != 'STYL' AND t.storeName NOT ILIKE '%retrieve%' AND t.amount <= 20000 GROUP BY 1""")
-    spd = q(con, """SELECT schoolId, round(median(startToFinish),0) AS med_ms,
+        FROM tx t WHERE t.schoolId NOT IN {NON_SCHOOL} GROUP BY 1""")
+    spd = q(con, f"""SELECT schoolId, round(median(startToFinish),0) AS med_ms,
           round(quantile_cont(startToFinish,0.95),0) AS p95_ms,
           round(median(posSignalStrength) FILTER (posSignalStrength BETWEEN 0 AND 31),0) AS med_sig,
           count(DISTINCT terminalId) FILTER (posNetworkType='WIFI') AS wifi_terms
-        FROM txn_perf WHERE startToFinish>0 AND schoolId != 'STYL' GROUP BY 1""")
-    mix = q(con, "SELECT schoolId, mcat, count(*) AS n FROM txm GROUP BY 1,2")
+        FROM txn_perf WHERE startToFinish>0 AND schoolId NOT IN {NON_SCHOOL} GROUP BY 1""")
+    mix = q(con, f"SELECT schoolId, mcat, count(*) AS n FROM txm WHERE schoolId NOT IN {NON_SCHOOL} GROUP BY 1,2")
     mixp = mix.pivot_table(index="schoolId", columns="mcat", values="n", fill_value=0)
     mixp = mixp.div(mixp.sum(axis=1), axis=0).round(3)
-    wkspd = q(con, """SELECT schoolId, date_trunc('week',txn_date)::VARCHAR AS week,
+    wkspd = q(con, f"""SELECT schoolId, date_trunc('week',txn_date)::VARCHAR AS week,
           round(median(startToFinish),0) AS med_ms FROM txn_perf
-        WHERE startToFinish>0 AND schoolId!='STYL' GROUP BY 1,2""")
-    wkspend = q(con, """SELECT schoolId, wk::VARCHAR AS week, round(sum(amount)/100.0,0) AS sgd, count(*) AS n
-        FROM txm GROUP BY 1,2""")
+        WHERE startToFinish>0 AND schoolId NOT IN {NON_SCHOOL} GROUP BY 1,2""")
+    wkspend = q(con, f"""SELECT schoolId, wk::VARCHAR AS week, round(sum(amount)/100.0,0) AS sgd, count(*) AS n
+        FROM txm WHERE schoolId NOT IN {NON_SCHOOL} GROUP BY 1,2""")
 
     def eff_level(inferred, moe_level):
         ml = (moe_level or "").upper()
@@ -238,7 +282,8 @@ def build_atas(schools: dict) -> dict:
 
 def build_terminals_global(con) -> list:
     return recs(q(con, """
-        SELECT p.terminalId, any_value(p.schoolId) AS school, count(*) AS n,
+        SELECT p.terminalId, arg_max(p.schoolId, CAST(t.txn_date AS DATE) + CAST(t.txn_time AS TIME)) AS school,
+          count(*) AS n,
           round(median(p.startToFinish),0) AS med_ms, round(quantile_cont(p.startToFinish,0.95),0) AS p95_ms,
           any_value(p.posNetworkType) AS net,
           round(median(p.posSignalStrength) FILTER (p.posSignalStrength BETWEEN 0 AND 31),0) AS med_sig,
@@ -258,10 +303,12 @@ def build_stalls(con, days: list) -> dict:
           round(100.0*count(*) FILTER (amount<=100)/count(*)) AS b1,
           round(100.0*count(*) FILTER (amount>100 AND amount<=200)/count(*)) AS b2,
           round(100.0*count(*) FILTER (amount>200 AND amount<=300)/count(*)) AS b3,
-          round(100.0*count(*) FILTER (amount>300)/count(*)) AS b4
+          round(100.0*count(*) FILTER (amount>300)/count(*)) AS b4,
+          round(sum(coalesce(TRY_CAST(stampValue AS DOUBLE), 0))/100.0, 2) AS stamp
         FROM txm GROUP BY storeId""")
-    terms_of = q(con, "SELECT storeId, list(DISTINCT terminalId) AS terms FROM txm GROUP BY 1")
-    daily = q(con, "SELECT storeId, d::VARCHAR AS d, round(sum(amount)/100.0) AS v FROM txm GROUP BY 1,2")
+    # CAST: terminalId is a pandas category (register_facts); newer duckdb returns a list of its int codes
+    terms_of = q(con, "SELECT storeId, list(DISTINCT CAST(terminalId AS VARCHAR)) AS terms FROM txm GROUP BY 1")
+    daily = q(con, "SELECT storeId, strftime(d, '%Y-%m-%d') AS d, round(sum(amount)/100.0) AS v FROM txm GROUP BY 1,2")
     hourly = q(con, """SELECT storeId, hh, round(sum(amount)/100.0) AS v FROM txm
           WHERE daytype='School' AND hh BETWEEN 5 AND 19 GROUP BY 1,2""")
     prices = q(con, """SELECT storeId, amount, count(*) AS n,
@@ -279,6 +326,12 @@ def build_stalls(con, days: list) -> dict:
         tmap[r.storeId] = list(r.terms)
 
     lvl_geo = {sid: (g.get("level") or "").upper() for sid, g in GEO.items()}
+    # PBS names its stalls "Pacific Bookstores - <code>". Host school = that code ONLY when it is
+    # exactly one of our schoolIds — fact from the feed's own label, never inferred (no fuzzy/alias).
+    known = set(GEO) | set(q(con, f"SELECT DISTINCT schoolId FROM tx WHERE schoolId NOT IN {NON_SCHOOL}").schoolId)
+    by_name = {}
+    for sid, g in GEO.items():
+        by_name.setdefault(" ".join((g.get("name") or "").lower().split()), []).append(sid)
 
     def eff(sid, sfx):
         ml = lvl_geo.get(sid, "")
@@ -298,25 +351,69 @@ def build_stalls(con, days: list) -> dict:
                        "ticket": float(r.ticket), "bands": [int(r.b1), int(r.b2), int(r.b3), int(r.b4)],
                        "daily": dmap.get(r.storeId, [0] * ndays), "hourly": hmap.get(r.storeId, [0] * 15),
                        "prices": pmap.get(r.storeId, [])})
+        if r.stamp:
+            stalls[-1]["stamp"] = float(r.stamp)
+        st = stalls[-1]
+        if r.school == "PBS":
+            # "Pacific Bookstores - <code>": host = that code when it is exactly a schoolId, unless
+            # pbs_hosts.csv holds a reviewed decision for it (that wins). Never inferred here.
+            code = re.search(r"-\s*(\S+)\s*$", r["name"])
+            st["code"] = code.group(1) if code else None
+            d = PBS_HOSTS.get(st["code"])
+            if d:
+                st["status"], st["evidence"] = d["decision"], d["evidence"]
+                st["host"] = d["school_id"] if d["decision"] == "place" else None
+                if d["decision"] == "highlight":
+                    st["candidate"] = d["school_id"]
+                if d["lat"]:
+                    st["at"] = [float(d["lat"]), float(d["lng"]), d["name"]]
+            else:
+                st["host"] = st["code"] if st["code"] in known else None
+                st["status"] = "exact" if st["host"] else None
+        elif r.school == "SSSTM":
+            # Self Serve Stamps names each point after its school ("Northland Primary School"). Host only
+            # when that name equals exactly ONE school name in our directory (case/spacing aside).
+            d = STAMP_HOSTS.get(r["name"])
+            if d:                                   # reviewed decision wins
+                st["status"], st["evidence"] = d["decision"], d["evidence"]
+                st["host"] = d["school_id"] or None
+                if d["campus"]:
+                    st["campus"] = d["campus"].split("|")   # whole school, both section IDs
+                if d["lat"]:
+                    st["at"] = [float(d["lat"]), float(d["lng"]), d["name"]]
+            else:
+                hits = by_name.get(" ".join(r["name"].lower().split()), [])
+                st["host"] = hits[0] if len(hits) == 1 else None
+                st["status"] = "exact" if st["host"] else None
+        g = GEO.get(st.get("host"))
+        if g and g.get("lat") is not None and "at" not in st:   # where a vendor stall sits on the map
+            st["at"] = [g["lat"], g["lng"], g.get("name")]
 
     # per-terminal (machine) with the machine-vs-site verdict
     con.execute("CREATE OR REPLACE VIEW pf AS SELECT * FROM txn_perf WHERE schoolId != 'STYL' AND startToFinish > 0")
+    # A terminal's location = where it LAST transacted this month (machines get moved/swapped mid-month).
     tbase = q(con, """
-        WITH t AS (SELECT terminalId, any_value(schoolId) AS school, any_value(storeId) AS store, count(*) AS n,
+        WITH t AS (SELECT terminalId, arg_max(CAST(schoolId AS VARCHAR), ts) AS school,
+            arg_max(CAST(storeId AS VARCHAR), ts) AS store, arg_max(CAST(storeName AS VARCHAR), ts) AS store_name,
+            count(DISTINCT storeId) AS sites, min(d) AS first_d, max(d) AS last_d, count(*) AS n,
             round(100.0*count(*) FILTER (errorCode IS NOT NULL AND errorCode != '0')/count(*),1) AS err_pct,
-            round(100.0*count(*) FILTER (paymentMode='OFFLINE')/count(*),1) AS off_pct FROM txm GROUP BY 1),
+            round(100.0*count(*) FILTER (paymentMode='OFFLINE')/count(*),1) AS off_pct FROM tt GROUP BY 1),
+        sd AS (SELECT DISTINCT CAST(schoolId AS VARCHAR) AS school, d FROM tt),
+        s AS (SELECT t.terminalId, count(sd.d) AS silent FROM t LEFT JOIN sd ON sd.school = t.school AND sd.d > t.last_d
+            GROUP BY 1),
         p AS (SELECT terminalId, round(median(startToFinish)) AS med_ms, round(quantile_cont(startToFinish,0.95)) AS p95_ms,
             round(median(checkSignal)) AS c_sig, round(median(openSocket)) AS c_sock, round(median(handshake)) AS c_hs,
             round(median(sendToReceiveData)) AS c_xfer, round(median(tapCardToFinish)) AS c_tap,
             any_value(posNetworkType) AS net,
             round(median(posSignalStrength) FILTER (posSignalStrength BETWEEN 0 AND 31)) AS sig,
             round(median(posSignalStrength) FILTER (posSignalStrength < 0)) AS rssi FROM pf GROUP BY 1)
-        SELECT t.*, p.med_ms, p.p95_ms, p.c_sig, p.c_sock, p.c_hs, p.c_xfer, p.c_tap, p.net, p.sig, p.rssi
-        FROM t LEFT JOIN p USING (terminalId)""")
-    tdaily = q(con, """SELECT terminalId, d::VARCHAR AS d,
+        SELECT t.*, strftime(t.first_d, '%Y-%m-%d') AS first_day, strftime(t.last_d, '%Y-%m-%d') AS last_day,
+          s.silent, p.med_ms, p.p95_ms, p.c_sig, p.c_sock, p.c_hs, p.c_xfer, p.c_tap, p.net, p.sig, p.rssi
+        FROM t JOIN s USING (terminalId) LEFT JOIN p USING (terminalId)""")
+    tdaily = q(con, """SELECT terminalId, strftime(d, '%Y-%m-%d') AS d,
           round(100.0*count(*) FILTER (errorCode IS NOT NULL AND errorCode != '0')/count(*),1) AS err, count(*) AS n
-        FROM txm GROUP BY 1,2""")
-    pdaily = q(con, "SELECT terminalId, txn_date::VARCHAR AS d, round(median(startToFinish)) AS ms FROM pf GROUP BY 1,2")
+        FROM tt GROUP BY 1,2""")
+    pdaily = q(con, "SELECT terminalId, strftime(txn_date, '%Y-%m-%d') AS d, round(median(startToFinish)) AS ms FROM pf GROUP BY 1,2")
 
     temap, tsmap = {}, {}
     for tid, g in tdaily.groupby("terminalId"):
@@ -325,7 +422,6 @@ def build_stalls(con, days: list) -> dict:
         m = dict(zip(g.d, g.ms)); tsmap[tid] = [(None if x not in m else int(m[x])) for x in days]
 
     peers = {sch: g[["terminalId", "err_pct", "med_ms"]] for sch, g in tbase[tbase.n >= 300].groupby("school")}
-    name_of = {s["id"]: s["name"] for s in stalls}
     terminals = []
     for _, r in tbase.iterrows():
         pg = peers.get(r.school)
@@ -341,8 +437,20 @@ def build_stalls(con, days: list) -> dict:
         if bad_err or slow:
             peer_bad = (peer_err is not None and peer_err >= 8) or (peer_ms is not None and peer_ms >= 4000)
             verdict = "check" if (peer_err is None and peer_ms is None) else ("site" if peer_bad else "machine")
+        # problem tags the service staff pick from (a machine can carry several)
+        tags = ([verdict] if verdict != "ok" else []) + (["slow"] if slow else [])
+        tags += ["stopped"] if r.silent >= STOPPED_DAYS else []
+        tags += ["offline"] if r.off_pct >= OFFLINE_PCT else []
+        tags += ["retrieved"] if "retriev" in r.store_name.lower() else []
+        # where to go: the school's address/coords. Vendor (PBS/SSSTM) machines get none — listed, not routed,
+        # until it's confirmed STYL services them (their host school is in the stall's `host`/`at`).
+        g = GEO.get(r.school) or {}
         terminals.append({"id": r.terminalId, "school": r.school, "store": r.store,
-                          "storeName": name_of.get(r.store, r.store), "n": int(r.n),
+                          "storeName": r.store_name, "n": int(r.n),
+                          "first_day": r.first_day, "last_day": r.last_day, "sites": int(r.sites),
+                          "silent": int(r.silent), "problems": tags,
+                          "school_name": g.get("name"), "postal": g.get("postal"), "zone": g.get("zone"),
+                          "lat": g.get("lat"), "lng": g.get("lng"),
                           "err_pct": float(r.err_pct), "off_pct": float(r.off_pct),
                           "med_ms": (None if pd.isna(r.med_ms) else int(r.med_ms)),
                           "p95_ms": (None if pd.isna(r.p95_ms) else int(r.p95_ms)),
@@ -356,7 +464,8 @@ def build_stalls(con, days: list) -> dict:
                           "daily_ms": tsmap.get(r.terminalId, [None] * ndays),
                           "peer_err": peer_err, "peer_ms": peer_ms, "verdict": verdict})
 
-    m = q(con, "SELECT count(*) AS n, round(sum(amount)/100.0) AS rev, count(DISTINCT schoolId) AS sch FROM txm").iloc[0]
+    m = q(con, f"""SELECT count(*) AS n, round(sum(amount)/100.0) AS rev,
+          count(DISTINCT schoolId) FILTER (schoolId NOT IN {NON_SCHOOL}) AS sch FROM txm""").iloc[0]
     return {"meta": {"txns": int(m.n), "rev": int(m.rev), "schools": int(m.sch),
                      "stalls": len(stalls), "terminals": len(terminals)},
             "cats": list(TAX_CATS), "bands": ["≤$1", "$1–2", "$2–3", ">$3"],
@@ -428,6 +537,23 @@ def build_savings(client, month: str) -> dict:
     OUT["rate_hist"] = _rows(client,
         f"SELECT round(least(greatest({S}/nullIf({S}+{P},0),0),1)/0.1)*0.1 AS rate, count() AS n "
         f"FROM {CH_DB}.saving_spending WHERE month=%(m)s AND ({S}+{P})>0 GROUP BY rate ORDER BY rate", m)
+
+    # POSB Smiley Stamps (Stamp Savings Programme): S$0.50 stamps bought by tapping Smart Buddy, credited
+    # back to the child's account. Identified only by the feed's own stampValue column (no inference).
+    try:
+        V = "toFloat64OrZero(toString(stampValue))"
+        CH = "multiIf(schoolId='SSSTM','Self Serve Stamps', schoolId='PBS','Pacific Bookstores','Other school stores')"
+        OUT["stamps"] = {
+            "by_channel": _rows(client,
+                f"SELECT {CH} AS channel, count() AS txns, round(sum({V})/100.0,2) AS sgd, "
+                f"  uniqExact(storeId) AS points FROM {CH_DB}.txn WHERE month=%(m)s AND {V} > 0 "
+                f"GROUP BY channel ORDER BY sgd DESC", m),
+            "daily": _rows(client,
+                f"SELECT toString(txn_date) AS date, count() AS txns, round(sum({V})/100.0,2) AS sgd "
+                f"FROM {CH_DB}.txn WHERE month=%(m)s AND {V} > 0 GROUP BY date ORDER BY date", m),
+        }
+    except Exception as e:
+        print(f"  (stamps skipped: {str(e).splitlines()[0]})")
 
     # Wallet-rail reconciliation (aggregate only): the 'Smart Buddy/ATM' payment rail is the wearable
     # wallet; its canteen spend should ≈ this feed's total_spending — two INDEPENDENT feeds agreeing.
@@ -541,12 +667,13 @@ def _linkage_core(con) -> dict:
         round(100.0*sum(CASE WHEN itemType='DRINK' THEN qty ELSE 0 END)/sum(qty),1) AS drink_sh,
         round(100.0*sum(CASE WHEN itemType='FOOD'  THEN qty ELSE 0 END)/sum(qty),1) AS food_sh,
         round(100.0*sum(CASE WHEN itemType='BOOK'  THEN qty ELSE 0 END)/sum(qty),1) AS book_sh,
+        round(100.0*sum(CASE WHEN itemType='STAMP' THEN qty ELSE 0 END)/sum(qty),1) AS stamp_sh,
         round(100.0*sum(CASE WHEN healthy=1 THEN qty ELSE 0 END)/
               nullif(sum(CASE WHEN healthy IN (0,1) THEN qty ELSE 0 END),0),1) AS healthy_sh
       FROM lk_mi GROUP BY storeId, schoolId""")
     receipts = {r["storeId"]: {"units": int(r["units"]), "rev": int(r["rev"] or 0),
                                "drink_sh": r["drink_sh"], "food_sh": r["food_sh"],
-                               "book_sh": r["book_sh"], "healthy_sh": r["healthy_sh"]}
+                               "book_sh": r["book_sh"], "stamp_sh": r["stamp_sh"], "healthy_sh": r["healthy_sh"]}
                 for _, r in stalls.iterrows()}
     top_stalls = recs(stalls.sort_values("units", ascending=False).head(30)
                       [["storeId", "schoolId", "name", "units", "rev",
@@ -618,6 +745,10 @@ def run(month: str, client=None) -> list:
         st["meta"]["month"] = month
         st["days"] = days
         built.append(("stalls", put(client, month, "stalls", st)))
+        try:                                                # SAM's copy — never fail the bundles over it
+            print(f"  -> terminal_health[{month}]  {put_terminal_health(client, month, st['terminals'])} machines")
+        except Exception as e:
+            print(f"  (terminal_health skipped: {str(e).splitlines()[0]})")
         con.close()
     else:
         print(f"  (no transactions for {month}; skipping global/schools/stalls)")

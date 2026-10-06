@@ -1,5 +1,9 @@
 # UAT deploy — map expansion (158→331 markers, 7 corrected) + stall-copy fix
 
+> **Update 1 Oct 2026:** the "Unmapped (3)" below is out of date. APSN Katong (APSNK) is now mapped (OneMap postal
+> 467354), so there are **332** schools. PBS and SSSTM are vendor map layers placed per shop/point. See
+> `reload/VENDOR_LAYERS_DEPLOY.md`.
+
 Ships three coupled changes. **No transaction/items/saving/wearable data reload** — only the school
 dimension + rebuilt bundles + a frontend/MCP rebuild.
 

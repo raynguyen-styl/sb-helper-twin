@@ -25,5 +25,9 @@ export const QUERY_TIMEOUT_MS = Number(process.env.MCP_QUERY_TIMEOUT_MS) || 1500
 // shared instance (bytes). Default 2 GB.
 export const MAX_MEMORY_BYTES = Number(process.env.MCP_MAX_MEMORY_BYTES) || 2_000_000_000;
 
+// Where service routes start (plan_service_route). Coordinates from OneMap search for postal 408705.
+// Keep in sync with client/src/eng-window.js START.
+export const SERVICE_START = { name: "STYL Service Center", address: "3015A Ubi Road 1, #06-02, Singapore 408705", lat: 1.328343, lng: 103.893102 };
+
 // The dataset is two fixed historical months; the time tools anchor here, NOT "now".
 export const DATASET = { months: ["2026-02", "2026-03"], from: "2026-02-01", to: "2026-03-31", tz: "Asia/Singapore (SGT, UTC+8)" };

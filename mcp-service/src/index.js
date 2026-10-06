@@ -2,12 +2,35 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { MCP_PORT, MCP_API_KEY, DATASET, MAX_ROWS_DEFAULT, MAX_ROWS_HARD, CLICKHOUSE_DB } from "./config.js";
+import { MCP_PORT, MCP_API_KEY, DATASET, MAX_ROWS_DEFAULT, MAX_ROWS_HARD, CLICKHOUSE_DB, SERVICE_START } from "./config.js";
 import { initDb, runReadOnlySql, queryRows } from "./db.js";
 import { TABLES, LISTED, GLOBAL_NOTES } from "./schema.js";
 import { resolveTimeRange } from "./timeRange.js";
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/; // safe object-name guard for metadata tools
+const json = (o) => ({ content: [{ type: "text", text: JSON.stringify(o, null, 2) }] });
+
+// Service visit order: from the start, always go to the nearest unvisited school. Same rule as
+// client/src/eng-window.js orderStops — keep the two in sync.
+// ponytail: greedy nearest-next on straight-line km, not road routing — OneMap routing API if drive times matter.
+const km = (a, b) => {
+  const r = Math.PI / 180;
+  const h = Math.sin((b.lat - a.lat) * r / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin((b.lng - a.lng) * r / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+};
+function orderStops(start, stops) {
+  const out = [], left = [...stops];
+  let at = start, total = 0;
+  while (left.length) {
+    let i = 0;
+    left.forEach((s, j) => { if (km(at, s) < km(at, left[i])) i = j; });
+    const [s] = left.splice(i, 1), leg = km(at, s);
+    total += leg;
+    out.push({ ...s, leg_km: +leg.toFixed(1), cum_km: +total.toFixed(1) });
+    at = s;
+  }
+  return out;
+}
 
 function runSqlDescription() {
   const tableLines = LISTED.map((t) => `  ${t.padEnd(17)} — ${TABLES[t].purpose.split(". ")[0]}.`);
@@ -50,6 +73,10 @@ function runSqlDescription() {
     "  -- transaction speed by network stack, one month (guard startToFinish > 0)",
     "  SELECT posNetworkType, count(*) AS n, round(median(startToFinish)) AS median_ms",
     "  FROM txn_perf WHERE month = '2026-02' AND startToFinish > 0 GROUP BY posNetworkType ORDER BY n DESC;",
+    "",
+    "  -- service list: machines with a problem in March, worst first, with where to go (then plan_service_route)",
+    "  SELECT terminalId, schoolId, school_name, postal, zone, storeName, problems, err_pct, med_ms",
+    "  FROM terminal_health WHERE month = '2026-03' AND notEmpty(problems) ORDER BY err_pct DESC LIMIT 50;",
     "",
     `Use resolve_time_range for date phrases (CNY, weekends, 'first week', a weekday). maxRows caps the result (default ${MAX_ROWS_DEFAULT}, max ${MAX_ROWS_HARD}); large results are truncated with truncated=true — aggregate in SQL instead of pulling raw rows.`,
   ].join("\n");
@@ -142,6 +169,50 @@ function buildMcpServer() {
       if (res.error) console.warn(`[tool] run_sql rejected/failed: ${res.error}`);
       else console.log(`[tool] run_sql OK rows=${res.rowCount} truncated=${res.truncated}`);
       return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "plan_service_route",
+    `Order service visits for the machines a service staff member chose (find them first in terminal_health). Groups the machines by school (one stop fixes all of them there), starts at the ${SERVICE_START.name} (${SERVICE_START.address}) and always goes to the nearest next school. Returns the stops in order with address, straight-line km per leg and each machine's problems, plus machines it can't route (no confirmed location, e.g. PBS/SSSTM vendor machines). Distances are straight-line, not driving.`,
+    {
+      month: z.string().regex(/^\d{4}-\d{2}$/).describe("Data month, e.g. '2026-03'."),
+      terminalIds: z.array(z.string().max(40)).max(300).optional().describe("Chosen machine serials (terminal_health.terminalId)."),
+      schoolIds: z.array(z.string().max(20)).max(300).optional().describe("Chosen schools — includes every machine there that has a problem."),
+    },
+    async ({ month, terminalIds = [], schoolIds = [] }) => {
+      console.log(`[tool] plan_service_route month=${month} terminals=${terminalIds.length} schools=${schoolIds.length}`);
+      if (!terminalIds.length && !schoolIds.length) {
+        return json({ error: "Give terminalIds and/or schoolIds.", hint: "Query terminal_health first and let the user pick." });
+      }
+      let rows;
+      try {
+        rows = await queryRows(
+          `SELECT terminalId, schoolId, school_name, postal, zone, lat, lng, storeName, problems, err_pct, med_ms, last_day
+             FROM terminal_health WHERE month = {m:String}
+              AND (has({t:Array(String)}, terminalId) OR (has({s:Array(String)}, schoolId) AND notEmpty(problems)))`,
+          { m: month, t: terminalIds, s: schoolIds });
+      } catch (e) { return json({ error: String(e.message || e).split("\n")[0] }); }
+
+      const bySchool = new Map(), notRoutable = [];
+      for (const r of rows) {
+        const m = { terminalId: r.terminalId, storeName: r.storeName, problems: r.problems, err_pct: r.err_pct,
+                    med_ms: r.med_ms == null ? null : Number(r.med_ms), last_day: r.last_day };
+        if (r.lat == null || r.lng == null) { notRoutable.push({ ...m, schoolId: r.schoolId }); continue; }
+        if (!bySchool.has(r.schoolId)) {
+          bySchool.set(r.schoolId, { schoolId: r.schoolId, school_name: r.school_name, postal: r.postal, zone: r.zone,
+                                     lat: r.lat, lng: r.lng, machines: [] });
+        }
+        bySchool.get(r.schoolId).machines.push(m);
+      }
+      const stops = orderStops(SERVICE_START, [...bySchool.values()]);
+      const found = new Set(rows.map((r) => r.terminalId));
+      return json({
+        month, start: SERVICE_START, stops: stops.map((s, i) => ({ stop: i + 1, ...s })),
+        total_km: stops.length ? stops[stops.length - 1].cum_km : 0,
+        not_routable: notRoutable, not_found: terminalIds.filter((t) => !found.has(t)),
+        note: `Straight-line distances, not driving routes. Faults describe ${month}, not today.`,
+      });
     },
   );
 

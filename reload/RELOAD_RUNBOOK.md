@@ -31,7 +31,7 @@ Purpose: remove "was the data even loaded correctly?" as a variable while we cha
 
 | file | dataset | month | rows | verified |
 |---|---|---|---|---|
-| `schools.csv` | `schools` | (dimension) | 331 | schoolId + lat/lng/level/flags (was 158; +173 geocoded & 7 corrected 15 Jul) |
+| `schools.csv` | `schools` | (dimension) | 332 | schoolId + lat/lng/level/flags (was 158; +173 geocoded & 7 corrected 15 Jul; + APSNK 1 Oct) |
 | `feb/feb_transactions.csv` | `transactions` | `2026-02` | 3,977,666 | all 2026-02, speed cols present (auto-splits `txn`+`txn_perf`) |
 | `feb/feb_health_data.csv` | `health` | `2026-02` | 2,948,308 | Feb-SGT (0.10% tail on Mar 1 — negligible) |
 | `feb/feb_heart_rate.csv` | `heart_rate` | `2026-02` | 2,393,845 | Feb-SGT (0.07% tail) |
@@ -92,7 +92,7 @@ $CC python build_insights_wearable.py 2026-02      # Feb wearable tab
 ## 5 · Verify
 
 - Row counts: `SELECT count() FROM smartbuddy.txn WHERE month='2026-02'` → 3,977,666; `'2026-03'` → 3,714,169;
-  `items 2026-03` → 4,286,976; `saving_spending 2026-03` → 145,348; `schools` → 331.
+  `items 2026-03` → 4,286,976; `saving_spending 2026-03` → 145,348; `schools` → 332.
 - **March linkage** (the thing we're chasing): the `SB_MONTH=2026-03` insights run must print
   `linkage: …/… baskets matched (99.x%) …`. **If it still says `0/… skipping linkage`, the reload did NOT fix
   it — report back**; that confirms the fault is in code, not the data, and we fix `build_insights.py`.

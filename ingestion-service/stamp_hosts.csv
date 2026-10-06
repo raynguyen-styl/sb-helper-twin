@@ -1,0 +1,10 @@
+store_name,decision,school_id,campus,name,lat,lng,evidence
+St Andrew School Junior,place,SAJS,,,,,"MOE list: ST ANDREW'S SCHOOL (JUNIOR), 2 Francis Thomas Dr (punctuation differs only); 'Junior' = primary section (SASS / SAJC are separate IDs); SAJS has canteen data"
+Bukit Panjang Government High School,place,BPGHS,,,,,"MOE list: BUKIT PANJANG GOVT. HIGH SCHOOL, 7 Choa Chu Kang Ave 4 ('Govt.' abbreviation); secondary-only school; BPGHS has canteen data"
+Chung Cheng High School Main,place,CCHSM,,,,,"MOE list: CHUNG CHENG HIGH SCHOOL (MAIN), 50 Goodman Rd (brackets differ only); Main and Yishun are separate campuses, name states which"
+Chung Cheng High School Yishun,place,CCHSY,,,,,"MOE list: CHUNG CHENG HIGH SCHOOL (YISHUN), 11 Yishun St 61 (brackets differ only); name states the campus"
+St Margarets Secondary School,place,SMSS,,,,,"Old name: school's own history page says it was renamed ST. MARGARET'S SCHOOL (SECONDARY) from 1 Jan 2023 (MOE list, 111 Farrer Rd); primary is a separate school at 136 Sophia Rd"
+Catholic High School,campus,,CAHP|CAHS,Catholic High School,1.354525170657562,103.8449008048039,"MOE list: one school CATHOLIC HIGH SCHOOL (mixed P1-S4), 9 Bishan St 22; our feed splits it into CAHP (Pri.) and CAHS (Sec.); point name gives no section, so it is placed as the whole school, linked to both; coordinates: OneMap search by MOE postal 579767"
+CHIJ St Joseph Convent School,place,CHIJ,,,,,"Feb point. MOE list: CHIJ ST. JOSEPH'S CONVENT, 62 Sengkang East Way (only CHIJ St Joseph's; secondary-only); differs by apostrophe and the word 'School'; feed names CHIJ 'CHIJ St. Joseph's Convent'"
+Nanyang Girls High School,place,NGHS,,,,,"Feb point. MOE list: NANYANG GIRLS' HIGH SCHOOL, 2 Linden Dr (secondary-only); apostrophe differs only"
+St Gabriels Secondary School,place,STGSS,,,,,"Feb point. MOE list: ST. GABRIEL'S SECONDARY SCHOOL, 24 Serangoon Ave 1; apostrophe differs only; name states Secondary (St. Gabriel's Primary is a separate school at 220 Lorong Chuan)"

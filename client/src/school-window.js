@@ -1,5 +1,5 @@
 // Per-school detail window: Stalls & Spending / Terminals tabs. Month-aware (uses the selected month).
-import { openWindow } from './windowing.js';
+import { openWindow, info } from './windowing.js';
 import { mk, opts, ax, line, C, CAT_COLOR } from './charts.js';
 import { vchip } from './stall-window.js';
 import { monthLabel, monthName } from './sbData.js';
@@ -62,17 +62,24 @@ const titleCase = (x) => String(x || '').toLowerCase().replace(/\b\w/g, (c) => c
 function renderSpend(el, s, STALLS) {
     const stalls = STALLS.stalls.filter((st) => st.school === s.id).sort((a, b) => b.rev - a.rev);
     const named = stalls.filter((st) => st.cat !== 'Unclassified');
+    const books = STALLS.stalls.filter((st) => st.host === s.id);   // PBS shop(s) whose name code == this schoolId
+    const maybe = STALLS.stalls.filter((st) => st.candidate === s.id);   // flagged: shared primary/secondary campus
     const MON = monthName(STALLS.meta.month);
     el.innerHTML = `
-      <h5>Weekly canteen revenue — ${MON}</h5><div class="cap">Total $ per week at this school (weeks starting Mon).</div>
+      <h5>Weekly canteen revenue — ${MON} ${info('Total $ per week at this school; weeks start on Monday.')}</h5>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>Revenue by stall — ${MON}</h5>
-      <div class="cap">Each bar is one store. Colour = category from the stall's registered name;
-      grey = the name gives no trustworthy category (generic "Stall 1", a bare company name, or prices
-      that contradict the name) — never guessed. Teal = a name covering two food groups (Mixed).
-      Revenue is exact either way. Click a bar to open the stall.</div>
+      <h5>Revenue by stall — ${MON} ${info(`Colour = category from the stall's registered name. Grey = the name gives no
+        trustworthy category (generic "Stall 1", a bare company name, or prices that contradict the name) — never guessed.
+        Teal = a name covering two food groups (Mixed). Revenue is exact either way.`)}</h5>
+      <div class="cap">One bar per stall · click to open.</div>
       <div class="cwrap" style="height:${Math.max(120, 26 + stalls.length * 21)}px"><canvas></canvas></div>
-      <div class="cap" style="margin-top:4px">${stalls.length} stalls · ${named.length} with a descriptive name.</div>`;
+      <div class="cap" style="margin-top:4px">${stalls.length} stalls · ${named.length} with a descriptive name.</div>
+      ${books.map((b) => `<div class="note-box" style="margin-top:8px;cursor:pointer" data-stall="${b.id}">
+        <b>Bookshop here:</b> ${b.name} · ${fmt$(b.rev)} · ${fmt(b.n)} txns ${info(`Run by Pacific Bookstores and filed
+        under vendor ID PBS, so it is not counted in this school's canteen figures above. Click to open.`)}</div>`).join('')}
+      ${maybe.map((b) => `<div class="note-box" style="margin-top:8px;cursor:pointer" data-stall="${b.id}">
+        <span class="pill-warn">Unconfirmed</span> ${b.name} may be this campus's bookshop ${info(b.evidence || '')}</div>`).join('')}`;
+    el.querySelectorAll('[data-stall]').forEach((d) => d.addEventListener('click', () => window.SB?.openStall(d.dataset.stall)));
     const [c1, c2] = el.querySelectorAll('canvas');
     const wk = [...(s.wk_spend || [])].sort((a, b) => a.week.localeCompare(b.week));
     mk(c1, { type: 'line',
@@ -106,10 +113,9 @@ function renderTerms(el, s, STALLS) {
         ${stat(nSite ? `<span style="color:var(--warn)">${nSite}</span>` : 0, 'site issues')}
         ${stat(s.med_sig != null ? `<span class="${SIG_STYLE[sigQual(s.med_sig)]}">${sigQual(s.med_sig)}</span>` : '–', 'typical 4G signal')}
       </div>
-      <h5>Every machine, tagged to its stall</h5>
-      <div class="cap">Problem units first. Diagnosis compares each machine with its school peers —
-      machine fault = service the unit; site issue = the location (signal/network) is the problem.
-      Click a row for the full per-machine diagnostic.</div>
+      <h5>Every machine, tagged to its stall ${info(`Diagnosis compares each machine with its school peers: machine fault =
+        service the unit; site issue = the location (signal/network) is the problem.`)}</h5>
+      <div class="cap">Problems first · click a row for details.</div>
       <table class="mini"><tr><th>Machine</th><th>Stall</th><th>Net</th><th>Signal</th>
         <th style="text-align:right">Txns</th><th style="text-align:right">Median</th>
         <th style="text-align:right">Err %</th><th>Diagnosis</th></tr>

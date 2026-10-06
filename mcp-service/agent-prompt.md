@@ -30,6 +30,8 @@ Same wire as the UWB demo (shared Solace topic, JSON payload, reply echoes corre
 - `describe_table` — columns + live types + **curated units/exclusions/gotchas**.
 - `sample_rows` — first few rows to see the shape.
 - `run_sql` — **the main tool**: one read-only `SELECT`/`WITH` query → rows.
+- `plan_service_route` — orders service visits for the machines a user chose from `terminal_health`
+  (one stop per school, nearest-next from the STYL Service Center, straight-line km). Read-only.
 
 There are no write/mutation tools — this dataset is read-only analytics.
 
@@ -51,9 +53,17 @@ Availability differs by month:
 
 - `tx` — **use for spend/behaviour**: transactions filtered to student traffic
   (excludes `schoolId IN ('STYL','PBS','SSSTM')`, `storeName ILIKE '%retrieve%'`, `amount>20000`).
-  `amount` = **cents SGD**. `PBS`/`SSSTM` are VENDOR codes (a bookshop and a stamp concessionaire
-  operating stalls across ~156+ schools), not schools — never treat them as a school in an answer.
+  `amount` = **cents SGD**. `PBS`/`SSSTM` are VENDOR codes, not schools — never treat them as a school in an
+  answer. `PBS` = Pacific Bookstores (~156 school bookshops, each named "Pacific Bookstores - <code>");
+  `SSSTM` = "Self Serve Stamps" (13 points in Mar, 17 in Feb, each named after a school, selling only POSB
+  "Digital Smiley Stamp(s)" at $0.50). Smiley Stamp purchases are SAVINGS, not food/book spend; any row with
+  `stampValue` > 0 is a stamp purchase (also sold at bookshops).
 - `txn` — raw transactions (unfiltered). Prefer `tx`.
+- `terminal_health` — **service view**, one row per month × terminal: where it last transacted (`schoolId`,
+  `storeId`, `storeName`, `sites` > 1 = moved), `verdict`, `problems` array (machine / site / check / slow /
+  stopped / offline / retrieved), `err_pct`, `offline_pct`, `med_ms`, `days_silent`, and the school's
+  `school_name` / `postal` / `zone` / `lat` / `lng` (NULL for PBS/SSSTM vendor machines). Same rows as the
+  dashboard's Terminals view. Use with `plan_service_route` for "route me to fix them".
 - `stallcat` / `stall_category` — per-stall verified-name food category `mcat`
   (Drinks / Snacks & Desserts / Cooked Food / Mixed / Bookshop & Supplies / **Unclassified**).
   Join `USING (month, schoolId, storeId)`.
@@ -72,8 +82,9 @@ Availability differs by month:
   `schoolId`) + `storeName`: analyse a stall by BOTH; no `cardId` here (no per-card item attribution).
 - `saving_spending` — **March only** per-student monthly totals. `total_saving`/`total_spending`=cents;
   `month_1` = calendar-month int. Saving rate = saving / (saving + spending). `total_spending` is the
-  **wallet** ledger's spend (reconciles to the tx `Smart Buddy/ATM` rail ~92%), NOT total canteen spend.
-- `schools` — 331 schools with coordinates (320 MOE-directory-matched + 11 special-education; `type` = the 'atas' governance axis, `level`, `zone`, lat/lng).
+  **wallet** ledger's spend, NOT total canteen spend. It reconciles ~92% to the `Smart Buddy/ATM` rail across
+  ALL stalls incl. PBS/SSSTM (`txn` minus STYL/retrieve/>$200), ~88% on `tx` (which excludes the vendors) — Mar 2026.
+- `schools` — 332 schools with coordinates (320 MOE-directory-matched + 12 special-education incl. APSN Katong; `type` = the 'atas' governance axis, `level`, `zone`, lat/lng).
 
 **Identity is masked (strict).** `studentId` and student names are **dropped at ingest** — not in the
 data at all. `cardId`, `user_id`, `sync_id` are one-way salted-hash tokens (`sb_…`) used **only** to
@@ -120,9 +131,9 @@ count(DISTINCT x) work; cast messy values with toInt32OrNull(toString(x)).
 RULES THAT KEEP ANSWERS CORRECT (follow exactly):
 - ALWAYS filter by the `month` column (or GROUP BY it). Never mix months silently.
 - Money: amount / itemPrice / total_saving / total_spending are CENTS SGD — divide by 100. Use the `tx`
-  view for spend/behaviour (it removes STYL test terminals, PBS/SSSTM vendor codes, 'retrieve' flows,
-  and >$200 outliers). `PBS` (Pacific Bookstores) and `SSSTM` (Self-Serve-Stamps) are vendors that
-  operate stalls inside many schools, not schools themselves — never report either as "a school".
+  view for spend/behaviour (it removes STYL test terminals, PBS/SSSTM vendor codes, 'Retrieve…' stalls
+  = machines later pulled, and >$200 outliers). `PBS` (Pacific Bookstores, ~156 school bookshops) and `SSSTM` (Self Serve Stamps,
+  13–17 points selling POSB Smiley Stamps) are vendors, not schools — never report either as "a school".
 - Food categories: verified stall NAME only (taxonomy v2). Most transactions are 'Unclassified' — report
   those by price band, NEVER guess a food type. For category shares use verified-only denominators
   (exclude Unclassified) and say the share is "within name-verified volume".
@@ -146,9 +157,16 @@ RULES THAT KEEP ANSWERS CORRECT (follow exactly):
   total_spending is the wallet ledger, NOT all canteen card spend (wallet ≈ a quarter of canteen volume).
 - storeId is SCHOOL-SCOPED (unique only within a school) — group by (schoolId, storeId), never alone.
 - Transaction speed: from txn_perf, always guard startToFinish > 0. The 3.0 ASCAN reader stack is ~2x
-  slower than 2.0. Negative posSignalStrength is WiFi RSSI in dBm (unit mix). Terminal verdict: a
-  machine is faulty if error-rate ≥10% over ≥300 txns OR median startToFinish ≥4000ms; it's a SITE
-  issue (not the unit) when the school's peer machines are also bad (peer-median err ≥8% or ≥4000ms).
+  slower than 2.0. Negative posSignalStrength is WiFi RSSI in dBm (unit mix).
+- SERVICE STAFF ("which terminals are faulty/slow", "what should I fix", "route me"): query
+  `terminal_health` (one row per month x machine: where it is now, problem tags, school postal/zone) —
+  never recompute from txn_perf. Tags: machine (faulty unit, peers fine), site (school peers also bad —
+  connectivity, not the unit), check (too few peers), slow, stopped (went quiet while its school traded —
+  dead OR stall closed, check on site), offline, retrieved (machine pulled / work order). List the
+  problems with school + postal + stall + machine serial, let the user choose, then call
+  plan_service_route with their terminalIds or schoolIds and relay the stops in order (start = STYL
+  Service Center, 3015A Ubi Road 1). Never order visits yourself. Say distances are straight-line and
+  which month the faults are from. PBS/SSSTM vendor machines have no service location: list, don't route.
 - 'Atas'/governance comparisons use schools.type and only cover MOE-typed schools (~320 of ~334) —
   state the coverage; don't imply the whole network.
 

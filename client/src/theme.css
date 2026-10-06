@@ -164,6 +164,21 @@ select.up-in { cursor: pointer; }
 /* marker */
 .mk { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 1px 4px rgba(0,0,0,.35); cursor: pointer; }
 .mk.open { outline: 3px solid rgba(0,102,204,.45); }
+.mk-book { width: 10px; height: 10px; border-radius: 2px; background: var(--c, #7d5fd3); border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.55); cursor: pointer; }
+.mk-stamp { width: 13px; height: 13px; cursor: pointer; }   /* maplibre owns this element's transform → rotate a pseudo-element */
+.mk-stamp::before { content: ''; position: absolute; inset: 2px; background: var(--c, #d6336c); border: 1.5px solid #fff; transform: rotate(45deg); box-shadow: 0 0 0 1px rgba(0,0,0,.55); }
+/* map filter pills (Super App POC pattern) */
+.filterbar { position: absolute; top: 10px; left: 50px; right: 12px; z-index: 900; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
+.fpill { pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; cursor: pointer;
+    border-radius: var(--r-pill); border: 1px solid var(--hairline); background: var(--canvas); color: var(--ink); font-size: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.fpill .fdot { width: 9px; height: 9px; border-radius: 50%; background: var(--pill, #888); }
+.fpill .fdot.sq { border-radius: 2px; }
+.fpill .fdot.dia { border-radius: 1px; transform: rotate(45deg); width: 8px; height: 8px; }
+.fpill .fn { opacity: .6; font-size: 11px; }
+.fpill.on { background: var(--pill, var(--black)); color: #fff; border-color: transparent; }
+.fpill.on .fdot { background: #fff; }
+.fpill:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 /* draggable windows */
 .tw-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; }
@@ -241,3 +256,5 @@ table.mini tr:last-child td { border-bottom: none; }
     font-size: 13px; font-weight: 600; padding: 0 18px; cursor: pointer; }
 .up-btn:hover { background: var(--primary-focus); }
 .up-btn:disabled { background: var(--neutral); cursor: not-allowed; opacity: .55; }
+.info { display: inline-block; margin-left: 4px; color: var(--ink-muted-48); font-size: 12px; font-weight: 400; cursor: help; vertical-align: baseline; }
+.info:hover, .info:focus-visible { color: var(--primary); outline: none; }

@@ -1,6 +1,6 @@
 // Wearables & Health window — the month where wearable + transaction data overlap (Feb only).
 // Every filter re-slices the precomputed `wearable` insight bundle (built from ClickHouse).
-import { openWindow } from './windowing.js';
+import { openWindow, info } from './windowing.js';
 import { mk, opts, ax, bar, line, C, CAT_COLOR } from './charts.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-SG');
@@ -29,7 +29,7 @@ function fbar(el, name, items, cur, onPick) {
 }
 
 export function openFeb(FEB, tab) {
-    const body = openWindow({ id: 'feb', title: 'Wearables & Health', sub: 'health × transactions · the overlap month', chips: ['<span class="chip chip-flag">NEW DATA</span>'] });
+    const body = openWindow({ id: 'feb', title: 'Wearables & Health', sub: 'activity, heart rate & canteen spend', chips: ['<span class="chip chip-flag">NEW DATA</span>'] });
     if (!body) return;
     const tw = body.closest('.tw');
     tw.style.width = '740px'; tw.style.left = '40px'; tw.style.top = '14px';
@@ -101,14 +101,11 @@ function renderAct(el, FEB) {
             <div class="stat"><div class="v">${(b.active ?? 0).toFixed(1)}h</div><div class="l">active hrs (&gt;500 steps/h)</div></div>
           </div>
           ${segInfo ? `<div class="cap" style="margin:2px 0 6px">${segInfo.name}: ${fmt(segInfo.users)} users · median ${fmt(segInfo.steps)} steps/day · wears ${segInfo.wear_days} days (${segInfo.wk_days} weekend) · resting HR ${segInfo.rhr ?? '–'}</div>` : ''}
-          <h5>Movement through the day</h5>
-          <div class="cap">Steps per 30 min per user — selected slice vs all users, all days (grey). Filter above.</div>
+          <h5>Movement through the day ${info('Steps per 30 min per user: the selected slice vs all users on all days (grey). Use the filters above.')}</h5>
           <div class="cwrap tall"><canvas></canvas></div>
-          <h5>How the day's time is spent (worn hours)</h5>
-          <div class="cap">Avg hours per user-day: sedentary (&lt;50 steps/h) · light · active (&gt;500 steps/h). Selected segment across day types.</div>
+          <h5>How worn hours are spent ${info('Average hours per user-day: sedentary (under 50 steps/h), light, active (over 500 steps/h), for the selected segment by day type.')}</h5>
           <div class="cwrap" style="height:130px"><canvas></canvas></div>
-          <h5>The spread — daily steps percentiles (all users)</h5>
-          <div class="cap">Median (line), p25–p75 (band), p10–p90 (faint). Weekends dip${FEB.special ? '; ' + FEB.special.daytype.toLowerCase() + ' days marked red on the axis' : ''}.</div>
+          <h5>Daily steps spread — all users ${info(`Median (line), p25–p75 (band), p10–p90 (faint). Weekend dates in purple${FEB.special ? '; ' + FEB.special.daytype.toLowerCase() + ' days in red' : ''}.`)}</h5>
           <div class="cwrap"><canvas></canvas></div>`;
         const [c1, c2, c3] = box.querySelectorAll('canvas');
 
@@ -150,14 +147,11 @@ function renderWear(el, FEB) {
         <th style="text-align:right">Steps/day</th><th style="text-align:right">Weekend wear</th></tr>
         ${W.cohorts.map((c) => `<tr><td><b>${c.cohort}</b></td><td class="num">${fmt(c.users)}</td>
           <td class="num">${fmt(c.steps)}</td><td class="num">${c.weekend_pct}%</td></tr>`).join('')}</table>
-      <h5 style="margin-top:14px">Days worn in February</h5>
-      <div class="cap">Bimodal: a committed daily-wear core vs a long tail that tried it a few days. School-day count (17–20) is the natural ceiling for weekday-only wearers.</div>
+      <h5 style="margin-top:14px">Days worn in ${MONTHNAME(FEB.meta.month)} ${info('Number of users by how many days they wore the band this month.')}</h5>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>Users syncing per day — and who is new</h5>
-      <div class="cap">Blue: users active that day. Green: first-ever appearance (adoption). Watch the weekend troughs and the CNY dip.</div>
+      <h5>Users syncing per day ${info('Line: users active that day. Bars: users seen for the first time (new).')}</h5>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>Weekend vs school-day movement, per user</h5>
-      <div class="cap">Ratio of a user's weekend steps to their school-day steps (users worn ≥3 school + ≥2 weekend days). Most students move far less on weekends — a right tail stays just as active.</div>
+      <h5>Weekend vs school-day movement ${info("Each user's weekend steps as a % of their school-day steps (users who wore it at least 3 school days and 2 weekend days).")}</h5>
       <div class="cwrap"><canvas></canvas></div>`;
     const [c1, c2, c3] = el.querySelectorAll('canvas');
     keep('wear', mk(c1, { type: 'bar', data: { labels: W.days_hist.map((x) => x.days),
@@ -191,13 +185,11 @@ function renderHR(el, FEB) {
         const ft = FEB.hr.fw_table.find((x) => x.fw === fw);
         box.innerHTML = `
           ${ft ? `<div class="cap" style="margin:2px 0 6px">${fw}: ${fmt(ft.n)} records · ${fmt(ft.users)} users · <b>${fmt(ft.err255)}</b> whole-record 255 errors · <b>${fmt(ft.lt40)}</b> sub-40 readings ${ft.err255 > 0 ? '<span class="chip chip-indep">FAULTY</span>' : '<span class="chip chip-sec">CLEAN</span>'}</div>` : ''}
-          <h5>Average bpm by hour</h5>
-          <div class="cap">Valid readings (30–220 bpm). 23:00 is a known sparse-sampling artifact. Grey: all firmware, all days.</div>
+          <h5>Average bpm by hour ${info('Valid readings only (30–220 bpm). Grey: all firmware, all days. 23:00 has very few readings, so treat it with care.')}</h5>
           <div class="cwrap tall"><canvas></canvas></div>
-          <h5>Share of readings in elevated zones, by hour</h5>
-          <div class="cap">% of hourly readings ≥100 bpm by day type — PE &amp; recess hours light up on school days.</div>
+          <h5>Elevated heart rate by hour ${info('% of hourly readings at 100 bpm or more, by day type.')}</h5>
           <div class="cwrap"><canvas></canvas></div>
-          ${FEB.hr.fw_table.length ? `<h5>Firmware fleet — February</h5>
+          ${FEB.hr.fw_table.length ? `<h5>Firmware fleet — ${MONTHNAME(FEB.meta.month)}</h5>
           <table class="mini"><tr><th>Firmware</th><th style="text-align:right">Records</th>
             <th style="text-align:right">Users</th><th style="text-align:right">255-errors</th>
             <th style="text-align:right">&lt;40 bpm</th></tr>
@@ -231,8 +223,7 @@ function renderSpend(el, FEB) {
     fbar(el, 'Level', S.levels.map((l) => ({ v: l, t: l === 'All' ? 'All levels' : l })), lv, (v) => { lv = v; paint(); });
     fbar(el, 'Category', S.cats.map((c) => ({ v: c, t: c === 'All' ? 'All categories' : c })), ct, (v) => { ct = v; paint(); });
     const pol = document.createElement('div'); pol.className = 'cap';
-    pol.innerHTML = 'Categories come from name-verified stalls only; generic-named stalls ("Stall 1") are ' +
-        '<b>Unclassified</b> — most of the volume, never guessed.';
+    pol.innerHTML = "Category = from the stall's name " + info('Categories come from name-verified stalls only; generic-named stalls ("Stall 1") stay Unclassified, never guessed.');
     el.appendChild(pol);
     const box = document.createElement('div'); el.appendChild(box);
     const MON = MONTHNAME(FEB.meta.month);
@@ -251,11 +242,9 @@ function renderSpend(el, FEB) {
             <div class="stat"><div class="v">${k.ticket != null ? '$' + k.ticket.toFixed(2) : '–'}</div><div class="l">avg ticket</div></div>
             <div class="stat"><div class="v">${fmt(k.cards)}</div><div class="l">cards</div></div>
           </div>
-          <h5>Daily revenue — ${MON}</h5>
-          <div class="cap">${MARKED.size ? (FEB.special.daytype.toLowerCase() + ' days in red. ') : ''}Weekends are near-zero by design — school canteens.</div>
+          <h5>Daily revenue — ${MON} ${MARKED.size ? info(FEB.special.daytype + ' days in red.') : ''}</h5>
           <div class="cwrap"><canvas></canvas></div>
           <h5>Revenue by hour — school days</h5>
-          <div class="cap">The recess economy: 9–11am carries about half of school-day revenue.</div>
           <div class="cwrap"><canvas></canvas></div>
           <h5>Category mix — ${lv === 'All' ? 'all levels' : lv}</h5>
           <table class="mini"><tr><th>Category</th><th style="text-align:right">Txns</th><th style="text-align:right">Revenue</th><th style="text-align:right">Share</th></tr>
@@ -287,14 +276,11 @@ function renderSpecial(el, FEB) {
         ${Y.periods.map((p, i) => `<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${PC[i % PC.length]};margin-right:6px"></span><b>${p}</b></td>
           <td class="num">${fmt(kp[i].steps)}</td><td class="num">${fmt(kp[i].users)}</td>
           <td class="num">${fmt$(kp[i].rev)}</td></tr>`).join('')}</table>
-      <h5 style="margin-top:12px">The shape of the day, window by window</h5>
-      <div class="cap">Steps per 30 min. When school's out the timetable skeleton vanishes: no 7am commute spike, movement starts later and spreads flat.</div>
+      <h5 style="margin-top:12px">Movement through the day, by window ${info('Steps per 30 min per user, one line per window.')}</h5>
       <div class="cwrap tall"><canvas></canvas></div>
-      <h5>Heart rate through the day</h5>
-      <div class="cap">Break-day mornings run lower (sleeping in); evenings converge with school-day levels.</div>
+      <h5>Heart rate through the day ${info('Average bpm by hour, one line per window.')}</h5>
       <div class="cwrap"><canvas></canvas></div>
-      <h5>What the money bought</h5>
-      <div class="cap">Spend share by category (name-verified stalls only). Break-week canteen trading is tiny; the full-meal share recovers as the timetable resumes.</div>
+      <h5>What the money bought ${info('Spend share by category, name-verified stalls only, per window.')}</h5>
       <div class="cwrap"><canvas></canvas></div>`;
     const [c1, c2, c3] = el.querySelectorAll('canvas');
     keep('special', mk(c1, { type: 'line', data: { labels: SLOTS, datasets: Y.periods.map((p, i) =>
