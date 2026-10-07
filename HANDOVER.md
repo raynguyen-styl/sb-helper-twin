@@ -1,8 +1,8 @@
 # HANDOVER — SMART Buddy Dashboard
 
-Orientation for a teammate (or a fresh session) picking this up. Last updated **7 Oct 2026** (3rd session: polish + deploy runbook).
+Orientation for a teammate (or a fresh session) picking this up. Last updated **7 Oct 2026** (end of the 3rd session: polish, tour chapters, review fixes, deploy runbook — pushed as `852e01c`).
 
-> **State:** everything up to §3n is **committed and pushed to `origin/main`** (7 Oct, 3rd session; `git log -1`):
+> **State:** everything up to §3n is **committed and pushed: `origin/main` = `852e01c`** (7 Oct, 3rd session):
 > the whole dashboard rework, frontend only (no API, ingest or SAM change): interactivity + accessibility (§3g) →
 > docked drawer instead of floating windows (§3h) → compare up to 4 schools / stalls / terminals as graphs linked to
 > the map (§3i, §3k) → decluttered map + top bar + onboarding checklist (§3j) → keyboard fixes, Keyboard & mouse list,
@@ -10,24 +10,29 @@ Orientation for a teammate (or a fresh session) picking this up. Last updated **
 > wrap (§3m) → tours in 12 chapters per role, vendor pins zoom/badge, review fixes incl. escaping feed text (§3n).
 > **UAT runs `f87fd46`** (pinned 7 Oct from a UAT screenshot; GitLab has no UAT tag, so this is evidence, not a record).
 > Waiting to deploy (one pass, `reload/UAT_DEPLOY_OCT.md`): `e738195` vendor layers + service route + vendor marker
-> colours (§3d/§3e/§3f) · `a48a84d` SAM fixes · the §3g–§3n commit. `79a3a82`'s aggregate rebuild is unconfirmed —
+> colours (§3d/§3e/§3f) · `a48a84d` SAM fixes · `852e01c` (§3g–§3n). `79a3a82`'s aggregate rebuild is unconfirmed —
 > step 2 of that runbook checks it. No raw CSV upload is needed; only `reload/schools.csv` (+APSNK) is reloaded.
 
 **▶ Next session — start here**
-0. **Committed + pushed (7 Oct).** Next commits: ask the user first; run the 8 checks (see "Run the dashboard
-   locally") before committing client changes. Keep the local-only files (below) out.
+0. **Ask the user whether the colleague has run the UAT deploy** (`reload/UAT_DEPLOY_OCT.md`, commit `852e01c`). If
+   yes: update the "UAT runs" line above and go through any failed checks. Rules for new work: ask before committing;
+   run the 8 checks (see "Run the dashboard locally") before committing client changes; keep the local-only files out.
 1. **The user tries it in a real browser** — a private window shows the first-visit flow (role picker → Skip / tour →
    checklist). The workspace menu needs a browser with `popover` (Chrome/Edge 114+, Safari 17+, Firefox 125+). Not UI
    problems, just data: most school food mix is "Unclassified"; schools have no errors-over-time series (only terminals do).
-2. **Deploy = the user pushes to GitLab, a colleague runs `reload/UAT_DEPLOY_OCT.md` on the VM** (Claude can't reach
-   it). That one runbook is the whole pass, in order: git remote fix → PBS pre-check → pull → 4 images → `schools`
+2. **Deploy = the user pushes to GitLab (done: `852e01c`), a colleague runs `reload/UAT_DEPLOY_OCT.md` on the VM**
+   (Claude can't reach it). That one runbook is the whole pass, in order: git remote fix → PBS pre-check → pull → 4 images → `schools`
    reload → both months' bundles (gates) → SAM re-paste → 17 checks (data, vendors, route, the §3g–§3n rework, SAM).
    It replaces walking VENDOR_LAYERS + SERVICE_ROUTE + the per-section "On UAT, check" lists separately.
 3. **SAM** is step 7 of that runbook: paste only after the `smartbuddy-mcp` rebuild + both bundle runs, or SAM calls a
    tool/table that doesn't exist yet. Then `mcp-service/agent-setup.md` § Verify.
 4. Chase the answers that unblock the next step (§5): service-team thresholds, who services PBS/SSSTM machines,
    meaning of the `ISP-<date>` serial, data-owner questions on RPS/CHKL/MGS/SCGS/FHPS.
-5. **User to-dos from 6 Oct:** delete `need to delete manually/` (~1.6 GB, git-ignored, holds raw data with real IDs);
+5. **Open from the 3rd session (say if wanted):** validate ID format (school / stall / terminal codes) at ingest — the
+   root fix for raw IDs that still reach `data-*` attributes unescaped (§3n; names are escaped) · tours act for real and
+   leave their pins / ticked machines behind · compare links carry no month · Stall Explorer is reachable only via
+   `window.SB.openStalls` (not in the nav, shelved earlier).
+6. **User to-dos from 6 Oct:** delete `need to delete manually/` (~1.6 GB, git-ignored, holds raw data with real IDs);
    decide whether `LINKAGE_FIX_UAT.md` + `reload/MARCH_WEARABLE.md` (done runbooks, still tracked) go; delete the
    fully-merged `feat/demo-adaptive-dashboard` branch on GitLab if wanted.
 
@@ -45,7 +50,8 @@ Run both in their own terminals: as Claude Code background tasks they are stoppe
 `sb_local.duckdb` (2 GB) was built 1 Oct from the raw `Feb-Mar_Data/` CSVs by the real `build_insights.run`; after an
 ingest-code change, rebuild it with `seed_and_build.py` (`SKIP_SEED=1` reuses the seeded tables). Also there:
 `fake_ch.py` + `route_test.mjs` (drive the real mcp-service), `shots_route.mjs` (screenshots over CDP).
-**The 6 headless-Chrome checks** (each prints one line per behaviour + "JS errors: none"; screenshots go to `<outDir>`):
+**The 8 headless-Chrome checks** (each prints one line per behaviour + "JS errors: none"; screenshots go to `<outDir>`;
+run them one after another — each starts its own Chrome):
 
 | Script | Covers | Run |
 |---|---|---|
@@ -61,7 +67,8 @@ ingest-code change, rebuild it with `seed_and_build.py` (`SKIP_SEED=1` reuses th
 A hash-only URL change doesn't reload the page — the scripts add `?r=…`. `verify_ux.pre-dock.mjs` = the old
 floating-window version. The stand-in has no `schools` table and no wearable playback (client falls back to demo).
 If the temp folder is gone, rebuild from `reload/VENDOR_LAYERS_DEPLOY.md` § Local verification. Client changes need no
-rebuild (Vite hot-reloads).
+rebuild (Vite hot-reloads). CDP gotcha: `Page.addScriptToEvaluateOnNewDocument` does nothing unless `Page.enable` was
+sent first — a test that patches the page that way passes vacuously without it (it happened to the XSS check once).
 
 **Local-only files (deliberately NOT in git):** `.agents/`, `.claude/` (speckit skills — note `.agents/rules` points at
 `.specify/memory/constitution.md`, which doesn't exist), `opencode.json` (**literal API key**, git-ignored) +
@@ -96,7 +103,7 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
 |---|---|
 | **HANDOVER.md** (this) | Current state, recent work, deploy pointer, open items |
 | **reload/UAT_DEPLOY_OCT.md** | ⭐ NEW (7 Oct) — the one-pass UAT deploy for a colleague: everything since `f87fd46`, gates, 17 checks, rollback |
-| **DASHBOARD_OVERHAUL_PLAN.md** | ⭐ NEW (7 Oct) — why + design of the docked drawer (built, §3h), the user's answers, and what followed (§3i–§3l) |
+| **DASHBOARD_OVERHAUL_PLAN.md** | ⭐ NEW (7 Oct) — why + design of the docked drawer (built, §3h), the user's answers, and what followed (§3i–§3n) |
 | **MAP_DATA_FLOW.png** | NEW (7 Oct) — one-page flowchart: CSV → upload → ClickHouse → `build_insights` → api-service → map |
 | **reload/VENDOR_LAYERS_DEPLOY.md** | ⭐ NEW (1 Oct) — deploy §3d: steps, expected numbers, rollback, open reconcile question |
 | **reload/SERVICE_ROUTE_DEPLOY.md** | ⭐ NEW (1 Oct) — deploy §3e (terminal service view, `terminal_health`, `plan_service_route`) |
@@ -509,7 +516,9 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
 
 ## 5 · Open items / decisions
 
-- **Deploy to UAT** — one pass covers everything since 15 Jul (see header + "Next session" steps 1–2).
+- **Deploy to UAT** — `reload/UAT_DEPLOY_OCT.md`, one pass for everything since `f87fd46` up to `852e01c` (colleague runs it).
+- **Security follow-up:** validate school / stall / terminal ID format at upload/ingest (`ingestion-service`), so raw IDs in
+  the dashboard's `data-*` attributes can't carry markup. Free-text names are already escaped client-side (§3n).
 - **Service team:** set `STOPPED_DAYS` / `OFFLINE_PCT` (`build_insights.py`); say whether `slow` needs a minimum volume.
 - **Account owner:** does STYL service PBS bookshop / SSSTM stamp machines? If yes → load the reviewed host placements so
   they can be routed. Ask the hardware team what the `ISP-<date>` serial date and the last letter mean.
