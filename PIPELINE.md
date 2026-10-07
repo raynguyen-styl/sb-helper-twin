@@ -7,6 +7,10 @@
 > reuse the same `taxonomy.py` + the SQL logic ported from the scripts below). See **DEPLOY.md** for
 > the live pipeline. The scripts here remain the reference for how each metric is computed + the
 > historical local artifacts.
+>
+> **6 Oct 2026:** this pipeline's inputs/outputs (`txn/`, `analysis/parquet/`, `analysis/appdata/`) were moved to
+> `need to delete manually/`, so nothing below is runnable any more, and the app no longer reads `client/src/data/`
+> (§6's `client/` rows describe the pre-ClickHouse app). Live map flow: `MAP_DATA_FLOW.png`.
 
 **Analysis scope (this file): February 2026.** March/April transactions and the May health drop were
 removed from disk on 8 Jul 2026 (see the purge note at the end). Historical quarter/May steps are

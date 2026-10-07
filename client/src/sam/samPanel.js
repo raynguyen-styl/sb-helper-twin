@@ -123,6 +123,14 @@ function applyPanelState(panel) {
   if (panelExpanded && isDesktopPanel()) requestAnimationFrame(() => focusSamInput());
 }
 
+// main.js folds SAM to its rail when the docked drawer opens a view (they share the right edge).
+export function setSamExpanded(on) {
+  const panel = document.getElementById("sam-panel");
+  if (!panel || panelExpanded === on) return;
+  panelExpanded = on;
+  applyPanelState(panel);
+}
+
 export function initSamPanel(getContext) {
   if (typeof getContext === "function") _getContext = getContext;
   if (isMobilePanel()) panelExpanded = false;
@@ -178,7 +186,7 @@ export function initSamPanel(getContext) {
   const style = document.createElement("style");
   style.id = "sam-panel-styles";
   style.textContent = `
-    #sam-panel { position: fixed; right: 0; top: 44px; bottom: 0; height: auto; z-index: 50;
+    #sam-panel { position: fixed; right: 0; top: 44px; bottom: 0; height: auto; z-index: 1100;
       background: var(--canvas); border-left: 1px solid var(--hairline); display: flex; flex-direction: column;
       font-family: var(--font-text); overflow: hidden; box-shadow: -8px 0 30px rgba(0,0,0,.07);
       transition: width .2s ease, height .2s ease; }
@@ -297,6 +305,7 @@ export function initSamPanel(getContext) {
   async function handleSend(forcedText = "") {
     const text = String((typeof forcedText === "string" ? forcedText : "") || input.value).trim();
     if (!text) return;
+    document.dispatchEvent(new CustomEvent("smartbuddy:sam-ask"));   // onboarding checklist (main.js)
     setOffline(false, input);
     if (!panelExpanded) { panelExpanded = true; applyPanelState(panel); }
 

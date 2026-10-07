@@ -3,16 +3,16 @@
 // service staff an ordered visit list. Month-aware (uses the selected month).
 // Verdicts were precomputed against school peers: bad unit + healthy peers = the
 // machine; bad unit + struggling peers = the site (location/network).
-import { openWindow, info } from './windowing.js';
+import { openWindow, closeView, info, esc } from './windowing.js';
 import { mk, opts, ax, bar, line, C } from './charts.js';
 import { vchip } from './stall-window.js';
 import { monthLabel } from './sbData.js';
+import { pinButton } from './compare.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-SG');
 const mach = (t) => t.length > 12 ? '…' + t.slice(-12) : t;
 const dayLabels = (arr) => (arr || []).map((_, i) => i + 1);   // 1..N days, matches the month's data length
 const secs = (ms) => ms == null ? '–' : (ms / 1000).toFixed(1) + 's';
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);   // feed text is data
 // problem tags (bundles built before tags existed fall back to the verdict)
 const probs = (t) => t.problems || (t.verdict && t.verdict !== 'ok' ? [t.verdict] : []);
 const TAG = { machine: ['bad', 'MACHINE FAULT'], site: ['warn', 'SITE ISSUE'], check: ['other', 'NO PEERS'],
@@ -50,10 +50,8 @@ export function openEng(DATA, preset = {}) {
         if (b) b.innerHTML = `<div class="cap">No terminal / transaction data loaded for this month yet.</div>`;
         return;
     }
-    const body = openWindow({ id: 'eng', title: 'Terminal Health', sub: `machine-vs-location diagnostics · ${monthLabel(DATA.meta.month)}`, chips: ['<span class="chip chip-flag">ENGINEERING</span>'] });
+    const body = openWindow({ id: 'eng', title: 'Terminal Health', sub: `machine-vs-location diagnostics · ${monthLabel(DATA.meta.month)}`, chips: ['<span class="chip chip-flag">ENGINEERING</span>'], wide: true });
     if (!body) return;
-    const tw = body.closest('.tw');
-    tw.style.width = '700px'; tw.style.left = '46px'; tw.style.top = '20px';
 
     const T = DATA.terminals;
     const nMach = T.filter((t) => t.verdict === 'machine').length;
@@ -120,7 +118,7 @@ export function openEng(DATA, preset = {}) {
         list.innerHTML = `<table class="mini"><tr><th></th><th>Machine</th><th>School</th><th>Stall</th><th>Net</th>
           <th style="text-align:right">Txns</th><th style="text-align:right">Err %</th>
           <th style="text-align:right">Median</th><th>Problems</th></tr>
-          ${rows.slice(0, 40).map((t) => `<tr style="cursor:pointer" data-tid="${t.id}">
+          ${rows.slice(0, 40).map((t) => `<tr class="click" role="button" tabindex="0" data-tid="${t.id}" data-sid="${t.school}">
             <td><input type="checkbox" data-pick="${t.id}" aria-label="Add ${t.id} to route" ${picked.has(t.id) ? 'checked' : ''}></td>
             <td style="font-size:10.5px"><b>${mach(t.id)}</b></td><td title="${esc(t.school_name)}">${t.school}</td>
             <td style="font-size:11px">${esc(t.storeName) || '–'}</td><td>${t.net || '–'}</td>
@@ -146,17 +144,17 @@ export function openTerminal(DATA, tid) {
     const body = openWindow({ id: `term-${tid}`, title: mach(t.id), sub: `${t.storeName || t.store} · ${t.school}`,
         chips: [vchip(t.verdict)] });
     if (!body) return;
-    body.closest('.tw').style.width = '560px';
+    pinButton(body, 'terminal', t);
 
     const diag = t.verdict === 'machine'
         ? `<b>This unit is the problem.</b> It runs ${t.err_pct}% errors while the other machines at
-           ${t.school} average ${t.peer_err}% — the location is fine. Recommend servicing/replacing this reader.`
+           ${esc(t.school)} average ${t.peer_err}% — the location is fine. Recommend servicing/replacing this reader.`
         : t.verdict === 'site'
         ? `<b>The location is the problem.</b> This unit runs ${t.err_pct}% errors, but its school peers also
            average ${t.peer_err}% — the whole site struggles (signal/network/environment), swapping the machine
-           won't fix it. Investigate ${t.school}'s connectivity.`
+           won't fix it. Investigate ${esc(t.school)}'s connectivity.`
         : t.verdict === 'check'
-        ? `Elevated readings, but there are too few peer machines at ${t.school} to separate machine from
+        ? `Elevated readings, but there are too few peer machines at ${esc(t.school)} to separate machine from
            location. Needs a field check.`
         : `Operating normally — ${t.err_pct}% errors vs ${t.peer_err ?? '–'}% school average, median ${secs(t.med_ms)}.`;
 
@@ -213,12 +211,11 @@ export function openRoute(DATA, ids) {
     }
     const stops = orderStops(START, [...bySchool.values()]);
     const total = stops.length ? stops[stops.length - 1].cum_km : 0;
-    document.querySelector('[data-win="route"]')?.remove();      // re-plan replaces the old route
+    closeView('route');      // re-plan replaces the old route
     const body = openWindow({ id: 'route', title: 'Service route',
         sub: `${stops.length} stops · ${sel.length} machines · ${monthLabel(DATA.meta.month)}`,
-        chips: ['<span class="chip chip-flag">ENGINEERING</span>'] });
+        chips: ['<span class="chip chip-flag">ENGINEERING</span>'], wide: true });
     if (!body) return;
-    body.closest('.tw').style.width = '640px';
     body.innerHTML = `
       <div class="cap" style="margin-bottom:6px">Start: <b>${START.name}</b>, ${START.address} → nearest next school each time.
         <b>${total} km</b> straight-line ${info(`Distances are straight-line, not driving routes. Problems describe ${monthLabel(DATA.meta.month)}'s data, not today.`)}</div>

@@ -14,6 +14,27 @@ export const CAT_COLOR = {
     'Mixed': C.aqua, 'Bookshop & Supplies': C.violet, 'Unclassified': C.muted,
 };
 export const LV_COLOR = { Primary: C.blue, Secondary: C.aqua, 'Junior College': C.violet, Other: C.muted };
+// Status (good / watch / bad) for map dots + chart marks — Okabe-Ito, readable with colour-blindness
+// (old red/green was not). Text uses the darker --good/--warn/--bad tokens in theme.css (≥4.5:1).
+export const ST = { good: '#009E73', warn: '#E69F00', bad: '#D55E00' };
+
+// Shade x-axis categories (holiday days/weeks) behind the data. `hit(label)` → true to shade.
+// No plugin dependency: fills each hit category's slot in beforeDatasetsDraw.
+export const shade = (hit) => ({
+    id: 'shade',
+    beforeDatasetsDraw(ch) {
+        const { ctx, chartArea: a, scales: { x } } = ch;
+        const labels = ch.data.labels || [];
+        const step = labels.length > 1 ? Math.abs(x.getPixelForValue(1) - x.getPixelForValue(0)) : a.right - a.left;
+        ctx.save(); ctx.fillStyle = 'rgba(125,95,211,.10)';
+        labels.forEach((l, i) => {
+            if (!hit(l, i)) return;
+            const px = x.getPixelForValue(i), l0 = Math.max(a.left, px - step / 2), r0 = Math.min(a.right, px + step / 2);
+            ctx.fillRect(l0, a.top, r0 - l0, a.bottom - a.top);
+        });
+        ctx.restore();
+    },
+});
 
 Chart.defaults.font.family = 'system-ui,-apple-system,"Segoe UI",sans-serif';
 Chart.defaults.font.size = 10.5;
@@ -40,5 +61,11 @@ export const bar = (c) => ({ backgroundColor: c, borderRadius: 3, borderSkipped:
 export const line = (c, e = {}) => ({ borderColor: c, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
     pointHoverBackgroundColor: c, tension: 0.25, fill: false, ...e });
 
-export function mk(canvas, cfg) { return new Chart(canvas, cfg); }
+// Every chart gets role=img + its heading as the accessible name (screen readers skip bare canvases).
+export function mk(canvas, cfg) {
+    const h = canvas.closest('.cwrap')?.previousElementSibling;
+    canvas.setAttribute('role', 'img');
+    if (h && !canvas.hasAttribute('aria-label')) canvas.setAttribute('aria-label', h.textContent.replace(/ⓘ/g, '').trim());
+    return new Chart(canvas, cfg);
+}
 export { Chart };

@@ -14,15 +14,18 @@
     <nav class="nav">
       <span class="brand"><img src="/icon.png" alt="" class="brand-logo" /><span class="brand-txt"><span class="brand-name">SMART Buddy</span><span class="brand-sub"> — Network &amp; Spending Intelligence</span></span></span>
       <div class="nav-right">
-        <input id="search" class="search" placeholder="Search school, stall or machine…" autocomplete="off" />
+        <input id="search" class="search" placeholder="Search school, stall or machine…" autocomplete="off"
+          role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" aria-label="Search school, stall or machine" />
         <div id="nav-views" class="nav-views"></div>
       </div>
     </nav>
     <div class="stage">
       <div id="map"></div>
-      <div class="filterbar" id="filterbar" aria-label="Map layers"></div>
-      <div class="legend" id="legend"></div>
-      <div id="search-results" class="search-results"></div>
+      <div class="maptop"><div id="compare-row" class="compare-row" aria-label="Pinned for comparison"></div></div>
+      <div class="mapbl"><div id="onboard" class="onboard" role="region" aria-label="Getting started" hidden></div>
+        <div class="legend" id="legend" aria-label="Map key and layers"></div></div>
+      <div id="search-results" class="search-results" role="listbox" aria-label="Search results"></div>
+      <aside id="dock" class="dock" aria-label="Details panel"><div class="dock-bar"></div><div class="dock-views"></div></aside>
       <div id="tw-layer" class="tw-layer"></div>
     </div>
   </div>

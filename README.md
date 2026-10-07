@@ -20,7 +20,7 @@ The dataset: **~4.0M canteen transactions/month** (334 schools) + **wearable rec
 
 | File / folder | What it is | How to view |
 |---|---|---|
-| `client/` | **Interactive insights app** (tree-digital-twin style), **February 2026 only** (tentative, 7 Jul — every window reads the same month) with a **role-based hub** — pick F&B / Engineering / Management and the nav shows that team's views. Windows: map + school details (per-school window: **revenue-by-stall bars**, every store individually, + a **Terminals tab** with each machine tagged to its stall and its machine-vs-site verdict), Network Overview (signal shown as plain-language quality bands; food charts read within name-verified volume), **Terminal Health** (2,604 machines with fault verdicts vs school peers), **February Insights** (day-type × user-segment × firmware × level filters), plus a **Playback** window and a **SAM chat** panel. **Stall Explorer is shelved from the nav** (no item/SKU data — revisit when a menu/itemID feed exists); per-stall detail stays reachable via school windows, search and `#stall=` links. Unified search; everything cross-linked & deep-linkable (`#role=eng`, `#terminal=…`, `#feb=cny`) | **Dev:** `cd client && npm install && npm run dev` → http://localhost:5188 (own port; 5173 belongs to the tree-digital-twin project). **Team-shareable:** containerized (`Dockerfile` + repo-root `docker-compose.yml`) as a Vite→nginx site with Keycloak login + Playback via api-service — `docker compose up -d --build` → :8097. Full runbook in **DEPLOY.md** |
+| `client/` | **Interactive insights app** (tree-digital-twin style) for **Feb + March 2026**, switched by a top-bar **month picker**, with a **role-based hub** — pick F&B / Engineering / Management and the nav shows that team's views. Windows: OneMap map (school dots + PBS bookstore / stamp-point layers) + school details (revenue-by-stall, **Terminals tab** with machine-vs-site verdicts), Network Overview, **Terminal Health** + service route, **Wearables** (Feb + Mar), **Purchases** + **Saving** (Mar), **Playback**, **Upload**, and a **SAM chat** panel. Overview rows/bars are clickable (fly to the school, open the terminal, filter by type) and table rows ↔ map dots are hover-linked; keyboard-usable, colour-blind-safe status colours. Views open in one drawer docked right of the map (Back + breadcrumbs; the map pads so fly-to lands in view; a bottom sheet below 1100px). **Compare** up to 4 schools, stalls or terminals: a slim pinned tray (Shift-click dots), the map zooms to fit them, + side-by-side graphs per topic (Spend / Errors / Speed / Network / Food) that follow the map's colour-by. One collapsible map key doubles as the layer filter; new viewers get a self-ticking 3-step checklist and an opt-in 6-step spotlight tour (replay from the ▾ menu). All controls: ▾ menu → Keyboard & mouse, or `?`. All data is fetched per month from api-service (nothing bundled); how the map view is built: `MAP_DATA_FLOW.png`. Unified search; deep-linkable (`#role=eng`, `#school=…`, `#terminal=…`, `#layers=…`) | **Dev:** `cd client && npm install && npm run dev` → http://localhost:5188 — needs an API to show data (HANDOVER.md "Run the dashboard locally"). **Team-shareable:** containerized (`Dockerfile` + repo-root `docker-compose.yml`) as a Vite→nginx site with Keycloak login — `docker compose up -d --build` → :8097. Full runbook in **DEPLOY.md** |
 | `SMART_Buddy_Dashboard.html` ⧗ | Main insights dashboard — KPIs, clusters, transactions, activity, heart rate, cross-dataset patterns, **data-quality report** (26 issue types) | double-click (offline, self-contained) |
 | `SMART_Buddy_Anomaly_Patterns.html` ⧗ | Root-cause drill-down of every anomaly family + prioritized action list | double-click |
 | `SMART_Buddy_Health_Anomaly_Patterns.html` ⧗ | Health-only subset of the anomaly report (payment content stripped — for the wearable supplier) | double-click |
@@ -33,8 +33,9 @@ The dataset: **~4.0M canteen transactions/month** (334 schools) + **wearable rec
 
 ⧗ = **frozen historical artifact.** Built from the May health drop and/or the Feb–Apr quarter
 transactions, both removed in the 8 Jul Feb-only purge. The shipped file is unaffected but can
-**no longer be regenerated** without re-downloading the source drops. Everything unmarked is
-Feb-scoped and fully rebuildable from the data on disk.
+**no longer be regenerated** without re-downloading the source drops. *(Since 6 Oct the unmarked root
+reports can't be regenerated either — the offline pipeline's inputs moved to `need to delete manually/`.
+The live dashboard is unaffected: it builds from ClickHouse.)*
 
 Shareable links (claude.ai artifacts, enable sharing before forwarding):
 - Dashboard: https://claude.ai/code/artifact/bb33efc8-4bfd-404d-8d36-68f82741e2f3
@@ -66,8 +67,8 @@ Pieces:
   renders) + Playback series (`pb_*` tables), as the read-only `smartbuddy_ro` user.
 - **Dashboard** (`client/`): map + per-school/stall/terminal windows, Network Overview, Terminal Health,
   **Wearables** (Feb + March), **Purchases & Nutrition** + **Saving vs Spending** (March), a **Playback** window
-  and a **SAM chat** panel — each fetched per selected month. A **data-coverage strip** by the month
-  picker shows which datasets each month has (the platform adapts, never errors on a gap). Where a month
+  and a **SAM chat** panel — each fetched per selected month. A **"Not this month" chip** by the month
+  picker names any dataset a month lacks (the platform adapts, never errors on a gap). Where a month
   has both transactions and receipts, the ~99% basket→stall→card link surfaces **"what each stall
   actually sells"** + per-card habits, and Saving-vs-Spending shows a **wallet↔savings cross-check**.
 - **Data assistant** (`mcp-service` = `smartbuddy-mcp`): a **SAM agent** answers NL questions by writing

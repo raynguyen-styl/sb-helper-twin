@@ -123,7 +123,7 @@ docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile inges
 
 # 4c. Load data: open the dashboard → "Upload data" (chunked, any size), per month + dataset;
 #     OR from a machine holding the files:  bash scripts/vm-load.sh <file> <dataset> <YYYY-MM> [replace|append] [rebuild]
-#     Datasets: transactions, txn_perf, health, heart_rate (Feb) · items, saving_spending (March) · schools.
+#     Datasets: transactions, txn_perf, health, heart_rate (Feb + March) · items, saving_spending (March) · schools.
 
 # 4d. Build each month's dashboard insight bundles (upload auto-triggers this; run manually to force):
 SB_MONTH=2026-03 docker compose -f docker-compose.yml -f docker-compose.agent.yml --profile ingest run --rm ch-insights

@@ -1,7 +1,7 @@
 // Purchases & Nutrition window (March+) — line-item view: what students actually bought, the
 // Healthier-Choice split, calories, item types and the top items. Reads the precomputed `items`
 // bundle (ingestion-service/build_insights.py → ClickHouse). Empty/absent → a friendly note.
-import { openWindow, info } from './windowing.js';
+import { openWindow, info, esc } from './windowing.js';
 import { mk, opts, ax, bar, C } from './charts.js';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-SG');
@@ -11,9 +11,8 @@ const kill = () => { charts.forEach((c) => c.destroy()); charts = []; };
 
 export function openItems(ITEMS, tab) {
     const body = openWindow({ id: 'items', title: 'Purchases & Nutrition',
-        sub: 'what students bought · Healthier Choice · calories', chips: [], onClose: kill });
+        sub: 'what students bought · Healthier Choice · calories', chips: [], onClose: kill, wide: true });
     if (!body) return;
-    const tw = body.closest('.tw'); if (tw) { tw.style.width = '720px'; tw.style.left = '40px'; tw.style.top = '14px'; }
 
     if (!ITEMS || !ITEMS.meta) {
         body.innerHTML = `<div class="cap">No purchase-item data for this month. Upload the
@@ -149,8 +148,8 @@ function renderLinkage(pane, ITEMS) {
     pane.insertAdjacentHTML('beforeend', `<table class="mini">
       <tr><th>Stall</th><th>School</th><th class="num">Units</th><th class="num">Revenue</th>
       <th>Type mix (drink/food/book)</th><th class="num">Healthy %</th></tr>
-      ${stalls.map((s) => `<tr style="cursor:pointer" data-sid="${s.storeId}">
-        <td>${s.name || s.storeId}</td><td>${s.schoolId}</td><td class="num">${fmt(s.units)}</td>
+      ${stalls.map((s) => `<tr class="click" role="button" tabindex="0" data-sid="${s.storeId}">
+        <td>${esc(s.name || s.storeId)}</td><td>${esc(s.schoolId)}</td><td class="num">${fmt(s.units)}</td>
         <td class="num">${fmt$(s.rev)}</td><td>${mixBar(s.drink_sh, s.food_sh, s.book_sh)}</td>
         <td class="num">${s.healthy_sh ?? '–'}</td></tr>`).join('')}</table>`);
     pane.querySelectorAll('tr[data-sid]').forEach((tr) =>
@@ -162,7 +161,7 @@ function renderTop(pane, ITEMS) {
     pane.insertAdjacentHTML('beforeend', `<div class="cap" style="margin:4px 0 6px">Top 40 items by units sold.</div>
       <table class="mini"><tr><th>Item</th><th class="num">Units</th><th class="num">Revenue</th>
       <th class="num">Avg cal</th><th>HCS</th></tr>
-      ${t.map((x) => `<tr><td>${x.name}</td><td class="num">${fmt(x.qty)}</td>
+      ${t.map((x) => `<tr><td>${esc(x.name)}</td><td class="num">${fmt(x.qty)}</td>
         <td class="num">${fmt$(x.rev)}</td><td class="num">${x.avg_cal ?? '–'}</td>
         <td>${x.healthy === 1 ? '✅' : ''}</td></tr>`).join('')}</table>`);
 }

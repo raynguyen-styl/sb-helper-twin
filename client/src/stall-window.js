@@ -1,9 +1,10 @@
 // Stall Explorer — browse every canteen stall by school, category, price band or
 // machine number; click through to a per-stall detail window. Month-aware (uses the selected month).
 // Filtering is client-side over the precomputed stalls array (no backend).
-import { openWindow, info } from './windowing.js';
+import { openWindow, info, esc } from './windowing.js';
 import { mk, opts, ax, bar, line, C, CAT_COLOR } from './charts.js';
 import { monthLabel, monthName, isCNYMonth } from './sbData.js';
+import { pinButton } from './compare.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-SG');
 const fmt$ = (v) => v >= 1e6 ? '$' + (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? '$' + Math.round(v / 1e3).toLocaleString() + 'K' : '$' + Math.round(v);
@@ -12,15 +13,13 @@ const mach = (t) => t.length > 12 ? '…' + t.slice(-12) : t;
 let charts = [];
 
 export function openStallExplorer(DATA, preset = {}) {
-    const body = openWindow({ id: 'stalls', title: 'Stall Explorer', sub: `every stall & machine · ${monthLabel(DATA.meta.month)}`, chips: ['<span class="chip chip-sec">F&B</span>'] });
+    const body = openWindow({ id: 'stalls', title: 'Stall Explorer', sub: `every stall & machine · ${monthLabel(DATA.meta.month)}`, chips: ['<span class="chip chip-sec">F&B</span>'], wide: true });
     if (!body) {
         // window already open — re-apply preset filters if given
         const w = document.querySelector('[data-win="stalls"] .tw-body');
         if (w && preset.school) { w.querySelector('#st-q').value = preset.school; w.querySelector('#st-q').dispatchEvent(new Event('input')); }
         return;
     }
-    const tw = body.closest('.tw');
-    tw.style.width = '680px'; tw.style.left = '46px'; tw.style.top = '20px';
 
     const m = DATA.meta;
     let cat = 'All', band = -1, sort = 'rev', qtext = preset.school || '';
@@ -81,10 +80,10 @@ export function openStallExplorer(DATA, preset = {}) {
         count.textContent = `${fmt(rows.length)} stalls match · ${fmt$(tot.rev)} · ${fmt(tot.n)} txns — showing top ${Math.min(40, rows.length)}`;
         list.innerHTML = `<table class="mini"><tr><th>Stall</th><th>School</th><th>Machine</th><th>Category</th>
           <th style="text-align:right">Revenue</th><th style="text-align:right">Txns</th><th style="text-align:right">Ticket</th></tr>
-          ${rows.slice(0, 40).map((s) => `<tr style="cursor:pointer" data-sid="${s.id}">
-            <td><b>${s.name}</b></td><td>${s.school}</td>
+          ${rows.slice(0, 40).map((s) => `<tr class="click" role="button" tabindex="0" data-sid="${s.id}">
+            <td><b>${esc(s.name)}</b></td><td>${esc(s.school)}</td>
             <td style="font-size:10.5px">${s.terms.map(mach).join('<br>')}</td>
-            <td style="white-space:nowrap">${CAT_CHIP(s.cat)}${s.cat}</td>
+            <td style="white-space:nowrap">${CAT_CHIP(s.cat)}${esc(s.cat)}</td>
             <td class="num">${fmt$(s.rev)}</td><td class="num">${fmt(s.n)}</td>
             <td class="num">$${s.ticket.toFixed(2)}</td></tr>`).join('')}</table>`;
         list.querySelectorAll('tr[data-sid]').forEach((tr) =>
@@ -97,9 +96,9 @@ export function openStall(DATA, sid) {
     const s = DATA.stalls.find((x) => x.id === sid);
     if (!s) return;
     const body = openWindow({ id: `stall-${sid}`, title: s.name, sub: `${s.id} · ${s.school} · ${s.level}`,
-        chips: [`<span class="chip chip-sec">${s.school === 'SSSTM' ? 'Stamp point' : s.cat}</span>`] });
+        chips: [`<span class="chip chip-sec">${s.school === 'SSSTM' ? 'Stamp point' : esc(s.cat)}</span>`] });
     if (!body) return;
-    body.closest('.tw').style.width = '560px';
+    pinButton(body, 'stall', s);
 
     const terms = s.terms.map((tid) => DATA.terminals.find((t) => t.id === tid)).filter(Boolean);
     // vendor stall → its host school(s): one ID, both section IDs (campus), or none if unconfirmed
@@ -127,7 +126,7 @@ export function openStall(DATA, sid) {
       <h5 style="margin-top:10px">This stall's machine${terms.length > 1 ? 's' : ''}</h5>
       <table class="mini"><tr><th>Machine</th><th>Net</th><th style="text-align:right">Err %</th>
         <th style="text-align:right">Median</th><th>Status</th></tr>
-        ${terms.map((t) => `<tr style="cursor:pointer" data-tid="${t.id}"><td style="font-size:10.5px"><b>${mach(t.id)}</b></td>
+        ${terms.map((t) => `<tr class="click" role="button" tabindex="0" data-tid="${t.id}"><td style="font-size:10.5px"><b>${mach(t.id)}</b></td>
           <td>${t.net || '–'}</td><td class="num">${t.err_pct}%</td>
           <td class="num">${t.med_ms ? (t.med_ms / 1000).toFixed(1) + 's' : '–'}</td>
           <td>${vchip(t.verdict)}</td></tr>`).join('')}</table>

@@ -1,8 +1,9 @@
 // Per-school detail window: Stalls & Spending / Terminals tabs. Month-aware (uses the selected month).
-import { openWindow, info } from './windowing.js';
+import { openWindow, info, esc } from './windowing.js';
 import { mk, opts, ax, line, C, CAT_COLOR } from './charts.js';
 import { vchip } from './stall-window.js';
 import { monthLabel, monthName } from './sbData.js';
+import { pinButton } from './compare.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-SG');
 const fmt$ = (v) => v >= 1e6 ? '$' + (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? '$' + (v / 1e3).toFixed(1) + 'k' : '$' + Math.round(v);
@@ -26,16 +27,19 @@ export function openSchool(s, GLOBAL, STALLS) {
         chips,
     });
     if (!body) return;
+    pinButton(body, 'school', s);
 
     body.innerHTML = `
       <div class="stats">
         ${stat(s.spend_day != null ? '$' + s.spend_day.toFixed(2) : '–', 'spend / card·day')}
-        ${stat('$' + s.avg_ticket.toFixed(2), 'avg ticket')}
         ${stat(fmt(s.n), `${monthName(GLOBAL.meta.month)} transactions`)}
-        ${stat(s.cards ? fmt(s.cards) : '–', 'cards')}
         ${stat(pctCell(s.err_pct, 5, 10), 'error rate')}
         ${stat(s.med_ms ? (s.med_ms / 1000).toFixed(1) + 's' : '–', 'median txn')}
       </div>
+      <details class="more-stats"><summary>More numbers</summary><div class="stats">
+        ${stat('$' + s.avg_ticket.toFixed(2), 'avg ticket')}
+        ${stat(s.cards ? fmt(s.cards) : '–', 'cards')}
+      </div></details>
       <div class="tabs">
         <button data-tab="spend" class="on">Stalls &amp; Spending</button>
         <button data-tab="terms">Terminals</button>
@@ -75,10 +79,10 @@ function renderSpend(el, s, STALLS) {
       <div class="cwrap" style="height:${Math.max(120, 26 + stalls.length * 21)}px"><canvas></canvas></div>
       <div class="cap" style="margin-top:4px">${stalls.length} stalls · ${named.length} with a descriptive name.</div>
       ${books.map((b) => `<div class="note-box" style="margin-top:8px;cursor:pointer" data-stall="${b.id}">
-        <b>Bookshop here:</b> ${b.name} · ${fmt$(b.rev)} · ${fmt(b.n)} txns ${info(`Run by Pacific Bookstores and filed
+        <b>Bookshop here:</b> ${esc(b.name)} · ${fmt$(b.rev)} · ${fmt(b.n)} txns ${info(`Run by Pacific Bookstores and filed
         under vendor ID PBS, so it is not counted in this school's canteen figures above. Click to open.`)}</div>`).join('')}
       ${maybe.map((b) => `<div class="note-box" style="margin-top:8px;cursor:pointer" data-stall="${b.id}">
-        <span class="pill-warn">Unconfirmed</span> ${b.name} may be this campus's bookshop ${info(b.evidence || '')}</div>`).join('')}`;
+        <span class="pill-warn">Unconfirmed</span> ${esc(b.name)} may be this campus's bookshop ${info(b.evidence || '')}</div>`).join('')}`;
     el.querySelectorAll('[data-stall]').forEach((d) => d.addEventListener('click', () => window.SB?.openStall(d.dataset.stall)));
     const [c1, c2] = el.querySelectorAll('canvas');
     const wk = [...(s.wk_spend || [])].sort((a, b) => a.week.localeCompare(b.week));
@@ -120,9 +124,9 @@ function renderTerms(el, s, STALLS) {
         <th style="text-align:right">Txns</th><th style="text-align:right">Median</th>
         <th style="text-align:right">Err %</th><th>Diagnosis</th></tr>
         ${terms.map((t) => { const q = t.net === 'WIFI' ? null : sigQual(t.sig);
-            return `<tr style="cursor:pointer" data-tid="${t.id}">
+            return `<tr class="click" role="button" tabindex="0" data-tid="${t.id}">
           <td style="font-size:10.5px"><b>${mach(t.id)}</b></td>
-          <td style="font-size:11px">${t.storeName || '–'}</td><td>${t.net || '–'}</td>
+          <td style="font-size:11px">${esc(t.storeName || '–')}</td><td>${t.net || '–'}</td>
           <td>${t.net === 'WIFI' ? (t.rssi != null ? t.rssi + ' dBm' : '–')
               : q ? `<span class="${SIG_STYLE[q]}">${q}</span>` : '–'}</td>
           <td class="num">${fmt(t.n)}</td>

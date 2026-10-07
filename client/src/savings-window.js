@@ -11,9 +11,8 @@ const kill = () => { charts.forEach((c) => c.destroy()); charts = []; };
 
 export function openSavings(SAV, _preset) {
     const body = openWindow({ id: 'savings', title: 'Saving vs Spending',
-        sub: 'per-student monthly saving and spending', chips: [], onClose: kill });
+        sub: 'per-student monthly saving and spending', chips: [], onClose: kill, wide: true });
     if (!body) return;
-    const tw = body.closest('.tw'); if (tw) { tw.style.width = '680px'; tw.style.left = '40px'; tw.style.top = '14px'; }
 
     if (!SAV || !SAV.totals) {
         body.innerHTML = `<div class="cap">No saving/spending data for this month. Upload the

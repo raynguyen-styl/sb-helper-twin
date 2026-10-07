@@ -4,6 +4,7 @@
 // month's partition, then rebuilds the aggregates. You can select SEVERAL files for one dataset
 // (e.g. Feb health ships as 6 parts) — the first REPLACES the month, the rest APPEND, and the
 // aggregate rebuild runs once at the end. Keycloak-gated at the client nginx (Bearer).
+import { esc } from './windowing.js';
 import { authReady, authToken } from './auth.js';
 
 const INGEST = '/smartbuddy-ingest';          // same-origin; client nginx proxies to smartbuddy-ingest
@@ -15,9 +16,9 @@ const DEFAULT_DATASETS = [
   { id: 'transactions', label: 'Canteen transactions', months: 'Feb + March', hint: 'Card/student ids are hashed and names dropped server-side. Also fills network-speed; rebuilds the map, overview, stalls + Playback.' },
   { id: 'items', label: 'Student purchase items', months: 'March', hint: 'Student id hashed. Feeds Purchases & Nutrition (calories, Healthier-Choice).' },
   { id: 'saving_spending', label: 'Student saving vs spending', months: 'March', hint: 'User id hashed. Feeds the Saving vs Spending view.' },
-  { id: 'health', label: 'Wearable activity (30-min)', months: 'Feb', hint: 'User ids hashed. Rebuilds the wearable Playback series.' },
-  { id: 'heart_rate', label: 'Heart rate (hourly)', months: 'Feb', hint: 'user_id + sync_id hashed.' },
-  { id: 'txn_perf', label: 'Transaction network speed', months: 'Feb', hint: 'No personal ids; per-transaction speed components (ms).' },
+  { id: 'health', label: 'Wearable activity (30-min)', months: 'Feb + March', hint: 'User ids hashed. Rebuilds the wearable Playback series.' },
+  { id: 'heart_rate', label: 'Heart rate (hourly)', months: 'Feb + March', hint: 'user_id + sync_id hashed.' },
+  { id: 'txn_perf', label: 'Transaction network speed', months: 'Feb + March', hint: 'No personal ids; per-transaction speed components (ms).' },
   { id: 'schools', label: 'School dimension (MOE)', months: 'shared', hint: 'No personal ids; school metadata (level / zone / lat-lng).' },
 ];
 
@@ -154,7 +155,7 @@ export function openUpload(onDone) {
 
     const renderFiles = () => {
         filesEl.innerHTML = files.map((f, i) =>
-            `<div class="up-file"><span class="up-name">${f.name} · ${fmtBytes(f.size)}</span>
+            `<div class="up-file"><span class="up-name">${esc(f.name)} · ${fmtBytes(f.size)}</span>
              <button class="x" data-i="${i}" title="Remove">✕</button></div>`).join('');
         filesEl.querySelectorAll('.x').forEach((b) =>
             b.addEventListener('click', () => { files.splice(+b.dataset.i, 1); renderFiles(); }));

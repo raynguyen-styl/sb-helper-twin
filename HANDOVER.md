@@ -1,29 +1,76 @@
 # HANDOVER — SMART Buddy Dashboard
 
-Orientation for a teammate (or a fresh session) picking this up. Last updated **6 Oct 2026**.
+Orientation for a teammate (or a fresh session) picking this up. Last updated **7 Oct 2026** (3rd session: polish + deploy runbook).
 
-> **1 Oct session work (§3d + §3e) is committed & pushed (6 Oct) but NOT on UAT** — vendor layers, dashboard filter
-> fix, daily-chart fix, copy pass, APSN Katong (§3d) **and the terminal service view + service route (§3e)**, plus
-> §3f. Deploy with `reload/VENDOR_LAYERS_DEPLOY.md` + `reload/SERVICE_ROUTE_DEPLOY.md` (same images, one pass).
+> **State:** everything up to §3n is **committed and pushed to `origin/main`** (7 Oct, 3rd session; `git log -1`):
+> the whole dashboard rework, frontend only (no API, ingest or SAM change): interactivity + accessibility (§3g) →
+> docked drawer instead of floating windows (§3h) → compare up to 4 schools / stalls / terminals as graphs linked to
+> the map (§3i, §3k) → decluttered map + top bar + onboarding checklist (§3j) → keyboard fixes, Keyboard & mouse list,
+> 2D-only map (§3l) → polish: grey "No data" dots, no repeated drawer title, shareable compare links, long names
+> wrap (§3m) → tours in 12 chapters per role, vendor pins zoom/badge, review fixes incl. escaping feed text (§3n).
+> **UAT runs `f87fd46`** (pinned 7 Oct from a UAT screenshot; GitLab has no UAT tag, so this is evidence, not a record).
+> Waiting to deploy (one pass, `reload/UAT_DEPLOY_OCT.md`): `e738195` vendor layers + service route + vendor marker
+> colours (§3d/§3e/§3f) · `a48a84d` SAM fixes · the §3g–§3n commit. `79a3a82`'s aggregate rebuild is unconfirmed —
+> step 2 of that runbook checks it. No raw CSV upload is needed; only `reload/schools.csv` (+APSNK) is reloaded.
 
 **▶ Next session — start here**
-1. Don't force-push `main`.
-2. Deploy §3d + §3e + §3f on UAT in one pass (`VENDOR_LAYERS_DEPLOY.md` then `SERVICE_ROUTE_DEPLOY.md` verify list).
-3. Chase the answers that unblock the next step (§5): service-team thresholds, who services PBS/SSSTM machines,
+0. **Committed + pushed (7 Oct).** Next commits: ask the user first; run the 8 checks (see "Run the dashboard
+   locally") before committing client changes. Keep the local-only files (below) out.
+1. **The user tries it in a real browser** — a private window shows the first-visit flow (role picker → Skip / tour →
+   checklist). The workspace menu needs a browser with `popover` (Chrome/Edge 114+, Safari 17+, Firefox 125+). Not UI
+   problems, just data: most school food mix is "Unclassified"; schools have no errors-over-time series (only terminals do).
+2. **Deploy = the user pushes to GitLab, a colleague runs `reload/UAT_DEPLOY_OCT.md` on the VM** (Claude can't reach
+   it). That one runbook is the whole pass, in order: git remote fix → PBS pre-check → pull → 4 images → `schools`
+   reload → both months' bundles (gates) → SAM re-paste → 17 checks (data, vendors, route, the §3g–§3n rework, SAM).
+   It replaces walking VENDOR_LAYERS + SERVICE_ROUTE + the per-section "On UAT, check" lists separately.
+3. **SAM** is step 7 of that runbook: paste only after the `smartbuddy-mcp` rebuild + both bundle runs, or SAM calls a
+   tool/table that doesn't exist yet. Then `mcp-service/agent-setup.md` § Verify.
+4. Chase the answers that unblock the next step (§5): service-team thresholds, who services PBS/SSSTM machines,
    meaning of the `ISP-<date>` serial, data-owner questions on RPS/CHKL/MGS/SCGS/FHPS.
-4. Local test harness (no Docker/WSL/ClickHouse on this laptop) — scripts are in the 1 Oct session scratchpad,
-   **not the repo**: `%LOCALAPPDATA%\Temp\claude\c--Users-STYLSG-Downloads-Smart-Buddy-Dashboard\59c05f86-5ca5-4db1-965b-ce8a795969fb\scratchpad\local\`
-   — `seed_and_build.py` (DuckDB stand-in running the real `build_insights.run`; `SKIP_SEED=1` reuses the seeded
-   2 GB `sb_local.duckdb`), `local_api.py` (api-service stand-in), `fake_ch.py` + `route_test.mjs` (drive the real
-   mcp-service), `shots_route.mjs` (headless-Chrome screenshots). Temp folders can be cleaned — if gone, rebuild from
-   the descriptions in `reload/VENDOR_LAYERS_DEPLOY.md` § Local verification. Run the client against it with
-   `VITE_SB_API_URL=http://127.0.0.1:<port> npx vite --port <other than 5188>`.
+5. **User to-dos from 6 Oct:** delete `need to delete manually/` (~1.6 GB, git-ignored, holds raw data with real IDs);
+   decide whether `LINKAGE_FIX_UAT.md` + `reload/MARCH_WEARABLE.md` (done runbooks, still tracked) go; delete the
+   fully-merged `feat/demo-adaptive-dashboard` branch on GitLab if wanted.
 
-`main` has the **basemap Carto → OneMap** fix (`8a5d7df`) plus the **marker-contrast + drag-limit** follow-up (§3c). Everything below is **committed & pushed**;
-`279f3ec` was the last build confirmed live on UAT (15 Jul). Whether the later commits (`21f1e16` map
-expansion, `79a3a82` PBS fix, `8a5d7df` basemap) have reached UAT is **unconfirmed — check the VM
-before assuming.** One screen: what the system is, what changed most recently, how to deploy, and
-what's open.
+**Dashboard controls** (source of truth: `client/src/shortcuts.js`, shown in-app via ▾ menu → Keyboard & mouse, or `?`):
+click a dot = open · **Shift-click = add to Compare** · drag / scroll = pan / zoom (no rotate or tilt — 2D only) ·
+**Esc = Back** in the drawer · search ↑ ↓ Enter Esc · compare topics ← → Home End · tours: ▾ menu → Tours…, or "▶ Tour" in a view's header.
+
+**Run the dashboard locally** (no Docker/WSL/ClickHouse on this laptop). The harness lives in the 1 Oct session
+scratchpad, **not the repo**: `%LOCALAPPDATA%\Temp\claude\c--Users-STYLSG-Downloads-Smart-Buddy-Dashboard\59c05f86-5ca5-4db1-965b-ce8a795969fb\scratchpad\local\`
+```
+python local_api.py sb_local.duckdb 8787                                     # in the harness folder (own terminal)
+cd client && VITE_SB_API_URL=http://127.0.0.1:8787 npx vite --port 5189 --strictPort   # → http://localhost:5189
+```
+Run both in their own terminals: as Claude Code background tasks they are stopped after at most 2 hours.
+`sb_local.duckdb` (2 GB) was built 1 Oct from the raw `Feb-Mar_Data/` CSVs by the real `build_insights.run`; after an
+ingest-code change, rebuild it with `seed_and_build.py` (`SKIP_SEED=1` reuses the seeded tables). Also there:
+`fake_ch.py` + `route_test.mjs` (drive the real mcp-service), `shots_route.mjs` (screenshots over CDP).
+**The 6 headless-Chrome checks** (each prints one line per behaviour + "JS errors: none"; screenshots go to `<outDir>`):
+
+| Script | Covers | Run |
+|---|---|---|
+| `verify_ux.mjs` | §3g interactions + drawer (§3h): SAM rail, map padding, Back keeps tab/scroll, fly-to, sheet, hub | `node verify_ux.mjs <outDir> http://localhost:5189/` |
+| `verify_compare.mjs` | pins, zoom-to-fit, rings, topics ↔ map colour, charts, numbers, stalls, terminals | same args |
+| `verify_declutter.mjs` | first visit, Skip, ▾ menu, Map key filter/Reset/collapse, checklist, Shift-click, Feb chip | same args |
+| `verify_tour.mjs` | tour: no auto-start, each step's target + card, Back/arrows/Esc/Done, focus, Engineering, narrow | same args |
+| `verify_2d.mjs` | no rotate/tilt by right-drag, Ctrl-drag, Shift+arrows; no compass | `node verify_2d.mjs http://localhost:5189/` |
+| `verify_keys.mjs` | search combobox, drawer Esc (not over menu/upload/tour/typing), compare tabs, `?` list | same as 2d (`OUT=<dir>` for its screenshot) |
+| `verify_polish.mjs` | §3m/§3n: grey No-data dot + key row, one view = no crumb, long name wraps, compare link (slots, fit, crafted/malformed links), vendor pins (PBS/stamps/their machines), compare reopen/unpin, fast month switch, feed text injected as markup never runs | same as keys |
+| `verify_chapters.mjs` | §3n: per role the Tours list, then every step of every chapter (target found, card on screen), Next tour, ▶ Tour | same as keys |
+
+A hash-only URL change doesn't reload the page — the scripts add `?r=…`. `verify_ux.pre-dock.mjs` = the old
+floating-window version. The stand-in has no `schools` table and no wearable playback (client falls back to demo).
+If the temp folder is gone, rebuild from `reload/VENDOR_LAYERS_DEPLOY.md` § Local verification. Client changes need no
+rebuild (Vite hot-reloads).
+
+**Local-only files (deliberately NOT in git):** `.agents/`, `.claude/` (speckit skills — note `.agents/rules` points at
+`.specify/memory/constitution.md`, which doesn't exist), `opencode.json` (**literal API key**, git-ignored) +
+`.opencode.json` (reads `litellmkey.txt`, git-ignored), `Coding_LiteLLM_STYL_Guide_v1.2.docx`, `FINDINGS_COMPENDIUM.md`,
+`Generalinformationofschools.csv` (MOE directory, cited as evidence), `analysis/taxonomy_v3_draft.py`.
+**GitLab CLI:** `glab` is installed but not logged in to `git.styl.solutions` (`glab auth login --hostname
+git.styl.solutions`, user does this) — until then only plain git (fetch/push over VPN) works.
+
+One screen: what the system is, what changed most recently, how to deploy, and what's open.
 
 **⚠️ Git remote moved:** the repo is now
 `git@git.styl.solutions:presales-prototypes/atlantic-platform/smart-buddy-data.git` (the old
@@ -38,7 +85,7 @@ Data-analysis + live dashboard for the **SMART Buddy** school-canteen payment + 
 (STYL Solutions). The **deployed system** serves **February + March 2026**, reads **all data live from
 the shared ClickHouse `smartbuddy` database**, and is upload-driven (chunked "Upload data" tab → per-
 `month` partitions → precomputed `insights` bundles). Role hub (F&B / Engineering / Management) + a
-top-bar month picker with a data-coverage strip. Full architecture + runbook: **DEPLOY.md**.
+top-bar month picker (a "Not this month" chip names any dataset a month lacks). Full architecture + runbook: **DEPLOY.md**.
 
 **Data by month:** transactions/speed/stalls **and wearables (health, heart_rate)** exist for **both**
 Feb & March; item-level purchases (`items`) + `saving_spending` are **March only**.
@@ -48,6 +95,9 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
 | Doc | For |
 |---|---|
 | **HANDOVER.md** (this) | Current state, recent work, deploy pointer, open items |
+| **reload/UAT_DEPLOY_OCT.md** | ⭐ NEW (7 Oct) — the one-pass UAT deploy for a colleague: everything since `f87fd46`, gates, 17 checks, rollback |
+| **DASHBOARD_OVERHAUL_PLAN.md** | ⭐ NEW (7 Oct) — why + design of the docked drawer (built, §3h), the user's answers, and what followed (§3i–§3l) |
+| **MAP_DATA_FLOW.png** | NEW (7 Oct) — one-page flowchart: CSV → upload → ClickHouse → `build_insights` → api-service → map |
 | **reload/VENDOR_LAYERS_DEPLOY.md** | ⭐ NEW (1 Oct) — deploy §3d: steps, expected numbers, rollback, open reconcile question |
 | **reload/SERVICE_ROUTE_DEPLOY.md** | ⭐ NEW (1 Oct) — deploy §3e (terminal service view, `terminal_health`, `plan_service_route`) |
 | **ingestion-service/pbs_hosts.csv** + **stamp_hosts.csv** | ⭐ NEW — every reviewed vendor-placement decision with its evidence |
@@ -58,7 +108,203 @@ Feb & March; item-level purchases (`items`) + `saving_spending` are **March only
 | **README.md** | Overview, deployed architecture, data facts & caveats |
 | **mcp-service/agent-prompt.md** + **agent-setup.md** | SAM agent instructions to paste into the mesh |
 
-## 3f · 6 Oct session (committed with §3d/§3e; frontend-only, ships in the same deploy)
+## 3n · 7 Oct, 3rd session — tours per chapter, vendor pins, pre-commit review fixes (committed 7 Oct)
+
+- **Tours in chapters** (user: "more detailed, through all the functions"; chose chapters + only the role's views). Research
+  still says long tours get dropped, so instead of one long tour: 12 chapters of 3–6 steps on real data (`tour.js`
+  `CHAPTERS`): Basics (the old 6) · Map & Map key · School details · Compare · Overview · Terminals & service route ·
+  Purchases · Saving · Wearables · Playback · SAM assistant · Menu, upload & keys. ▾ menu → **Tours…** lists the
+  chapters this viewer can take (`main.js tourKeys`: shared + the role's views this month has; ✓ = done, `sb-tours`);
+  each view header has **"▶ Tour"** (`windowing.js`, `chapterFor`); the last step offers **"Next tour: …"** (next not done).
+  A view chapter reopens its view before every step, so wandering off mid-chapter doesn't break it. The tours act for
+  real (open views, click tabs, tick 3 machines + plan a route, pin 2 schools) — the pins/ticks stay afterwards.
+  Picker + checklist still start Basics. Never auto-starts.
+- **Vendor pins** (user: zoom worked for schools, not PBS / stamp points): a pin now carries its own place
+  (`compare.js place`: a PBS / stamp shop — or its machine — at its own square/diamond, else its school), so the map
+  zooms to it and the letter badge sits on the square/diamond (`main.js paintPins`, `[data-shop]`, `theme.css`).
+- **Review fixes** (subagent review of the whole uncommitted diff, each verified):
+  - **Feed text is escaped everywhere it goes into HTML** (stored-XSS risk via an uploaded CSV): one shared `esc`
+    exported by `windowing.js` (replaces 3 copies); `openWindow` escapes title + sub; names / store names / categories /
+    labels / file names in overview, items, feb, school, stall, eng, playback, upload, bookstores list, search.
+    Checked by injecting `<img onerror>` names: shown as text, never run. **Not done:** raw IDs in `data-*`
+    attributes (school / stall / terminal codes) — the root fix is validating ID format at ingest.
+  - Re-opening the comparison from the tray no longer desyncs its topic (a tab stopped responding).
+  - Unpinning no longer closes views opened on top of the comparison (`closeView` closes that view only).
+  - Fast month switching: `loadMonth` fetches all bundles in parallel and drops a stale result (`loadSeq`).
+  - Esc = Back also from a ticked checkbox; when Esc closes the last view, focus goes to the map.
+  - `#pins=` ignores a repeated id; `[data-win=…]` selectors use `CSS.escape`.
+- **Also:** view headers wrap (a long school name gets its own row instead of 4 squeezed lines); a tour no longer adds
+  a 1px page scrollbar (`.sr-only` pinned to the corner).
+- **Verified:** new `verify_chapters.mjs` + extended `verify_polish.mjs` + the other 6 scripts, 0 JS errors.
+
+## 3m · 7 Oct, 3rd session — polish (committed 7 Oct)
+
+The four open polish items from §3h/§3i/§5, all chosen by the user.
+- **Grey "No data"** (`main.js` `SEV`): a school or vendor shop with no error/speed figure is grey (`NODATA`) in
+  Errors/Speed mode instead of falling through to "good"; the Map key adds a "No data" row only when such a dot exists.
+  Today: one dot, RACY in March (no speed figure).
+- **No repeated title** (`windowing.js`): with one view open the drawer bar shows only ✕; Back + breadcrumbs appear
+  from two views.
+- **Shareable compare** (`compare.js` `pinsParam`/`restorePins`, `main.js` `setHash`/`hashParam`): pins live in the hash as
+  `#pins=school:MGSP,,TKGS` (an empty slot keeps the letters). Opening the link restores the pins and, with ≥2,
+  opens the comparison and zooms to them (after the drawer's padding ease, which otherwise cancels the fit). Only ids
+  found in the loaded month are pinned; `__proto__`-style ids are ignored (own-property lookup), and a malformed `%` in
+  any hash value no longer stops the page (it did for `#layers`). The link carries no month.
+- **Long names wrap** (`theme.css .tw-head .t`): e.g. "Paya Lebar Methodist Girls' School (Secondary)" on two lines.
+- **Verified:** new `verify_polish.mjs` + all 6 earlier scripts, 0 JS errors. (verify_ux's "Back keeps scroll (net tab)
+  0 → 0" is the stand-in's Network tab fitting the drawer, the same with these edits reverted; the sheet case scrolls 300 → 300.)
+
+## 3l · 7 Oct, 2nd session — opt-in guided tour, keyboard, 2D-only map (committed 7 Oct)
+
+User asked for a tutorial mode; chose spotlight + Next, offered never forced, all areas. Web research (subagent: NN/g,
+Atlassian Spotlight/Onboarding, Material, MDN, Shepherd docs; vendor stats from Chameleon/Pendo flagged as weaker):
+user-started tours of ≤ ~6 steps finish far more often; headline ≤27 / body ≤75 chars; "n of 6"; Back + Skip each step;
+target stays clickable; focus into the card, back at the end; Esc exits; reduced motion respected.
+- **`client/src/tour.js`** (no library): dims everything but the target (box-shadow cutout, pointer-events none → the
+  page stays usable), dark card (never mistaken for real UI) placed right → left → below → above the target, centred if
+  missing, docked at the bottom under 720px; follows moving targets (rAF); polite live region announces each step.
+- **6 steps on real data**, tailored to the role (`main.js tour()`): 1 fly to a school (Engineering: most errors; others:
+  highest spend/card·day) → 2 Map key (Engineering colours by Errors) → 3 opens that school in the drawer (Back /
+  breadcrumbs) → 4 pins it (tray, Compare ▸, Shift-click) → 5 top bar (views, month, search) → 6 SAM + "replay from ▾".
+- **Keyboard & mouse list** (`client/src/shortcuts.js`): ▾ menu → "Keyboard & mouse", or `?` anywhere except while typing
+  or during the tour. Native modal `<dialog>` (focus stays inside, Esc closes, focus returns). Keep it in step with the
+  real handlers when controls change. Checked in `verify_keys.mjs`.
+- **Keyboard gaps fixed:** search is a combobox (↑ ↓ move, Enter opens, Esc closes); **Esc in the drawer = Back** (closes at the last view; ignored while typing or when the menu / Upload / tour / role picker is open — `windowing.js`, capture phase); comparison topic tabs follow the tabs pattern (← → Home End, roving tabindex). Checked with `verify_keys.mjs`.
+- **2D-only map (user, same session):** rotate/tilt removed everywhere — right/Ctrl-drag, touch twist/tilt, Shift+arrows (`dragRotate:false`, `touchPitch:false`, `maxPitch:0`, `disableRotation()`), and no compass button. Checked with `verify_2d.mjs`.
+- **Entry points:** first-visit role picker ("Take the 1-minute tour" = all views + tour), checklist ("▶ Take the 1-minute
+  tour"), ▾ menu ("Take the tour"). Never auto-starts. Checklist + drawer tip hide while touring; `sb-tour` = done/skipped.
+- **Verified:** new `verify_tour.mjs` (no auto-start, each step's spotlight target + card placement + focus, Back,
+  ArrowRight, Done/Esc/Skip cleanup, focus return, Engineering colouring, narrow dock) + `verify_declutter`, 0 JS errors.
+- **On UAT, check:** fresh browser → picker → "Take the 1-minute tour" → 6 steps, Esc exits; ▾ → Take the tour replays.
+
+## 3k · 7 Oct, 2nd session — comparison = graphs per topic, linked to the map (committed 7 Oct)
+
+User: the comparison showed everything even with the map on Errors, wanted graphs, and found "Only differences" /
+"vs level average" unclear → **both removed, no average anywhere** (user's choice); graphs first, numbers on demand;
+map "Colour by" ↔ comparison topic linked **both ways**.
+- `compare.js` rows are grouped by **topic** (school: Spend · Errors · Speed · Network · Food & menu; stall: Spend · Errors ·
+  Food & menu; terminal: Errors · Speed · Network · Spend). One topic shows at a time (tabs).
+- **Chart per data job** (dataviz skill): one horizontal bar chart per measure (item colour + letter, value at the bar end,
+  separate charts so no shared/dual axis); lines for time series (school weekly revenue + weekly speed; stall daily +
+  by-hour revenue; terminal daily error + daily speed); 100% stacked bars for shares (school transactions by stall
+  category in the Overview's category colours; stall price bands in a validated one-hue ramp); words (verdict, problems,
+  category, network type) in a small facts table. "Show numbers" (`<details>`) = the table view.
+- **Link:** `main.js setColorMode` → `followMap(mode)`; a topic tab → `compare-topic` event → `setColorMode`. Errors/Speed
+  topics colour the map the same; Spend/Network/Food → Level. Opening a terminal comparison colours the map by Errors.
+- **Data limit (stated in the view):** schools have no errors-over-time series (only per terminal) — not derived.
+- Palettes checked with the dataviz validator: item colours pass (warnings covered by letters + table); price-band ramp
+  passes; the Overview category palette's grey "Unclassified" is a deliberate "unknown" grey.
+- Verified: `verify_compare.mjs` (topics, both-way link, stacks, numbers, stalls, terminals) + `verify_ux` + `verify_declutter`, 0 JS errors.
+
+## 3j · 7 Oct, 2nd session — declutter + onboarding (committed 7 Oct)
+
+User: "still clunky", wanted zoom-to-fit for compared schools, the blue ring to clear, and research on how others
+declutter/onboard. Research (subagent: NN/g, Baymard, Esri, Carbon, Shopify, OS) → user picked all 4 packages + slim tray.
+- **Zoom to fit** (`main.js fitPinned`): every pin/unpin fits the map to the pinned items' schools, clear of the tray,
+  the drawer and the legend column (MapLibre adds its own padding = the drawer, so only margins are passed).
+- **Blue rings fixed:** `.mk.open` was added on open and never removed → now `syncRings()` gives it only to the school
+  on top of the drawer; hover `.hl` stuck when a card was removed under the pointer → cleared on every dock/pin change.
+- **A · Map:** filter pills + legend → one collapsible **Map key** (`renderLegend`): colour-by switch, then each layer as
+  a show/hide row with its count (Esri interactive legend); "filtered" badge + "Reset view" only when not default;
+  footnotes → ⓘ; "N not on the map" only when N > 0; PBS list = a link on its row. Coverage strip → one
+  "Not this month: …" chip only when a dataset is missing. Compare cards → a **slim tray** (letter chips; the card
+  peeks on hover/focus, CSS only).
+- **B · Top bar:** Upload + Switch workspace + Sign out → one workspace menu (native `popover`: Esc/click-away close;
+  Chrome/Edge 114+, Safari 17+, Firefox 125+). The 6 views stay visible text buttons.
+- **C · Onboarding:** role picker has "Skip — show all views" (✕ on first visit = Skip; later ✕ keeps the role);
+  `client/src/onboard.js` = 3-step checklist (Open a school · Compare two · Ask SAM) that ticks itself
+  (`tick()` from `main.js`; SAM sends `smartbuddy:sam-ask`), dismissible, gone for good when done; one-time
+  "‹ Back…" tip in the drawer bar. All per-viewer `localStorage` (`sb-hub-seen`, `sb-onboard`, `sb-tip-back`, `sb-legend`).
+- **D:** Shift/Ctrl-click a school (or vendor) dot pins it — the dot stops Shift+mousedown reaching MapLibre's box-zoom,
+  which otherwise swallows the click; Shift+Enter works from the keyboard. School view: 4 headline numbers + "More
+  numbers". A school/stall/terminal opened over one of its own kind **replaces** it (short breadcrumbs).
+- **Verified locally:** new `verify_declutter.mjs` (first visit, Skip, menu + Esc, legend filter/Reset/collapse, checklist
+  ticks, Shift-click ×2, tray peek, Back tip, Feb chip) + `verify_ux.mjs` + `verify_compare.mjs`, all pass, 0 JS errors.
+- **On UAT, check:** fresh browser → role picker has Skip → checklist bottom-left · Map key rows hide/show dots, Reset ·
+  role ▾ menu has Upload · Shift-click 2 dots → tray + map zooms to both · Feb shows "Not this month: Purchases, Savings".
+
+## 3i · 7 Oct, 2nd session — compare cards (committed 7 Oct)
+
+> **Partly superseded the same day:** the cards became a slim tray (§3j) and the table + "Only differences" /
+> "vs average" became graphs per topic with no baseline (§3k). Kept below for the history of decisions.
+
+User: docking lost side-by-side comparison; wanted the old pop-ups back but better (web research: Baymard comparison
+tools — hide identical rows, group attributes, sticky column heads; NN/g — few items; one colour per entity).
+User choices: compact cards · one type per set · snapped row (no drag) · max 4 · schools + stalls + terminals.
+- **`client/src/compare.js`** (one module): "＋ Compare" in the school / stall / terminal view header (`pinButton`) pins
+  the item as a card in `#compare-row` under the map's filter pills (`.maptop` wrapper in `index.html`). Cards: 3 key
+  numbers (best/worst coloured) + a sparkline; click opens the item; ✕ removes. Fixed slots → a pin keeps its letter.
+- **One colour + letter per item** (Okabe-Ito A–D) on the card, the table column, the chart lines and a badge + ring on
+  its school's map dot (`compare` event → `main.js`). Card hover lights the dot (same delegated listener as the drawer).
+- **"Compare in detail"** (≥2 pins) → drawer view: rows grouped Spend / Speed & errors / Network / Food & menu /
+  Profile / Trends, each a filter chip (Profile off by default); **Only differences** (on by default; equal, or numbers
+  within 5%); **vs baseline** = level average (schools), same-school stalls (stalls), same-school peers (terminals);
+  best/worst coloured; trend charts overlay the items in their colours.
+- Pinning another type asks first (native `confirm`) and starts a new set; a 5th pin shows "Compare holds 4".
+  Month switch clears the pins (they hold the old month's rows). All from the bundles already loaded — no API change.
+- **Verified locally:** new harness script `verify_compare.mjs` (pins, badges, hover, filters, baseline, remove,
+  type switch, 4-max, terminal set, month reset) + `verify_ux.mjs` still all pass, 0 JS errors.
+- **Not done (say if wanted):** pins aren't in the URL (not shareable); no pin buttons on list rows (pin from the item's
+  view); with the wide drawer open the 4th card wraps to a second row.
+- **On UAT, check:** open 2–3 schools → "＋ Compare" each → cards appear under the pills, letters on their dots →
+  "Compare in detail" → toggle chips / Only differences / vs level average · pin a stall → asked to start a new set.
+
+## 3h · 7 Oct, 2nd session — docked drawer replaces floating windows (committed 7 Oct)
+
+`DASHBOARD_OVERHAUL_PLAN.md` item 8, built after the user answered its 5 questions (answers recorded there).
+- **One seam:** `openWindow()` (`client/src/windowing.js`) now renders into `#dock` (`index.html`), a drawer docked right
+  of the map, left of SAM's 48px rail. Same return value, so the views barely changed: the 10 per-module
+  `tw.style` width/left/top lines are gone; dense views pass `wide: true` (Overview, Terminals, route, Stalls,
+  Wearables, Purchases, Saving → `min(740px, 60vw)`; others 560px). Drag code deleted.
+- **Back stack = the DOM:** earlier views stay in the drawer, hidden (`visibility`), so Back / a breadcrumb returns to
+  the same tab, scroll position and charts with no re-render. Opening a view already in the stack goes back to it.
+  `closeView(id)` (route re-plan), `closeAll()`.
+- **Map padding:** the drawer emits a `dock` event with the area it covers; `main.js` eases the map padding, and
+  `flyToSchool` now opens first and flies with that padding → the school lands centred in the visible map. The
+  filter pills / legend stay clear via CSS vars `--dock-r` / `--dock-b`.
+- **SAM:** folds to its rail when a view opens (`setSamExpanded`, `samPanel.js`); clicking the rail expands it over
+  the drawer (z-index 50 → 1100).
+- **Month switch / upload reload** clears the drawer (`loadMonth`). Fixes a pre-existing bug: an open window kept
+  showing the old month after switching (`openWindow` returned `null` for an existing id).
+- **Narrow screens:** below 1100px the drawer is a bottom sheet (55% height); at ≤720px it sits above SAM's bar.
+- **Role hub** stays a centred card over the map (`float: true`); Upload is still its own modal.
+- **Verified locally** (`verify_ux.mjs`, both months, 1600×1000 + 1000×900): all §3g checks + drawer clear of the SAM
+  rail, SAM collapsed, map padded 788px, crumbs + Back, Back keeps tab and scroll (300→300), fly-to dot at x≈487 of a
+  992px visible map, month switch → one fresh Overview, close → padding 0, sheet at 1000px, hub floats, SAM rail
+  expands over the drawer. 0 JS errors.
+- ~~Polish: the bar repeats the title with one view; long names truncate; no Escape-to-go-back~~ — all done (§3l, §3m).
+- **On UAT, check:** open Overview → drawer on the right, SAM folded to its rail · click a top spender → the map flies
+  and the school sits in the visible part, crumb "Network Overview › <school>" · ‹ Back → Overview on the same tab ·
+  switch month → drawer shows the new month · narrow the window below 1100px → bottom sheet.
+
+## 3g · 7 Oct session — dashboard interactivity + accessibility (committed 7 Oct)
+
+User: the Overview looked outdated (that was UAT's old build — fixed on `main` already) and the dashboard felt clunky.
+Web research (NN/g, Carbon, Power BI, Esri, WCAG) → items 1–7 built, item 8 planned (`DASHBOARD_OVERHAUL_PLAN.md`).
+KPI deltas vs previous month: **KIV** (user wants multi-month comparison later).
+- **Overview is clickable:** terminal rows open the Terminal window; top-spender rows fly the map to the school
+  (pulse) + open it; a school-type bar filters the table to that type (click again / "show all" clears).
+- **Fixes:** school-type chart showed 3 of 6 labels (Chart.js autoSkip) → 2-line labels, all shown; Overview window
+  no longer covers the SAM panel; stale Upload hints (wearables/txn_perf are Feb + March).
+- **Holiday shading** on daily + weekly charts from the wearable bundle's detected `special.marked_days` (CNY 16–18
+  Feb, March break 16–20 + 23 Mar) — no hard-coded dates; no shading for a month without that bundle.
+  Plugin-free (`charts.js` `shade`).
+- **Linked hover:** any window row with `data-sid` lights its map dot, and a dot lights its rows (one delegated
+  listener in `main.js`). Overview + Terminals list rows carry it.
+- **Role defaults:** Engineering opens with the map coloured by Errors (`ROLE_COLOR`); F&B / Management → Level.
+- **Accessibility:** status colours → Okabe-Ito (`charts.js` `ST`) for marks, darker tokens (`--good/--warn/--bad`,
+  ≥4.8:1) for text; "bad" dots get a dark ring (not colour alone); markers, clickable rows and role cards are
+  keyboard-reachable (Enter/Space); charts get `role=img` + their heading as label.
+- **Verified locally** (harness, both months): `verify_ux.mjs` drove every interaction, 0 JS errors.
+- **Known limit (→ overhaul):** fly-to centres the school, but floating windows can still cover it. *(Fixed by §3h.)*
+- **On UAT, check** (after the deploy): Overview → click a "Terminals needing attention" row (terminal opens) · School
+  Spending shows 6 type labels, click "Independent" (table filters) · click a top spender (map flies + dot pulses) ·
+  March charts shaded 16–20 + 23 Mar, Feb 16–18 · hover a row → its dot gets a blue outline · switch role to
+  Engineering → legend on Errors, worst dots ringed · Tab key reaches rows/dots, Enter opens.
+- **Also fixed while checking docs (7 Oct):** UAT version pinned (header); stale "Feb-only / bundled `src/data`"
+  claims in README, client/README, PIPELINE, DEPLOY; the map-flow diagram.
+
+## 3f · 6 Oct session (`e738195` with §3d/§3e + `a48a84d`; ships in the same deploy)
 
 - **Bookstore squares + stamp-point diamonds now follow the map's Level / Errors / Speed toggle** like school dots
   (`client/src/main.js` `vendorStat`, `theme.css` `--c`). Level = host school's level (Catholic High campus point →
@@ -177,8 +423,8 @@ and give both reconcile figures.
   data, ingest, or SAM changes. Verify the map shows streets and the credit appears bottom-right.
 - **Other projects:** same fix via the paste-in prompt in `ONEMAP_BASEMAP_FIX.md` (covers MapLibre,
   Leaflet, OpenLayers, the dark/voyager → Night/Default style mapping, and CSP gotchas). Not done yet.
-- **Local view:** `cd client && npm run dev` → http://localhost:5188. The basemap renders, but
-  **school dots won't**. The client fetches data from api-service (`VITE_SB_API_URL`), and this
+- **Local view** *(superseded 1 Oct — use "Run the dashboard locally" at the top; the harness shows the dots)*:
+  `cd client && npm run dev` → http://localhost:5188. The basemap renders, but **school dots won't**. The client fetches data from api-service (`VITE_SB_API_URL`), and this
   machine has no `.env` files (only `.env.example`). The real `.env` lives on the VM. Supplying
   one (never paste secrets into chat) + a reachable api-service/ClickHouse is needed for local data.
 
@@ -252,7 +498,7 @@ has `top_stalls`+`habits`; March wearables loaded (health 2,481,501 / heart_rate
 
 ## 4 · Deploy to UAT — see **`reload/UAT_DEPLOY.md`** (one pass, both changes)
 
-> Pending newer deploy: **`reload/VENDOR_LAYERS_DEPLOY.md`** (§3d, after commit).
+> Pending newer deploy: **`reload/UAT_DEPLOY_OCT.md`** (everything since `f87fd46`, one pass).
 
 Summary: `git pull` → rebuild `smartbuddy-frontend` + `ch-insights` + `smartbuddy-ingest` →
 **ingest March `health`+`heart_rate` as `2026-03`** (data sent separately; the linkage fix needs no
@@ -263,8 +509,7 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
 
 ## 5 · Open items / decisions
 
-- **Deploy §3d** (`reload/VENDOR_LAYERS_DEPLOY.md`). Committed & pushed 6 Oct, not on UAT.
-- **Deploy §3e + §3f** (`reload/SERVICE_ROUTE_DEPLOY.md`) — same images, same pass as §3d.
+- **Deploy to UAT** — one pass covers everything since 15 Jul (see header + "Next session" steps 1–2).
 - **Service team:** set `STOPPED_DAYS` / `OFFLINE_PCT` (`build_insights.py`); say whether `slow` needs a minimum volume.
 - **Account owner:** does STYL service PBS bookshop / SSSTM stamp machines? If yes → load the reviewed host placements so
   they can be routed. Ask the hardware team what the `ISP-<date>` serial date and the last letter mean.
@@ -277,20 +522,20 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
   as part of the Bookstores view — they're already stalls under their schools.
 - Consider pinning `duckdb`/`pandas` in `ingestion-service/requirements.txt` (§3d crash).
 - ~~Deploy to UAT~~ (linkage + March wearables) — **DONE 15 Jul** (live & verified; see §3).
-- **Deploy the OneMap basemap + contrast/drag-limit** (§3c): frontend-only rebuild on the VM. Not yet on UAT.
-  After deploying, check a real screen: dots visible on grey map, no white when dragging to any edge.
+- **After the deploy, check the OneMap basemap** (§3c) on a real screen: dots visible on the grey map, no white when
+  dragging to any edge; bookstore squares / stamp diamonds recolour with Level / Errors / Speed (§3f).
 - **Apply the OneMap fix to the other STYL map projects** (§3c) using `ONEMAP_BASEMAP_FIX.md`.
 - **Legal check on OneMap terms** (free "currently", revocable, attribution mandatory) before production.
 - **Update the VM's git remote** to the `presales-prototypes/atlantic-platform/...` path (see header).
-- **Confirm on UAT** whether the map expansion (`21f1e16`, `reload/MAP_EXPANSION_DEPLOY.md`) and the PBS fix
-  (`79a3a82`, `reload/PBS_SCHOOLID_FIX_DEPLOY.md`) were deployed. Both are committed; UAT status unknown.
+- **Confirm on UAT** whether the map expansion (`21f1e16`) and the PBS fix (`79a3a82`) already went out — step 0 of
+  `VENDOR_LAYERS_DEPLOY.md` checks the PBS one; either way the one-pass deploy brings both.
 - **School mapping — RESOLVED 15 Jul; APSN Katong added 1 Oct** (OneMap by postal 467354). All 332 school IDs mapped.
-- **SAM redeploy** — `schema.js`/`agent-prompt.md`/`agent-setup.md` are current (wearables Feb+March,
-  items/wallet/linkage, identity-masking). Redeploy = rebuild `smartbuddy-mcp` + re-paste the ```text
-  block from `agent-prompt.md` § "Copy For AI Agent" (see `agent-setup.md` §4). **Note (fixed 15 Jul):**
-  `agent-setup.md` was a stale duplicate (Feb-only, dead table names, plain-text I/O) — now a pointer to
-  the single maintained block in `agent-prompt.md`, so there's no drift trap. Solace gateway confirmed
-  working. Being deployed now.
+- **SAM redeploy** — texts checked for consistency 6 Oct (`a48a84d`, §3f). Redeploy = rebuild `smartbuddy-mcp` +
+  run `ch-insights` for both months + re-paste the whole ```text block from `agent-prompt.md` § "Copy For AI Agent"
+  (single source; `agent-setup.md` §4 + § Verify). Solace gateway confirmed working.
+- ~~Small UI question: no speed/error figures showed as "good"~~ — **grey "No data" since 7 Oct (§3m).**
+- **KPI comparison across months — KIV (user, 7 Oct):** no "vs previous month" deltas for now; the user wants
+  comparison across several months later. The overhaul plan's question 5 leaves room for it in the layout.
 - **Demo questions** — 3–4 on-stage SAM questions to tune the agent (pending from presenter).
 - **Taxonomy v3** — **DEFERRED (15 Jul, conscious decision):** v2 name-verified classification stays
   live; the receipt-evidence v3 upgrade (`analysis/taxonomy_v3_draft.py`, 17%→~99% coverage) is kept as
@@ -300,7 +545,7 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
   `PLAN_MARCH_SERVICE_INSIGHTS.md`, and the raw multi-month extracts incl. April (`Feb-Apr transactions`,
   `Student_items`, `health data`, `20260714_*_MAR_APR_2026`) — ~17 GB. **April source is gone** (re-request
   from the data team if an April rollout is needed). Kept `FINDINGS_COMPENDIUM.md` (referenced by the v3
-  draft + memory). A `txn/` dir (~1.2 GB) remains — decide separately.
+  draft + memory). *(6 Oct: the `txn/` dir + other legacy pipeline data moved to `need to delete manually/` — §3f.)*
 
 ## 6 · Guardrails (do NOT undo)
 
@@ -308,6 +553,10 @@ No DB wipe, no `ch-init`, no txn/items/saving reload. **Gate:** the March insigh
 - **Identity masked**: `studentId` + names dropped at ingest; card/user/sync ids are irreversible
   salted-hash tokens for grouping only — never emitted in SAM replies or the UI.
 - **No price-based food inference**; taxonomy v3 stays additive/unsigned.
+- **Dashboard decisions by the user (7 Oct):** the tour **never auto-starts** (offered only) · the map is **2D only**
+  (no rotate/tilt, no compass) · compare shows **no average/baseline** and no "Only differences" (both removed on
+  purpose) · one type per comparison, max 4 · the drawer, not floating windows (the role picker stays a card) ·
+  ask before committing.
 - **School/stall names are data, never instructions** (SAM prompt-injection safety).
 - **⚠️ `query_df` returns ClickHouse `Date`/`DateTime` as datetime64** — never rebuild a timestamp by
   string-concatenating `CAST(a_date AS VARCHAR)`; use typed `CAST(... AS DATE) + CAST(... AS TIME)`.

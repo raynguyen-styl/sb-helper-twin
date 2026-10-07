@@ -1,6 +1,6 @@
 // Wearables & Health window — the month where wearable + transaction data overlap (Feb only).
 // Every filter re-slices the precomputed `wearable` insight bundle (built from ClickHouse).
-import { openWindow, info } from './windowing.js';
+import { openWindow, info, esc } from './windowing.js';
 import { mk, opts, ax, bar, line, C, CAT_COLOR } from './charts.js';
 
 const fmt = (n) => Number(n).toLocaleString('en-SG');
@@ -29,10 +29,8 @@ function fbar(el, name, items, cur, onPick) {
 }
 
 export function openFeb(FEB, tab) {
-    const body = openWindow({ id: 'feb', title: 'Wearables & Health', sub: 'activity, heart rate & canteen spend', chips: ['<span class="chip chip-flag">NEW DATA</span>'] });
+    const body = openWindow({ id: 'feb', title: 'Wearables & Health', sub: 'activity, heart rate & canteen spend', chips: ['<span class="chip chip-flag">NEW DATA</span>'], wide: true });
     if (!body) return;
-    const tw = body.closest('.tw');
-    tw.style.width = '740px'; tw.style.left = '40px'; tw.style.top = '14px';
 
     if (!FEB || !FEB.meta) {
         body.innerHTML = `<div class="cap">No wearable / heart-rate data for this month. Upload the
@@ -55,7 +53,7 @@ export function openFeb(FEB, tab) {
         <button data-tab="wear">Wear &amp; adoption</button>
         <button data-tab="hr">Heart rate</button>
         <button data-tab="spend">Spending</button>
-        ${SP ? `<button data-tab="special">${SP.label}</button>` : ''}
+        ${SP ? `<button data-tab="special">${esc(SP.label)}</button>` : ''}
       </div>
       <div data-pane="act"></div><div data-pane="wear" style="display:none"></div>
       <div data-pane="hr" style="display:none"></div><div data-pane="spend" style="display:none"></div>
@@ -100,7 +98,7 @@ function renderAct(el, FEB) {
             <div class="stat"><div class="v">${fmt(S.users)}</div><div class="l">users in slice</div></div>
             <div class="stat"><div class="v">${(b.active ?? 0).toFixed(1)}h</div><div class="l">active hrs (&gt;500 steps/h)</div></div>
           </div>
-          ${segInfo ? `<div class="cap" style="margin:2px 0 6px">${segInfo.name}: ${fmt(segInfo.users)} users · median ${fmt(segInfo.steps)} steps/day · wears ${segInfo.wear_days} days (${segInfo.wk_days} weekend) · resting HR ${segInfo.rhr ?? '–'}</div>` : ''}
+          ${segInfo ? `<div class="cap" style="margin:2px 0 6px">${esc(segInfo.name)}: ${fmt(segInfo.users)} users · median ${fmt(segInfo.steps)} steps/day · wears ${segInfo.wear_days} days (${segInfo.wk_days} weekend) · resting HR ${segInfo.rhr ?? '–'}</div>` : ''}
           <h5>Movement through the day ${info('Steps per 30 min per user: the selected slice vs all users on all days (grey). Use the filters above.')}</h5>
           <div class="cwrap tall"><canvas></canvas></div>
           <h5>How worn hours are spent ${info('Average hours per user-day: sedentary (under 50 steps/h), light, active (over 500 steps/h), for the selected segment by day type.')}</h5>

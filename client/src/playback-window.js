@@ -2,7 +2,7 @@
 // (playback.js) over series from sb-api (sbApi.js → shared ClickHouse, with offline demo fallback).
 // Both subjects are a daily timeline for the chosen month: School (txns + revenue) and Wearables
 // (cohort steps + active users, where a month has wearable data).
-import { openWindow } from './windowing.js';
+import { openWindow, esc } from './windowing.js';
 import { mk, opts, ax, line, C } from './charts.js';
 import { createPlaybar } from './playback.js';
 import { schools, schoolSeries, wearableCohort, isLive, setMonth, getMonth } from './sbApi.js';
@@ -104,7 +104,7 @@ export async function openPlayback(preset) {
   metricSel.onchange = () => { buildChart(); applyFrame(curIdx, frames[curIdx]); };
 
   const list = await schools();
-  schoolSel.innerHTML = list.map((s) => `<option value="${s.schoolId}">${s.schoolId} — ${s.name || '—'}</option>`).join('');
+  schoolSel.innerHTML = list.map((s) => `<option value="${esc(s.schoolId)}">${esc(s.schoolId)} — ${esc(s.name || '—')}</option>`).join('');
   if (preset?.school) schoolSel.value = preset.school;
   fillMetrics('school');
   await load();
