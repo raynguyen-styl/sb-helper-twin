@@ -95,7 +95,7 @@ Variables this stack uses:
 | `CLICKHOUSE_DB` | all | `smartbuddy` |
 | `CLICKHOUSE_RO_USER` / `CLICKHOUSE_RO_PASSWORD` | api-service, mcp-service (+ created by ch-ingest) | the **read-only** user both read services connect as |
 | `CLICKHOUSE_ADMIN_USER` / `CLICKHOUSE_ADMIN_PASSWORD` | **ch-ingest only** | shared-instance superuser — needed once to `CREATE` the db + read-only user. Not used at runtime |
-| `SB_ID_SALT` | ch-ingest | pin to keep hashed card/user tokens stable across re-ingests (else ephemeral per run) |
+| `SB_ID_SALT` | smartbuddy-ingest | keep it the same for every load, or hashed card/user tokens won't match across loads/months (`bootstrap-env.sh` keeps an existing one, else generates one; empty = unsalted hash) |
 | `SB_FRONTEND_PORT` | client | host port for the frontend (default **8097**) |
 | `VITE_SB_API_URL` | client (build arg) | api-service base — **same-origin** `/smartbuddy-api` (the client nginx proxies it). Empty → Playback uses bundled demo data |
 | `VITE_KEYCLOAK_URL` / `VITE_KEYCLOAK_REALM` / `VITE_KEYCLOAK_CLIENT_ID` | client (build arg) | realm `styl-iot`, client `smart-buddy`. Empty `VITE_KEYCLOAK_URL` → no login (local dev only) |
@@ -111,7 +111,8 @@ No `INFLUX_*` / `DITTO_*`: that store does not exist here.
 
 The store now holds **two months (Feb + March 2026)** and **data arrives through the dashboard's
 chunked Upload feature** (or `scripts/vm-load.sh` from a CLI) — no parquets, no bulk one-shot. Every
-fact table is `PARTITION BY month` ('2026-02' | '2026-03').
+fact table is `PARTITION BY month` ('2026-02' | '2026-03'). The uploaded CSVs are a **temporary extract**;
+the real source will be **Redshift** (being integrated — HANDOVER.md "Redshift integration — read first").
 
 ```bash
 # 4a. Build + start both stacks (frontend + api-service; mcp + upload service):

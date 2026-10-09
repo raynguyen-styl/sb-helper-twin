@@ -1,6 +1,6 @@
 # HANDOVER — SMART Buddy Dashboard
 
-Orientation for a teammate (or a fresh session) picking this up. Last updated **7 Oct 2026** (end of the 3rd session: polish, tour chapters, review fixes, deploy runbook — pushed as `852e01c`).
+Orientation for a teammate (or a fresh session) picking this up. Last updated **9 Oct 2026** (added "Redshift integration — read first"; before that 7 Oct: polish, tour chapters, review fixes, deploy runbook — pushed as `852e01c`).
 
 > **State:** everything up to §3n is **committed and pushed: `origin/main` = `852e01c`** (7 Oct, 3rd session):
 > the whole dashboard rework, frontend only (no API, ingest or SAM change): interactivity + accessibility (§3g) →
@@ -8,13 +8,50 @@ Orientation for a teammate (or a fresh session) picking this up. Last updated **
 > the map (§3i, §3k) → decluttered map + top bar + onboarding checklist (§3j) → keyboard fixes, Keyboard & mouse list,
 > 2D-only map (§3l) → polish: grey "No data" dots, no repeated drawer title, shareable compare links, long names
 > wrap (§3m) → tours in 12 chapters per role, vendor pins zoom/badge, review fixes incl. escaping feed text (§3n).
-> **UAT runs `f87fd46`** (pinned 7 Oct from a UAT screenshot; GitLab has no UAT tag, so this is evidence, not a record).
+> **UAT runs `f87fd46`** (pinned 7 Oct from a UAT screenshot; confirmed by the colleague 9 Oct; GitLab has no UAT tag).
 > Waiting to deploy (one pass, `reload/UAT_DEPLOY_OCT.md`): `e738195` vendor layers + service route + vendor marker
 > colours (§3d/§3e/§3f) · `a48a84d` SAM fixes · `852e01c` (§3g–§3n). `79a3a82`'s aggregate rebuild is unconfirmed —
 > step 2 of that runbook checks it. No raw CSV upload is needed; only `reload/schools.csv` (+APSNK) is reloaded.
 
+**▶ Redshift integration — read first (9 Oct 2026)**
+
+The Feb + March CSVs were a **temporary extract**, pulled to learn how to work with the data. The real source is
+**Redshift**; that integration is owned by a colleague. Everything below the upload stays and is the part to reuse.
+1. **UAT is behind GitLab.** VM = `f87fd46`, `main` = `3eb5ce1` (4 commits, 48 files: ingest, SAM and frontend). Deploy first
+   with `reload/UAT_DEPLOY_OCT.md`, in order, one pass (4 images, `ch-insights` for both months, SAM re-paste after the mcp
+   rebuild). Its step 0 is `git remote set-url origin git@git.styl.solutions:presales-prototypes/atlantic-platform/smart-buddy-data.git`.
+   Never edit on the VM: local → GitLab → `git pull`.
+2. **The flow today:** Upload tab (`client/src/upload-window.js`) → `ingestion-service/app.py` (chunked upload) →
+   **`ingest_core.load_dataset(file, dataset, month)`** → ClickHouse `smartbuddy` → `build_insights.run(month)` → `insights`
+   bundles + `terminal_health` → api-service (dashboard) and mcp-service (SAM). `load_dataset` hashes `cardId` / `user_id` /
+   `sync_id`, drops `studentId` / `studentName`, swaps the month partition (`REPLACE PARTITION`) and rebuilds `tx`, `stallcat`,
+   `pb_*` (the list per dataset: `DATASETS[…]["rebuild"]`). Easiest seam: hand it one Parquet/CSV per dataset × month —
+   `python ingest_core.py <dataset> <YYYY-MM> <file> [replace|append] [rebuild 0/1]`, run inside the `smartbuddy-ingest`
+   container (it has the write user + salt; this is what `scripts/vm-load.sh` does). Writing to
+   ClickHouse another way means redoing all of that.
+3. **What the data must match** (the dashboard and SAM depend on it; `mcp-service/src/schema.js` describes every table):
+   - The CSVs' camelCase column names (`schoolId`, `storeId`, `storeName`, `terminalId`, `txn_date`, `txn_time`, `paymentType`,
+     `errorCode`, `stampValue`, …). Required columns per dataset: `DATASETS` in `ingest_core.py`.
+   - Money (`amount`, `itemPrice`, `total_saving`, `total_spending`) in **cents**. `txn_date` a Date, `txn_time` a time string.
+     Wearables: `recorded_time` UNIX epoch seconds, `calories` millical, `distances` cm.
+   - Column types are fixed by a table's first load; a later file with another type for the same column (e.g. `txn_date` as a
+     timestamp) can fail or be silently converted (`coerce` in `ingest_core.py`) — compare with the live table's types.
+   - **Keep the VM's current `SB_ID_SALT`** for every load (`bootstrap-env.sh` keeps an existing one, else generates one).
+     Changing it breaks matching with the months already loaded; empty (the code default) = an unsalted hash.
+   - If Redshift holds raw student ids, keep the hash-and-drop step before anything is stored; use a read-only Redshift login.
+   - `replace` mode replaces a whole month partition — load complete months.
+4. **After a month is loaded:** uploads of `transactions` / `items` / `saving_spending` run `build_insights.run(month)`
+   automatically; the CLI path needs `SB_MONTH=<month> … run --rm ch-insights` (DEPLOY.md §4d). The wearable bundle is never
+   automatic: `… run --rm ch-insights python build_insights_wearable.py <YYYY-MM>` (DEPLOY.md §4d). For a month with items
+   (March) the log must print `linkage: …(99.x%)`; `linkage: 0/… skipping` = broken, usually a type problem (dates, §6).
+5. **Traps:** §6 guardrails (dates from `query_df`, terminal = last location, `Retrieve…` stalls, no `cardId`↔`user_id`) and §7
+   data facts (PBS/SSSTM are vendors). Out of spend: `TX_FILTER` in `ingest_core.py` (`STYL`/`PBS`/`SSSTM`, `Retrieve…`,
+   >$200). `ingestion-service/requirements.txt` is unpinned (`>=`) — pin duckdb/pandas if a rebuild breaks. `scripts/vm-load.sh` defaults to one person's key path + the VM address and turns off host-key checking: set
+   `SB_KEY` / `SB_VM`, never commit a key. `STOPPED_DAYS` / `OFFLINE_PCT` (`build_insights.py`) are placeholders.
+   The local test harness and the "Local-only files" below are on one laptop, not in the repo.
+
 **▶ Next session — start here**
-0. **Ask the user whether the colleague has run the UAT deploy** (`reload/UAT_DEPLOY_OCT.md`, commit `852e01c`). If
+0. **Ask the user whether the colleague has run the UAT deploy** (`reload/UAT_DEPLOY_OCT.md`, up to `3eb5ce1`; 9 Oct: not yet). If
    yes: update the "UAT runs" line above and go through any failed checks. Rules for new work: ask before committing;
    run the 8 checks (see "Run the dashboard locally") before committing client changes; keep the local-only files out.
 1. **The user tries it in a real browser** — a private window shows the first-visit flow (role picker → Skip / tour →

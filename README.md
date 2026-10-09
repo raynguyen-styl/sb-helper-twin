@@ -4,7 +4,8 @@ Analysis of the SMART Buddy school payment + wearable ecosystem for STYL Solutio
 
 > **Deployed system (current):** the dashboard now serves **two months — February 2026 + March 2026**,
 > and **all data is read live from the shared ClickHouse `smartbuddy` database** (nothing is baked into
-> the JS bundle). Data arrives through the dashboard's **chunked Upload feature** (any size), is loaded
+> the JS bundle). Data arrives through the dashboard's **chunked Upload feature** (any size — today a temporary
+> CSV extract; the real source will be **Redshift**, see HANDOVER.md), is loaded
 > per-month (`month` partition), and the per-month insight bundles are precomputed into an `insights`
 > table. A top-bar **month picker** switches everything. Feb + March both have canteen + wearable
 > (activity/heart-rate); March also has purchase line-items + saving/spending. Runbook + pipeline: **DEPLOY.md** / below.
