@@ -27,7 +27,7 @@ npm run dev     # then open http://localhost:5188
 Requires Node (tested on v24). Internet is needed for the basemap tiles (OneMap Grey, SLA — keyless).
 No data is bundled: every view fetches its month's insight bundles from api-service (`VITE_SB_API_URL`).
 Without a reachable API the basemap renders but the map is empty — run against the local harness
-(HANDOVER.md "Run the dashboard locally") or the deployed stack.
+(`central-specs/HANDOVER.md` "Run the dashboard locally") or the deployed stack.
 
 ## What's in it
 
@@ -37,7 +37,7 @@ Without a reachable API the basemap renders but the map is empty — run against
   vermillion) and the worst dots also get a dark ring. Engineering opens on Error rate; the other roles on Level.
   **Map key** (bottom-left, collapsible) is also the layer filter: colour by Level / Errors / Speed, then a show/hide row with a count for Primary · Secondary · Junior College · Other · **PBS Bookstores** (squares) · **Stamp points** (diamonds) — any combination, "Reset view" when filtered, kept in the URL
   (`#layers=…`). PBS and Self Serve Stamps are vendors, not schools: their shops/points sit beside the host school
-  only when the placement is evidenced (`ingestion-service/pbs_hosts.csv`, `stamp_hosts.csv`); "Lists: PBS
+  only when the placement is evidenced (`backend/ingestion-service/pbs_hosts.csv`, `stamp_hosts.csv`); "Lists: PBS
   bookstores" in the legend shows every shop, unplaced ones first.
 - **Search** (top bar) — by school ID or name; works for unmapped schools too. Picking a school flies the map there.
 - **School window** (click a marker) — spend/ticket/cards/error/speed stats, MOE badges
@@ -65,9 +65,10 @@ Without a reachable API the basemap renders but the map is empty — run against
 ## Data
 
 Read live per month (**Feb + March 2026**) from ClickHouse via api-service: uploads land in the
-`smartbuddy` db and `ingestion-service/build_insights.py` precomputes each month's bundles
+`smartbuddy` db and `backend/ingestion-service/build_insights.py` precomputes each month's bundles
 (`global`, `schools`, `stalls`, + `wearable` / `items` / `savings` where present). How the map view is
-built: `../MAP_DATA_FLOW.png`; full runbook: `../DEPLOY.md`.
+built: `central-specs/design/MAP_DATA_FLOW.png`; runbooks: `../DEPLOY.md` (this frontend) and
+`backend/DEPLOY.md` (the whole stack).
 Exclusions from spend: STYL vendor test terminals, "Retrieve…" stalls (real sales at machines later pulled —
 kept in the Terminals view, tagged *retrieved*), amounts >$200.
 School names/types: MOE School Directory (data.gov.sg), receipt-verified (all 332 school IDs geocoded);
@@ -78,4 +79,4 @@ No price-based category guessing. March receipts show what each stall actually s
 assign a food category.
 
 To refresh the data: upload through the dashboard (rebuilds that month's bundles), or rerun the
-`ch-insights` one-shot with `SB_MONTH=YYYY-MM` (DEPLOY.md step 4d).
+`ch-insights` one-shot with `SB_MONTH=YYYY-MM` (`backend/DEPLOY.md` §4).

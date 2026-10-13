@@ -1,6 +1,6 @@
 // Purchases & Nutrition window (March+) — line-item view: what students actually bought, the
 // Healthier-Choice split, calories, item types and the top items. Reads the precomputed `items`
-// bundle (ingestion-service/build_insights.py → ClickHouse). Empty/absent → a friendly note.
+// bundle (backend/ingestion-service/build_insights.py → ClickHouse). Empty/absent → a friendly note.
 import { openWindow, info, esc } from './windowing.js';
 import { mk, opts, ax, bar, C } from './charts.js';
 

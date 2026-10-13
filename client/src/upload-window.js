@@ -1,5 +1,5 @@
 // Upload-data window — CHUNKED, RESUMABLE, size-unlimited upload into the shared ClickHouse via the
-// ingestion-service. A file is split into fixed-size PARTS uploaded one by one (peak memory = one
+// backend/ingestion-service. A file is split into fixed-size PARTS uploaded one by one (peak memory = one
 // part, so multi-GB files are fine); the server assembles + loads it (PII hashed) into the chosen
 // month's partition, then rebuilds the aggregates. You can select SEVERAL files for one dataset
 // (e.g. Feb health ships as 6 parts) — the first REPLACES the month, the rest APPEND, and the

@@ -5,22 +5,28 @@
 # STYL Solutions Pte. Ltd. is strictly limited by the confidential information provisions of the Agreement
 # referenced above.
 #
-# SMART Buddy — app stack (frontend + read API), deployed on the shared VM alongside the platform.
-# February 2026 is a FIXED historical month, so there is ONE store: the shared ClickHouse `smartbuddy`
-# database. sb-api serves the dashboard's Playback window from it (read-only user); the SAM agent
-# queries the same db via docker-compose.agent.yml. NO InfluxDB / Ditto / backfill.
-# The Feb data is loaded once by the ch-ingest one-shot (see docker-compose.agent.yml + DEPLOY.md).
+# SMART Buddy — the digital twin: the dashboard a viewer sees (Vite → nginx), deployed on the shared VM
+# alongside the platform. Everything behind it — the read API, the SAM agent's MCP adapter, the upload
+# service and the one-shots — lives in the sibling `backend` repository with its own compose files.
+# Both repositories declare compose project `smartbuddy`, so containers, images and networks keep the
+# names they had when this was one repository. This stack therefore sees the backend's containers as
+# "orphans" and compose warns — expected; NEVER pass --remove-orphans here (it would stop the backend).
 #
-#   docker compose up -d --build          # smartbuddy-api + smartbuddy-frontend
+#   docker compose up -d --build          # smartbuddy-frontend
+#
+# The frontend starts with or without the backend: its nginx resolves smartbuddy-api / smartbuddy-mcp /
+# smartbuddy-ingest / jwt-validator per request, so those routes just 502 until the backend is up.
 #
 # Isolation from tree-twin / other demos (checked against the live VM registry):
-#   • project `smartbuddy` · containers `smartbuddy-api` / `-frontend`
+#   • project `smartbuddy` · container `smartbuddy-frontend`
 #   • ONE public hostname: the ALB maps smartbuddy-helper-uat.styl.solutions/* → the frontend
-#     (host 8097, free on the VM). The frontend's nginx same-origin-proxies /smartbuddy-api/ +
-#     /smartbuddy-mcp/ to the internal services — so the shared nginx-proxy is NOT touched.
-#   • sb-api has NO host port — reached only via the frontend nginx at /smartbuddy-api/
-#   • data lives in the shared ClickHouse `smartbuddy` database (own db + read-only user)
-#   • `sb-net` + the shared external `backend` net (to reach clickhouse:8123, sb-api, mcp, jwt-validator)
+#     (host 8097, free on the VM). Its nginx same-origin-proxies /smartbuddy-api/ + /smartbuddy-mcp/ +
+#     /smartbuddy-ingest/ to the backend containers — so the shared nginx-proxy is NOT touched.
+#   • `sb-net` + the shared external `backend` net (to reach smartbuddy-api / -mcp / -ingest / jwt-validator)
+#
+# SAM chat transport: with no VITE_SOLACE_* set, the build targets the shared local Solace that
+# atlantic-platform/common runs on every box (ws://localhost:8008, VPN + client-username `default`,
+# see common/README.md — not secrets). Set the four values (bootstrap-env.sh does) to use another broker.
 
 name: smartbuddy
 
@@ -32,23 +38,6 @@ networks:
     name: ${BACKEND_NETWORK:-solace-pubsub-geo-filtering_backend}
 
 services:
-  # ── read API — serves Playback from ClickHouse `smartbuddy` (read-only user); via /smartbuddy-api/ ─
-  smartbuddy-api:
-    build: { context: ./api-service }
-    container_name: smartbuddy-api
-    restart: always
-    environment:
-      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-smartbuddy}
-      CLICKHOUSE_USER: ${CLICKHOUSE_RO_USER:-smartbuddy_ro}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_RO_PASSWORD:?set CLICKHOUSE_RO_PASSWORD (the read-only user's password)}
-      SB_API_PORT: "3320"
-      SB_API_KEY: ${SB_API_KEY:-}
-    expose: ["3320"]                        # in-network only; NO host port (proxy fronts it, like nparks-api)
-    networks: [sb-net, backend]
-    deploy: { resources: { limits: { memory: 128m } } }
-    logging: { options: { max-size: 10m } }
-
   # ── frontend (Vite → nginx). Playback reads sb-api; chat reaches SAM over Solace ─────────────────
   smartbuddy-frontend:
     build:
@@ -60,17 +49,18 @@ services:
         VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL:-}
         VITE_KEYCLOAK_REALM: ${VITE_KEYCLOAK_REALM:-styl-iot}
         VITE_KEYCLOAK_CLIENT_ID: ${VITE_KEYCLOAK_CLIENT_ID:-smart-buddy}
-        # SAM chat transport (low-priv demo Solace creds; baked into the bundle).
-        VITE_SOLACE_URL: ${VITE_SOLACE_URL:-}
-        VITE_SOLACE_VPN: ${VITE_SOLACE_VPN:-}
-        VITE_SOLACE_USER: ${VITE_SOLACE_USER:-}
-        VITE_SOLACE_PASSWORD: ${VITE_SOLACE_PASSWORD:-}
+        # SAM chat transport. Defaults = the box's shared local Solace (atlantic-platform/common);
+        # the values are baked into the browser bundle, so only ever low-privilege demo creds here.
+        VITE_SOLACE_URL: ${VITE_SOLACE_URL:-ws://localhost:8008}
+        VITE_SOLACE_VPN: ${VITE_SOLACE_VPN:-default}
+        VITE_SOLACE_USER: ${VITE_SOLACE_USER:-default}
+        VITE_SOLACE_PASSWORD: ${VITE_SOLACE_PASSWORD:-default}
     container_name: smartbuddy-frontend
     restart: always
     ports:
       - "${SB_FRONTEND_PORT:-8097}:8080"    # ALB maps smartbuddy-helper-uat.styl.solutions/* here (8097 free on the VM)
-    # on `backend` too: this container's nginx same-origin-proxies /smartbuddy-api/ + /smartbuddy-mcp/
-    # to the sb-api / mcp / jwt-validator containers (see client/nginx.conf) — one hostname serves all.
+    # on `backend` too: this container's nginx same-origin-proxies /smartbuddy-api/ + /smartbuddy-mcp/ +
+    # /smartbuddy-ingest/ to the backend containers (see client/nginx.conf) — one hostname serves all.
     networks: [sb-net, backend]
     deploy: { resources: { limits: { memory: 64m } } }
     logging: { options: { max-size: 10m } }

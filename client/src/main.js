@@ -585,7 +585,7 @@ function renderLegend() {
 }
 
 // Bookstores window: shops needing a decision first (highlighted), then placed shops. Every reviewed
-// placement/flag carries its evidence (ingestion-service/pbs_hosts.csv) in an ⓘ tip.
+// placement/flag carries its evidence (backend/ingestion-service/pbs_hosts.csv) in an ⓘ tip.
 const STATUS = { highlight: ['pill-warn', 'Primary/secondary conflict'], unlink: ['pill-warn', 'Not confirmed'],
                  ask: ['pill-bad', 'Not identified'] };
 function openBookstores() {

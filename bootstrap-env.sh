@@ -1,21 +1,31 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
-# SMART Buddy — assemble the repo-root .env ON THE VM.
+# SMART Buddy twin — assemble this repository's .env (compose build args for smartbuddy-frontend) and
+# client/.env (what `npm run dev` reads). Both are gitignored. It generates NO secrets and carries no
+# backend credential: ClickHouse, the MCP key and the salt live in backend/.env (backend/bootstrap-env.sh).
 #
-# It SOURCES the shared platform credentials from the sibling repos already deployed under /data
-# (solace-pubsub-geo-filtering, tree-digital-twin, atlantic-super-admin) and GENERATES fresh
-# per-demo secrets (the MCP bearer key, the ClickHouse read-only password, the PII salt). No secret
-# value is ever printed — only a SET/MISSING checklist. Re-running preserves the generated secrets
-# (so the ClickHouse read-only password keeps matching the user that ch-ingest created).
+# The four Solace values (the SAM chat transport; they ship in the browser bundle, so low-privilege
+# demo credentials only) are resolved in this order:
+#   1. VITE_SOLACE_* already exported in the environment;
+#   2. an existing twin/.env (so a re-run is stable);
+#   3. the pre-split monorepo's .env (SB_LEGACY_ENV, default $DATA_DIR/smart-buddy-data/.env) — the
+#      values UAT uses today;
+#   4. the shared local broker that atlantic-platform/common runs on every box: ws://localhost:8008,
+#      message VPN + client-username `default` (see common/README.md — not secrets). The same values
+#      hold wherever the common stack runs beside this repository, locally or in production.
+# No value is printed — only a checklist naming where each came from.
 #
-#   cd /data/smart-buddy-data && ./bootstrap-env.sh
-#   # then review .env, fill any MISSING lines by hand, and deploy (see DEPLOY.md)
+#   cd /data/sb-helper/twin && ./bootstrap-env.sh
+#   # then review .env and build: docker compose up -d --build   (see DEPLOY.md)
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 DATA_DIR="${DATA_DIR:-/data}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$REPO_DIR/.env"
+LEGACY_ENV="${SB_LEGACY_ENV:-$DATA_DIR/smart-buddy-data/.env}"
+LOCAL_BROKER_URL="ws://localhost:8008"   # atlantic-platform/common: Solace Web Messaging, on loopback
+LOCAL_BROKER_IDENTITY="default"          # its message VPN, client-username and that user's credential
 
 # grab KEY FILE  → the value of KEY=… (last assignment wins; strips surrounding quotes + CR)
 grab() {
@@ -24,79 +34,47 @@ grab() {
   sed -n "s/^[[:space:]]*${key}=//p" "$file" | tail -n1 \
     | sed -e 's/\r$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
 }
-# first KEY FILE...  → first non-empty value across the files
-first() {
-  local key="$1"; shift; local f v
-  for f in "$@"; do v="$(grab "$key" "$f")"; [ -n "$v" ] && { printf '%s' "$v"; return 0; }; done
+# solace KEY DEFAULT  → "<source><TAB><value>" following the order in the header
+solace() {
+  local key="$1" default="$2" v
+  v="${!key:-}";                     [ -n "$v" ] && { printf 'from environment\t%s' "$v"; return 0; }
+  v="$(grab "$key" "$OUT")";        [ -n "$v" ] && { printf 'preserved (twin .env)\t%s' "$v"; return 0; }
+  v="$(grab "$key" "$LEGACY_ENV")"; [ -n "$v" ] && { printf 'preserved (legacy monorepo .env)\t%s' "$v"; return 0; }
+  printf 'default (shared local broker, atlantic-platform/common)\t%s' "$default"
 }
-mark() { [ -n "$2" ] && echo "  ✓ $1" || echo "  ✗ $1  — MISSING, fill by hand in .env"; }
 
-SOLACE_ENV="$DATA_DIR/solace-pubsub-geo-filtering/.env"
-DITTOSYNC_ENV="$DATA_DIR/solace-pubsub-geo-filtering/ditto-sync/.env"
-TREE_ENV="$DATA_DIR/tree-digital-twin/.env"
-UWB_ENV="$DATA_DIR/styl-office-uwb/.env"
-ATL_ENV="$DATA_DIR/atlantic-super-admin/.env"
+r="$(solace VITE_SOLACE_URL "$LOCAL_BROKER_URL")";           URL_SRC="${r%%$'\t'*}";  SOL_URL="${r#*$'\t'}"
+r="$(solace VITE_SOLACE_VPN "$LOCAL_BROKER_IDENTITY")";      VPN_SRC="${r%%$'\t'*}";  SOL_VPN="${r#*$'\t'}"
+r="$(solace VITE_SOLACE_USER "$LOCAL_BROKER_IDENTITY")";     USER_SRC="${r%%$'\t'*}"; SOL_USER="${r#*$'\t'}"
+r="$(solace VITE_SOLACE_PASSWORD "$LOCAL_BROKER_IDENTITY")"; PW_SRC="${r%%$'\t'*}";   SOL_PW="${r#*$'\t'}"
+unset r
 
-# ── shared platform creds (sourced from the deployed repos) ──────────────────────────────────────
-SOL_URL="$(first VITE_SOLACE_URL "$TREE_ENV" "$UWB_ENV")";  [ -z "$SOL_URL" ]  && SOL_URL="$(first SOLACE_URL "$SOLACE_ENV" "$DITTOSYNC_ENV")"
-SOL_VPN="$(first VITE_SOLACE_VPN "$TREE_ENV" "$UWB_ENV")";  [ -z "$SOL_VPN" ]  && SOL_VPN="$(first SOLACE_VPN "$SOLACE_ENV" "$DITTOSYNC_ENV")"
-SOL_USER="$(first VITE_SOLACE_USER "$TREE_ENV" "$UWB_ENV")";[ -z "$SOL_USER" ] && SOL_USER="$(first SOLACE_USER "$SOLACE_ENV" "$DITTOSYNC_ENV")"
-SOL_PW="$(first VITE_SOLACE_PASSWORD "$TREE_ENV" "$UWB_ENV")";[ -z "$SOL_PW" ] && SOL_PW="$(first SOLACE_PASSWORD "$SOLACE_ENV" "$DITTOSYNC_ENV")"
-CH_ADMIN_USER="$(first CLICKHOUSE_USER "$ATL_ENV")"
-CH_ADMIN_PW="$(first CLICKHOUSE_PASSWORD "$ATL_ENV")"
-
-# ── fresh per-demo secrets (generated once, preserved on re-run) ─────────────────────────────────
-PREV_MCP=""; PREV_RO=""; PREV_RW=""; PREV_SALT=""
 if [ -f "$OUT" ]; then
-  PREV_MCP="$(grab SB_MCP_API_KEY "$OUT")"
-  PREV_RO="$(grab CLICKHOUSE_RO_PASSWORD "$OUT")"
-  PREV_RW="$(grab CLICKHOUSE_RW_PASSWORD "$OUT")"
-  PREV_SALT="$(grab SB_ID_SALT "$OUT")"
   cp "$OUT" "$OUT.bak.$(date +%s)"
-  echo "note: existing .env backed up; generated secrets (MCP key / CH read-only + write pw / salt) preserved."
+  echo "note: existing .env backed up; its Solace values are preserved (see checklist)."
 fi
-MCP_KEY="${PREV_MCP:-$(openssl rand -hex 32)}"
-RO_PW="${PREV_RO:-$(openssl rand -hex 24)}"
-RW_PW="${PREV_RW:-$(openssl rand -hex 24)}"
-ID_SALT="${PREV_SALT:-$(openssl rand -hex 16)}"
 
 umask 177   # .env → 600
 cat > "$OUT" <<EOF
-# SMART Buddy .env — generated by bootstrap-env.sh (shared creds sourced from /data repos;
-# per-demo secrets generated locally). DO NOT COMMIT. Re-run bootstrap-env.sh to refresh.
+# SMART Buddy twin .env — generated by bootstrap-env.sh. DO NOT COMMIT. Re-run bootstrap-env.sh to refresh.
+# Frontend build args only — no backend credential lives here (those are in backend/.env).
 
-# ── shared ClickHouse (one store for Playback + SAM agent) ──
-CLICKHOUSE_URL=http://clickhouse:8123
-CLICKHOUSE_DB=smartbuddy
-CLICKHOUSE_RO_USER=smartbuddy_ro
-CLICKHOUSE_RO_PASSWORD=$RO_PW
-CLICKHOUSE_RW_USER=smartbuddy_rw
-CLICKHOUSE_RW_PASSWORD=$RW_PW
-CLICKHOUSE_ADMIN_USER=$CH_ADMIN_USER
-CLICKHOUSE_ADMIN_PASSWORD=$CH_ADMIN_PW
-SB_ID_SALT=$ID_SALT
-
-# ── frontend build args ──
 SB_FRONTEND_PORT=8097
 VITE_SB_API_URL=/smartbuddy-api
 VITE_KEYCLOAK_URL=https://iot-uat.styl.solutions/auth
 VITE_KEYCLOAK_REALM=styl-iot
 VITE_KEYCLOAK_CLIENT_ID=smart-buddy
+# SAM chat transport (low-privilege demo creds; they ship in the browser bundle)
 VITE_SOLACE_URL=$SOL_URL
 VITE_SOLACE_VPN=$SOL_VPN
 VITE_SOLACE_USER=$SOL_USER
 VITE_SOLACE_PASSWORD=$SOL_PW
 
-# ── SAM data agent — smartbuddy-mcp over the shared ClickHouse ──
-SB_MCP_API_KEY=$MCP_KEY
-
 # shared docker network (override only if the platform compose project name differs)
 BACKEND_NETWORK=solace-pubsub-geo-filtering_backend
 EOF
 
-# ── per-component .env (for local `npm run dev` / `npm start`; matches the tree-twin layout) ──────
-# The docker deploy uses the root .env above (compose build args + environment). These mirror the
-# same values so each service also runs standalone. All gitignored.
+# ── client/.env for local `npm run dev` (Vite reads it); the docker build uses the root .env ─────
 cat > "$REPO_DIR/client/.env" <<EOF
 # SMART Buddy frontend — local dev (Vite reads this). Generated by bootstrap-env.sh. DO NOT COMMIT.
 VITE_SB_API_URL=/smartbuddy-api
@@ -109,38 +87,10 @@ VITE_SOLACE_USER=$SOL_USER
 VITE_SOLACE_PASSWORD=$SOL_PW
 EOF
 
-cat > "$REPO_DIR/api-service/.env" <<EOF
-# api-service (sb-api) — local dev. Generated by bootstrap-env.sh. DO NOT COMMIT.
-CLICKHOUSE_URL=http://clickhouse:8123
-CLICKHOUSE_DB=smartbuddy
-CLICKHOUSE_USER=smartbuddy_ro
-CLICKHOUSE_PASSWORD=$RO_PW
-SB_API_PORT=3320
-SB_API_KEY=
-EOF
-
-cat > "$REPO_DIR/mcp-service/.env" <<EOF
-# mcp-service (smartbuddy-mcp) — local dev. Generated by bootstrap-env.sh. DO NOT COMMIT.
-MCP_PORT=3501
-MCP_API_KEY=$MCP_KEY
-CLICKHOUSE_URL=http://clickhouse:8123
-CLICKHOUSE_DB=smartbuddy
-CLICKHOUSE_USER=smartbuddy_ro
-CLICKHOUSE_PASSWORD=$RO_PW
-MCP_MAX_ROWS_DEFAULT=1000
-MCP_MAX_ROWS_HARD=5000
-MCP_QUERY_TIMEOUT_MS=15000
-MCP_MAX_MEMORY_BYTES=2000000000
-EOF
-
-echo "wrote $OUT + client/.env + api-service/.env + mcp-service/.env (chmod 600). Values (no secrets shown):"
-mark "CLICKHOUSE_ADMIN_USER   (atlantic .env)" "$CH_ADMIN_USER"
-mark "CLICKHOUSE_ADMIN_PASSWORD (atlantic .env)" "$CH_ADMIN_PW"
-mark "VITE_SOLACE_URL         (tree/uwb .env)" "$SOL_URL"
-mark "VITE_SOLACE_VPN" "$SOL_VPN"
-mark "VITE_SOLACE_USER" "$SOL_USER"
-mark "VITE_SOLACE_PASSWORD" "$SOL_PW"
-echo "  [gen] SB_MCP_API_KEY / CLICKHOUSE_RO_PASSWORD / CLICKHOUSE_RW_PASSWORD / SB_ID_SALT  — generated"
+echo "wrote $OUT + client/.env (chmod 600). Values (none shown):"
+echo "  ✓ VITE_SOLACE_URL       — $URL_SRC"
+echo "  ✓ VITE_SOLACE_VPN       — $VPN_SRC"
+echo "  ✓ VITE_SOLACE_USER      — $USER_SRC"
+echo "  ✓ VITE_SOLACE_PASSWORD  — $PW_SRC"
 echo
-echo "Next: review .env; ensure a Keycloak client 'smart-buddy' exists (admin console) and is in"
-echo "JWT_ALLOWED_CLIENTS; then deploy per DEPLOY.md."
+echo "Next: docker compose up -d --build (see DEPLOY.md). Backend env: backend/bootstrap-env.sh."
