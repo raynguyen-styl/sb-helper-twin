@@ -56,6 +56,16 @@ services:
         VITE_SOLACE_VPN: ${VITE_SOLACE_VPN:-default}
         VITE_SOLACE_USER: ${VITE_SOLACE_USER:-default}
         VITE_SOLACE_PASSWORD: ${VITE_SOLACE_PASSWORD:-default}
+        # Demo | Live chat routing (central-specs change dashboard-demo-live-modes). Empty = the code's
+        # defaults: demo → STYL/iot/smartbuddy/system/shared/v1/sam/chat/*, live → …/smartbuddy-live/…,
+        # a fresh browser opens in demo. See DEPLOY.md "Demo and Live".
+        VITE_SB_DEFAULT_MODE: ${VITE_SB_DEFAULT_MODE:-}
+        VITE_SAM_DEMO_TOPIC_REQUEST: ${VITE_SAM_DEMO_TOPIC_REQUEST:-}
+        VITE_SAM_DEMO_TOPIC_RESPONSE: ${VITE_SAM_DEMO_TOPIC_RESPONSE:-}
+        VITE_SAM_DEMO_TOPIC_ERROR: ${VITE_SAM_DEMO_TOPIC_ERROR:-}
+        VITE_SAM_LIVE_TOPIC_REQUEST: ${VITE_SAM_LIVE_TOPIC_REQUEST:-}
+        VITE_SAM_LIVE_TOPIC_RESPONSE: ${VITE_SAM_LIVE_TOPIC_RESPONSE:-}
+        VITE_SAM_LIVE_TOPIC_ERROR: ${VITE_SAM_LIVE_TOPIC_ERROR:-}
     container_name: smartbuddy-frontend
     restart: always
     ports:

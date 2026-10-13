@@ -3,7 +3,8 @@
 // clicks tabs): learn by doing. Research: user-started tours of ≤ ~6 steps finish far more often, so the whole dashboard
 // is split into chapters instead of one long tour; "n of N"; Back + Skip on every step; the highlighted element stays
 // clickable (non-modal); focus moves into the card and returns at the end; Esc always exits (NN/g, Atlassian, Material).
-// Step: t = headline, b = body, before(c) = act first (open / click a tab), target(c) = element to spotlight (none → centred).
+// Step: t = headline, b = body, before(c) = act first (open / click a tab), target(c) = element to spotlight (none → centred),
+// when() = include the step only while it returns true (checked when the chapter starts and in the Tours list).
 // A chapter with `view` reopens that view before every step, so wandering off mid-chapter doesn't break the next step.
 const top = (sel) => document.querySelector(`#dock .tw:not(.under) ${sel}`);
 const tab = (name) => top(`.tabs button[data-tab="${name}"]`)?.click();
@@ -145,9 +146,10 @@ export const CHAPTERS = {
           before: (c) => c.sam(true), target: () => document.getElementById('sam-new-chat') },
     ] },
     menu: { title: 'Menu, upload & keys', end: (c) => c.upload(false), steps: [
-        { t: 'The ▾ menu', b: 'Switch workspace, upload data, pick a tour, or see every key and mouse action.',
+        { t: 'The ▾ menu', b: 'Switch workspace, pick a tour, or see every key and mouse action. In Demo mode, upload data too.',
           target: () => document.getElementById('role-btn') },
         { t: 'Upload a month', b: 'Pick the month and dataset; the hint says which file it expects.',
+          when: () => window.SB?.mode?.() !== 'live',   // Live offers no upload (main.js)
           before: (c) => c.upload(true), target: () => document.querySelector('.up-overlay.show .up-modal') },
         { t: 'Keys and mouse', b: 'Press ? anywhere for the full list: Esc goes back, Shift-click compares.',
           before: (c) => c.upload(false), target: () => document.getElementById('role-btn') },
@@ -155,12 +157,14 @@ export const CHAPTERS = {
 };
 
 let ctx, ch, steps, list, i = 0, active = false, raf = 0, launcher = null, ring, card, live;
+// A chapter's steps for the current state: a step with `when` is left out while it returns false (e.g. Upload in Live).
+const visibleSteps = (key) => CHAPTERS[key].steps.filter((s) => { try { return !s.when || s.when(); } catch { return true; } });
 const doneSet = () => { try { return new Set(JSON.parse(localStorage.getItem('sb-tours') || '[]')); } catch { return new Set(); } };
 
 // key = chapter; keys = the chapters this viewer can take (role + month), in order — sets "Next: …" on the last step.
 export function startTour(key, c, keys) {
     if (active || !CHAPTERS[key]) return;
-    ctx = c; ch = key; list = keys; steps = CHAPTERS[key].steps; active = true; launcher = document.activeElement;
+    ctx = c; ch = key; list = keys; steps = visibleSteps(key); active = true; launcher = document.activeElement;
     document.body.classList.add('touring');
     ring = Object.assign(document.createElement('div'), { className: 'tour-ring' });
     card = Object.assign(document.createElement('div'), { className: 'tour-card' });
@@ -246,7 +250,7 @@ export function openTours(keys, onPick) {
       <div class="keys-h"><h2 id="tours-t">Tours</h2><button class="keys-x" aria-label="Close">✕</button></div>
       <p class="cap">Short guided tours on real data. Each takes under a minute; Esc stops one.</p>
       <ul class="tours-list">${keys.map((k) => `<li><button data-k="${k}"><span class="tours-ok" aria-hidden="true">${done.has(k) ? '✓' : ''}</span>
-        ${CHAPTERS[k].title}<span class="fn">${CHAPTERS[k].steps.length} steps${done.has(k) ? ' · done' : ''}</span></button></li>`).join('')}</ul></div>`;
+        ${CHAPTERS[k].title}<span class="fn">${visibleSteps(k).length} steps${done.has(k) ? ' · done' : ''}</span></button></li>`).join('')}</ul></div>`;
     document.body.appendChild(d);
     d.addEventListener('click', (e) => {
         const k = e.target.closest('[data-k]')?.dataset.k;

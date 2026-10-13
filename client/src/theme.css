@@ -102,6 +102,15 @@ select.up-in { cursor: pointer; }
 .nav-role { height: 28px; border: 1px solid rgba(255,255,255,.3); border-radius: var(--r-pill); padding: 0 12px;
     cursor: pointer; background: transparent; color: rgba(255,255,255,.85); font-size: 12px; white-space: nowrap; }
 .nav-role:hover { border-color: #fff; color: #fff; }
+/* Demo | Live toggle (which SAM agent the chat talks to; Live hides Upload). Two aria-pressed buttons in one
+   pill; main.js fills it. No responsive rule hides it — it stays visible whenever the nav bar is. */
+.mode-toggle { display: flex; align-items: center; height: 26px; border: 1px solid rgba(255,255,255,.3);
+    border-radius: var(--r-pill); overflow: hidden; flex: none; }
+.mode-toggle button { height: 100%; border: none; background: transparent; color: rgba(255,255,255,.75);
+    padding: 0 11px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mode-toggle button:hover { color: #fff; }
+.mode-toggle button[aria-pressed="true"] { background: var(--primary); color: #fff; }
+.mode-toggle button:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 /* workspace menu (native popover → Esc / click-away close; main.js pins it under the button) */
 .nav-menu { inset: auto; margin: 0; position: fixed; min-width: 200px; padding: 6px; border: 1px solid var(--hairline);
     border-radius: var(--r-md); background: var(--canvas); box-shadow: 0 10px 30px rgba(0,0,0,.18); }

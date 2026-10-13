@@ -10,6 +10,8 @@
  *         Payload { text, context }; FIFO on the tab's response topic.
  *     (b) Explicit topics: VITE_SAM_QUERY_TOPIC + VITE_SAM_RESPONSE_TOPIC (+ error);
  *         payload carries correlationId; orchestrator should echo it (else FIFO).
+ *     Two topic sets, one per dashboard mode (demo / live): SAM_TOPICS + setSamMode(); both modes'
+ *     response/error topics stay subscribed, only the request topic follows the mode.
  *  2) HTTP: VITE_SAM_ENDPOINT → POST {base}/chat with optional Bearer VITE_SAM_API_KEY.
  */
 
@@ -61,12 +63,38 @@ function _getSamTopicSegment() {
 
 const SAM_TOPIC_SEGMENT = _getSamTopicSegment();
 
-// SHARED request/response/error topics — the styl-office-uwb convention and exactly what the SAM POC
-// gateway rule subscribes to. Replies are correlated by the `correlationId` in the JSON payload.
-const _DOMAIN = "smartbuddy";
-const SAM_QUERY_TOPIC = EXPLICIT_SAM_QUERY || (import.meta.env.VITE_SAM_SOLACE_TOPIC_REQUEST || "").trim() || `STYL/iot/${_DOMAIN}/system/shared/v1/sam/chat/request`;
-const SAM_RESPONSE_TOPIC = EXPLICIT_SAM_RESPONSE || (import.meta.env.VITE_SAM_SOLACE_TOPIC_RESPONSE || "").trim() || `STYL/iot/${_DOMAIN}/system/shared/v1/sam/chat/response`;
-const SAM_ERROR_TOPIC = EXPLICIT_SAM_ERROR || (import.meta.env.VITE_SAM_SOLACE_TOPIC_ERROR || "").trim() || `STYL/iot/${_DOMAIN}/system/shared/v1/sam/chat/error`;
+// SHARED request/response/error topics, one set per dashboard mode (central-specs change
+// dashboard-demo-live-modes) — the styl-office-uwb convention and exactly what the SAM gateway rules
+// subscribe to. Replies are correlated by the `correlationId` in the JSON payload.
+//   demo → the ClickHouse agent on the `smartbuddy` shared topics (VITE_SAM_DEMO_TOPIC_*; the older
+//          VITE_SAM_QUERY_TOPIC / VITE_SAM_RESPONSE_TOPIC / VITE_SAM_ERROR_TOPIC still override them);
+//   live → the live agent on the `smartbuddy-live` shared topics (VITE_SAM_LIVE_TOPIC_*).
+const _trim = (v) => (v || "").trim();
+const DEMO_TOPIC_BASE = "STYL/iot/smartbuddy/system/shared/v1/sam/chat";
+const LIVE_TOPIC_BASE = "STYL/iot/smartbuddy-live/system/shared/v1/sam/chat";
+export const SAM_TOPICS = Object.freeze({
+  demo: Object.freeze({
+    request:  EXPLICIT_SAM_QUERY    || _trim(import.meta.env.VITE_SAM_SOLACE_TOPIC_REQUEST)  || _trim(import.meta.env.VITE_SAM_DEMO_TOPIC_REQUEST)  || `${DEMO_TOPIC_BASE}/request`,
+    response: EXPLICIT_SAM_RESPONSE || _trim(import.meta.env.VITE_SAM_SOLACE_TOPIC_RESPONSE) || _trim(import.meta.env.VITE_SAM_DEMO_TOPIC_RESPONSE) || `${DEMO_TOPIC_BASE}/response`,
+    error:    EXPLICIT_SAM_ERROR    || _trim(import.meta.env.VITE_SAM_SOLACE_TOPIC_ERROR)    || _trim(import.meta.env.VITE_SAM_DEMO_TOPIC_ERROR)    || `${DEMO_TOPIC_BASE}/error`,
+  }),
+  live: Object.freeze({
+    request:  _trim(import.meta.env.VITE_SAM_LIVE_TOPIC_REQUEST)  || `${LIVE_TOPIC_BASE}/request`,
+    response: _trim(import.meta.env.VITE_SAM_LIVE_TOPIC_RESPONSE) || `${LIVE_TOPIC_BASE}/response`,
+    error:    _trim(import.meta.env.VITE_SAM_LIVE_TOPIC_ERROR)    || `${LIVE_TOPIC_BASE}/error`,
+  }),
+});
+let _samMode = "demo";
+/** Route the chat to a mode's agent: chat() publishes to that mode's request topic. Both modes'
+ *  response/error topics stay subscribed, so a question pending across a switch still gets its reply. */
+export function setSamMode(mode) {
+  if (!SAM_TOPICS[mode] || mode === _samMode) return _samMode;
+  _samMode = mode;
+  console.log(`[sam] mode ${mode}: publish → ${SAM_TOPICS[mode].request}`);
+  return _samMode;
+}
+export function getSamMode() { return _samMode; }
+export function samTopics(mode = _samMode) { return { ...SAM_TOPICS[mode] }; }
 const SAM_SOLACE_MODE = "solace";   // transport always attempted (times out → offline if Solace unconfigured)
 const SAM_USE_SOLACE_FIFO = false;  // replies carry correlationId, matched in _takePendingForPayload
 
@@ -284,7 +312,7 @@ function _registerSolaceHandlers() {
   if (_solaceHandlersRegistered || !useSolaceSam()) return;
   _solaceHandlersRegistered = true;
 
-  subscribe(SAM_RESPONSE_TOPIC, (topicName, payload) => {
+  const onResponse = (topicName, payload) => {
     _logSam(`[sam] received ← ${topicName}`, payload);
     if (SAM_USE_SOLACE_FIFO) {
       const p = _takePendingFifo();
@@ -312,35 +340,40 @@ function _registerSolaceHandlers() {
     }
     clearTimeout(p.timer);
     p.resolve(_normalizePayload(payload));
-  });
+  };
 
-  if (SAM_ERROR_TOPIC) {
-    subscribe(SAM_ERROR_TOPIC, (topicName, payload) => {
-      _logSam(`[sam] received ← ${topicName} (error)`, payload);
-      let p = null;
-      if (SAM_USE_SOLACE_FIFO) p = _takePendingFifo();
-      else {
-        p = _takePendingForPayload(_normalizeInboundPayload(payload).obj ?? payload);
-        if (!p && SAM_SINGLE_PENDING_FALLBACK && _pending.size === 1) {
-          const fallbackId = _pending.keys().next().value;
-          p = _pending.get(fallbackId) ?? null;
-          if (p) _pending.delete(fallbackId);
-        }
+  const onError = (topicName, payload) => {
+    _logSam(`[sam] received ← ${topicName} (error)`, payload);
+    let p = null;
+    if (SAM_USE_SOLACE_FIFO) p = _takePendingFifo();
+    else {
+      p = _takePendingForPayload(_normalizeInboundPayload(payload).obj ?? payload);
+      if (!p && SAM_SINGLE_PENDING_FALLBACK && _pending.size === 1) {
+        const fallbackId = _pending.keys().next().value;
+        p = _pending.get(fallbackId) ?? null;
+        if (p) _pending.delete(fallbackId);
       }
-      if (!p) return;
-      clearTimeout(p.timer);
-      const normalized = _normalizePayload(payload);
-      const err = normalized.reply ?? payload?.message ?? payload?.error ?? payload?.text ?? JSON.stringify(payload);
-      p.resolve({ reply: `SAM error: ${err}`, actions: [] });
-    });
-  }
+    }
+    if (!p) return;
+    clearTimeout(p.timer);
+    const normalized = _normalizePayload(payload);
+    const err = normalized.reply ?? payload?.message ?? payload?.error ?? payload?.text ?? JSON.stringify(payload);
+    p.resolve({ reply: `SAM error: ${err}`, actions: [] });
+  };
+
+  // Both modes' topics, each once: a demo/live pair configured identical subscribes a single time.
+  for (const topic of new Set(Object.values(SAM_TOPICS).map((t) => t.response))) subscribe(topic, onResponse);
+  for (const topic of new Set(Object.values(SAM_TOPICS).map((t) => t.error).filter(Boolean))) subscribe(topic, onError);
 }
 
 export function initSam() {
   if (useSolaceSam()) {
     _registerSolaceHandlers();
     const segInfo = SAM_SOLACE_MODE === "per-tab" ? ` topicSegment=${SAM_TOPIC_SEGMENT}` : "";
-    console.log(`[sam] Solace (${SAM_SOLACE_MODE}):${segInfo} query=${SAM_QUERY_TOPIC} response=${SAM_RESPONSE_TOPIC}` + (SAM_ERROR_TOPIC ? ` error=${SAM_ERROR_TOPIC}` : ""));
+    for (const [mode, t] of Object.entries(SAM_TOPICS)) {
+      console.log(`[sam] Solace (${SAM_SOLACE_MODE}) ${mode}:${segInfo} query=${t.request} response=${t.response}` + (t.error ? ` error=${t.error}` : ""));
+    }
+    console.log(`[sam] active mode: ${_samMode}`);
     return;
   }
   if (useHttpSam()) { console.log(`[sam] HTTP endpoint: ${SAM_ENDPOINT}`); return; }
@@ -365,8 +398,9 @@ export async function chat(text, context = {}) {
       // JSON envelope {correlationId, text, context, ts} — matches the styl-office-uwb wire + the SAM
       // gateway rule ({payload.text}/{payload.correlationId}/{payload.context}/{payload.ts}).
       const body = JSON.stringify({ correlationId, text: String(text ?? ""), context: _contextPreamble(context), ts: Date.now() });
-      console.log(`[sam] publish → ${SAM_QUERY_TOPIC} (corr ${correlationId})`);
-      publish(SAM_QUERY_TOPIC, body);
+      const topic = SAM_TOPICS[_samMode].request;          // the active mode's agent
+      console.log(`[sam] publish → ${topic} (${_samMode}, corr ${correlationId})`);
+      publish(topic, body);
     });
   }
 

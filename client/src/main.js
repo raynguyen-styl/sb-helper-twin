@@ -16,8 +16,9 @@ import { openPlayback, setPlaybackMonth } from './playback-window.js';
 import { openUpload } from './upload-window.js';
 import { initAuth, authReady, authRoles, logout } from './auth.js';
 import { initSolace } from './solace/solace.js';
-import { initSam } from './sam/samClient.js';
-import { initSamPanel, setSamExpanded } from './sam/samPanel.js';
+import { initSam, setSamMode } from './sam/samClient.js';
+import { initSamPanel, setSamExpanded, setSamPanelMode } from './sam/samPanel.js';
+import { initMode, getMode, setMode, onModeChange, MODES } from './mode.js';
 import { closeAll, info, esc } from './windowing.js';
 import { setCompareData, clearCompare, toggle as toggleCompare, followMap, pinnedKind, isPinned, pinsParam, restorePins, openDetail as openCompare } from './compare.js';
 import { startTour, openTours, CHAPTERS } from './tour.js';
@@ -63,6 +64,32 @@ function setHash(key, val) {
     if (val) h.unshift(`${key}=${encodeURIComponent(val)}`);
     history.replaceState(null, '', location.pathname + location.search + (h.length ? '#' + h.join('&') : ''));
 }
+
+/* ---------- Demo | Live (mode.js): which SAM agent the chat talks to; Live offers no Upload ---------- */
+// #mode= in the link → the browser's stored choice → VITE_SB_DEFAULT_MODE → demo. The views read the
+// same ClickHouse extract in both modes; only the chat topics and the Upload entry differ.
+initMode({ defaultMode: import.meta.env.VITE_SB_DEFAULT_MODE, hashValue: hashParam('mode') });
+const MODE_LABEL = { demo: 'Demo', live: 'Live' };
+const MODE_TITLE = { demo: 'Demo: the uploaded extract and the demo agent (Upload available)',
+                     live: 'Live: the live agent (no Upload)' };
+// The toggle on the nav bar (#mode-toggle in index.html): built once, its pressed state follows the mode.
+function renderModeToggle() {
+    const el = document.getElementById('mode-toggle');
+    if (!el) return;
+    if (!el.childElementCount) {
+        el.innerHTML = MODES.map((m) => `<button type="button" data-mode="${m}" title="${MODE_TITLE[m]}">${MODE_LABEL[m]}</button>`).join('');
+        el.addEventListener('click', (e) => { const m = e.target.closest('[data-mode]')?.dataset.mode; if (m) setMode(m); });
+    }
+    el.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === getMode())));
+}
+renderModeToggle();
+onModeChange((m) => {
+    setHash('mode', m);                                                              // shareable
+    if (m === 'live') document.querySelector('.up-overlay.show .up-x')?.click();     // no upload in Live
+    renderNav();                                                                     // menu + toggle
+    setSamMode(m);                                                                   // chat topics
+    setSamPanelMode(m);                                                              // header + new chat
+});
 const markerEls = new Map();
 const markers = new Map();
 let mapReady = false;
@@ -125,10 +152,10 @@ function renderNav() {
     let keys = [...(role ? ROLES[role].views : Object.keys(VIEWS))].filter((k) => VIEWS[k] && viewAvailable(k));
     if (!keys.includes('playback')) keys.push('playback');  // always
     nv.innerHTML = keys.map((k) => `<button class="nav-btn" data-view="${k}" title="${VIEWS[k].title || VIEWS[k].label}">${VIEWS[k].label}</button>`).join('') +
-        `<button class="nav-role" id="role-btn" popovertarget="nav-menu" title="Workspace, upload, sign out">${role ? ROLES[role].icon + ' ' + ROLES[role].label : '☰ All views'} ▾</button>
+        `<button class="nav-role" id="role-btn" popovertarget="nav-menu" title="${getMode() === 'live' ? 'Workspace, tours, sign out' : 'Workspace, upload, sign out'}">${role ? ROLES[role].icon + ' ' + ROLES[role].label : '☰ All views'} ▾</button>
         <div id="nav-menu" class="nav-menu" popover>
           <button data-act="role">Switch workspace…</button>
-          <button data-act="upload">⬆ Upload data</button>
+          ${getMode() === 'demo' ? '<button data-act="upload">⬆ Upload data</button>' : ''}
           <button data-act="tours">Tours…</button>
           <button data-act="keys">Keyboard &amp; mouse <kbd>?</kbd></button>
           ${username ? `<div class="nav-menu-user">Signed in as <b>${username.replace(/[&<"]/g, '')}</b></div>
@@ -152,6 +179,7 @@ function renderNav() {
         else if (act === 'keys') { rb.focus(); openShortcuts(); }
         else logout();
     });
+    renderModeToggle();
     renderMonthPicker();
     renderCoverage();
 }
@@ -219,6 +247,7 @@ function renderUser(name) {
 // the agent what's on screen (a hint only — the agent answers from the DB).
 const samActive = { school: null, stall: null, terminal: null };
 window.SB = {
+    mode: getMode,                                   // Demo | Live (the tour's step predicate reads it)
     openSchool: (sid) => { samActive.school = sid; return open(sid); },
     openStall: (id) => { samActive.stall = id; return openStall(STALLS, id); },
     openTerminal: (tid) => { samActive.terminal = tid; return openTerminal(STALLS, tid); },
@@ -313,6 +342,7 @@ function buildSamContext() {
         source: 'smart-buddy-frontend',
         scope: curMonth ? `month ${curMonth}` : 'no data loaded',
         role: role || 'all',
+        mode: getMode(),
         viewing: { school: samActive.school, stall: samActive.stall, terminal: samActive.terminal },
         hash: location.hash || null,
     };
@@ -654,6 +684,8 @@ function openUnmapped() {
 initSolace();
 initSam();
 initSamPanel(buildSamContext);
+setSamMode(getMode());          // route the chat to the active mode's agent
+setSamPanelMode(getMode());     // and name it in the panel header
 document.addEventListener('smartbuddy:sam-ask', () => tick('sam'));
 
 /* ---------- opt-in tours (tour.js): ▾ menu → Tours, checklist, first-visit picker, "▶ Tour" on a view — never by themselves ---------- */
@@ -680,7 +712,8 @@ function tour(key = 'basics') {
         compare: () => { if (pins.length >= 2) openCompare(); },
         view: (k) => VIEWS[k].open(),
         sam: setSamExpanded,
-        upload: (on) => { const x = document.querySelector('.up-overlay.show .up-x');
+        upload: (on) => { if (getMode() === 'live') return;   // no upload in Live (its tour step is hidden too)
+            const x = document.querySelector('.up-overlay.show .up-x');
             if (on && !x) openUpload(onUploaded); else if (!on) x?.click(); },
     }, tourKeys());
 }

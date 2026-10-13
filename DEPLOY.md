@@ -37,6 +37,7 @@ lives in this repository's `.env`; the backend's are in `backend/.env`.
 | `VITE_SB_API_URL` | api-service base — same-origin `/smartbuddy-api` (this nginx proxies it). Empty → Playback uses bundled demo data |
 | `VITE_KEYCLOAK_URL` / `VITE_KEYCLOAK_REALM` / `VITE_KEYCLOAK_CLIENT_ID` | realm `styl-iot`, client `smart-buddy`. Empty URL → no login (local dev only) |
 | `VITE_SOLACE_URL` / `VITE_SOLACE_VPN` / `VITE_SOLACE_USER` / `VITE_SOLACE_PASSWORD` | the SAM chat transport — see "Solace defaults" |
+| `VITE_SB_DEFAULT_MODE`, `VITE_SAM_DEMO_TOPIC_*`, `VITE_SAM_LIVE_TOPIC_*` | the Demo \| Live chat routing — see "Demo and Live" |
 | `BACKEND_NETWORK` | the shared external docker network (default `solace-pubsub-geo-filtering_backend`) |
 
 **Solace defaults.** With none of the four set, the build targets the shared local Solace that
@@ -52,6 +53,26 @@ broker values it uses today (the bootstrap preserves them from the legacy `.env`
 values at another broker to use it. They ship in the browser bundle: low-privilege demo credentials
 only, scoped to the smartbuddy chat topics. There is no proxy for the broker in this nginx, by
 decision (`central-specs`, change `split-sb-helper-repos`, D12).
+
+**Demo and Live.** The nav bar's Demo | Live toggle picks which SAM agent the chat talks to; nothing
+else moves. *Demo* is the uploaded ClickHouse extract with the demo agent, and the Upload entry in
+the ▾ menu. *Live* publishes the chat to the live agent's topics and offers no Upload (the data behind
+the live agent is not something a viewer uploads); the dashboard windows keep reading the ClickHouse
+extract. The choice is kept per browser; `#mode=live` or `#mode=demo` in a link forces it. The keys,
+all baked at build time (empty = the default):
+- `VITE_SB_DEFAULT_MODE` — `demo` (default) or `live`: the mode a fresh browser opens in;
+- `VITE_SAM_DEMO_TOPIC_REQUEST`, `VITE_SAM_DEMO_TOPIC_RESPONSE`, `VITE_SAM_DEMO_TOPIC_ERROR` — the
+  Demo chat's Solace topics, default `STYL/iot/smartbuddy/system/shared/v1/sam/chat/request`,
+  `…/response`, `…/error`;
+- `VITE_SAM_LIVE_TOPIC_REQUEST`, `VITE_SAM_LIVE_TOPIC_RESPONSE`, `VITE_SAM_LIVE_TOPIC_ERROR` — the
+  Live chat's Solace topics, default `STYL/iot/smartbuddy-live/system/shared/v1/sam/chat/request`,
+  `…/response`, `…/error`.
+
+The mesh owner must have a gateway rule on each mode's request topic that replies on its response
+topic (`backend/DEPLOY.md` §7); until the live rule exists a Live question times out and the panel
+shows "offline". The older `VITE_SAM_QUERY_TOPIC` / `VITE_SAM_RESPONSE_TOPIC` / `VITE_SAM_ERROR_TOPIC`
+still override the Demo topics. `bootstrap-env.sh` writes all seven keys (environment → existing
+`.env` → default), so `.env` always shows the topics in use.
 
 ## 3 · Routing (`client/nginx.conf`)
 
