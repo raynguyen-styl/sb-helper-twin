@@ -6,20 +6,40 @@
  * Adapted from htx-pilot/front-end/src/solace/solace.js (topic/event names
  * rebased htx → smartbuddy). The broker creds in the built bundle are PUBLIC —
  * use low-privilege demo creds scoped to the smartbuddy chat topics only.
+ *
+ * Defaults (nothing set) target the box's shared Solace (atlantic-platform/common):
+ *   URL  → same-origin `/solace` (ws:// or wss:// from the page), which this app's nginx
+ *          (and the Vite dev server) proxies to `solace:8008` (Solace Web Messaging).
+ *   VPN / client-username / its secret → `default`, the broker image's built-in demo identity.
+ * Same-origin means no hostname is baked into the bundle, so the identical build works on
+ * localhost, UAT and prod wherever the common stack runs beside it. Set VITE_SOLACE_URL to a
+ * full ws(s):// URL to use another broker, or to `off` to run with chat disabled.
  */
 
 import solace from "solclientjs";
 
-const SOLACE_HOST =
+const SOLACE_SAME_ORIGIN_PATH = "/solace";
+const SOLACE_LOCAL_IDENTITY = "default"; // common's VPN + client-username (not a secret; see its README)
+
+function _sameOriginWsUrl(path) {
+  if (typeof window === "undefined" || !window.location) return "";
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}${path}`;
+}
+
+const _configuredUrl = (
   import.meta.env.VITE_SOLACE_URL ||
   import.meta.env.VITE_SOLACE_HOST ||
-  "";
-const SOLACE_VPN = import.meta.env.VITE_SOLACE_VPN || "default";
-const SOLACE_USER = import.meta.env.VITE_SOLACE_USER || "";
+  ""
+).trim();
+const SOLACE_HOST =
+  _configuredUrl.toLowerCase() === "off" ? "" : _configuredUrl || _sameOriginWsUrl(SOLACE_SAME_ORIGIN_PATH);
+const SOLACE_VPN = import.meta.env.VITE_SOLACE_VPN || SOLACE_LOCAL_IDENTITY;
+const SOLACE_USER = import.meta.env.VITE_SOLACE_USER || SOLACE_LOCAL_IDENTITY;
 const SOLACE_PASS =
   import.meta.env.VITE_SOLACE_PASSWORD ||
   import.meta.env.VITE_SOLACE_PASS ||
-  "";
+  SOLACE_LOCAL_IDENTITY;
 
 /** @type {solace.Session | null} */
 let _session = null;
@@ -154,7 +174,7 @@ function _doSubscribe(topic) {
 // ── Public API ───────────────────────────────────────────────────
 export function initSolace() {
   if (!SOLACE_HOST) {
-    console.warn("[solace] VITE_SOLACE_URL not set — running offline (chat disabled)");
+    console.warn("[solace] VITE_SOLACE_URL=off — running offline (chat disabled)");
     dispatchSolaceStatus(false);
     return;
   }

@@ -16,7 +16,8 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 # Build-time config — Vite bakes import.meta.env.VITE_* into the bundle. All optional for local dev:
-# with none set the app runs without login, Playback uses bundled demo data, and chat shows "offline".
+# with none set the app runs without login, Playback uses bundled demo data, and chat uses the box's
+# shared Solace via same-origin /solace (see src/solace/solace.js; shows "offline" if it isn't up).
 ARG VITE_SB_API_URL=
 ARG VITE_KEYCLOAK_URL=
 ARG VITE_KEYCLOAK_REALM=styl-iot

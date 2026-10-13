@@ -99,7 +99,7 @@ Variables this stack uses:
 | `SB_FRONTEND_PORT` | client | host port for the frontend (default **8097**) |
 | `VITE_SB_API_URL` | client (build arg) | api-service base — **same-origin** `/smartbuddy-api` (the client nginx proxies it). Empty → Playback uses bundled demo data |
 | `VITE_KEYCLOAK_URL` / `VITE_KEYCLOAK_REALM` / `VITE_KEYCLOAK_CLIENT_ID` | client (build arg) | realm `styl-iot`, client `smart-buddy`. Empty `VITE_KEYCLOAK_URL` → no login (local dev only) |
-| `VITE_SOLACE_URL` / `VITE_SOLACE_VPN` / `VITE_SOLACE_USER` / `VITE_SOLACE_PASSWORD` | client (build arg) | SAM chat transport — **low-priv** demo creds (they ship in the browser bundle) |
+| `VITE_SOLACE_URL` / `VITE_SOLACE_VPN` / `VITE_SOLACE_USER` / `VITE_SOLACE_PASSWORD` | client (build arg) | SAM chat transport. **Leave empty** to use the box's shared Solace (`atlantic-platform/common`): the browser connects **same-origin** `ws(s)://<host>/solace`, the client nginx proxies it to `solace:8008`, VPN/user `default`. No hostname is baked in, so the same build works locally, on UAT and in prod. Set a full `ws(s)://` URL for another broker, or `off` to disable chat. Values ship in the browser bundle — **low-priv** creds only |
 | `SB_MCP_API_KEY` | mcp-service | Bearer token the SAM agent sends to the MCP. **Fresh** random secret (`openssl rand -hex 32`) — never a tree-twin key |
 
 The frontend bakes its `VITE_*` at **build** time — rebuild the `client` service after changing any.
@@ -192,8 +192,11 @@ Keycloak (local dev / internal-only), leave `VITE_KEYCLOAK_URL` empty and gate a
   and re-paste the block** — the schema is baked into the image.
 - Add the Event Gateway rule: subscribe `STYL/iot/smartbuddy/system/*/v1/sam/chat/request`, reply on
   `.../system/{same}/v1/sam/chat/response` (and optionally `.../error`).
-- Point the FE at Solace via `VITE_SOLACE_*` and rebuild the `client` service; the chat panel goes
-  live. With no SAM env configured, the chat panel simply shows "offline" — the rest is unaffected.
+- The FE reaches Solace with no config: it connects same-origin to `/solace`, which the client nginx
+  proxies to the shared broker (`solace:8008`, from `atlantic-platform/common`). Point the SAM
+  gateway at the same broker (from a container: SMF `tcp://solace:55555`, VPN `default`). Override
+  with `VITE_SOLACE_*` only for another broker. If the broker or agent is down, the chat panel shows
+  "offline" and retries — the rest is unaffected.
 
 ---
 

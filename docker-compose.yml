@@ -60,7 +60,9 @@ services:
         VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL:-}
         VITE_KEYCLOAK_REALM: ${VITE_KEYCLOAK_REALM:-styl-iot}
         VITE_KEYCLOAK_CLIENT_ID: ${VITE_KEYCLOAK_CLIENT_ID:-smart-buddy}
-        # SAM chat transport (low-priv demo Solace creds; baked into the bundle).
+        # SAM chat transport. Empty = the box's shared Solace (atlantic-platform/common) via same-origin
+        # /solace → nginx → solace:8008, VPN/user `default` — same build works local/UAT/prod.
+        # Set a full ws(s):// URL for another broker, or `off`. Values are baked into the bundle (low-priv only).
         VITE_SOLACE_URL: ${VITE_SOLACE_URL:-}
         VITE_SOLACE_VPN: ${VITE_SOLACE_VPN:-}
         VITE_SOLACE_USER: ${VITE_SOLACE_USER:-}
