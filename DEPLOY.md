@@ -22,8 +22,9 @@ backend's containers are "orphans" (both repositories use project `smartbuddy`):
 pass `--remove-orphans`**, it would stop the backend.
 
 The frontend starts with or without the backend: its nginx resolves the backend containers per
-request, so `/smartbuddy-api/`, `/smartbuddy-mcp/` and `/smartbuddy-ingest/` answer 502 until the
-backend is up, and `/healthz` answers 200 regardless.
+request, so `/smartbuddy-api/`, `/smartbuddy-mcp/` and `/smartbuddy-ingest/` fail until the platform
+and the backend are up (502; the Keycloak-gated routes 500, because the token check itself cannot
+reach `jwt-validator`), and `/healthz` answers 200 regardless.
 
 ## 2 · Environment (`.env` → build arguments)
 

@@ -15,7 +15,8 @@
 #   docker compose up -d --build          # smartbuddy-frontend
 #
 # The frontend starts with or without the backend: its nginx resolves smartbuddy-api / smartbuddy-mcp /
-# smartbuddy-ingest / jwt-validator per request, so those routes just 502 until the backend is up.
+# smartbuddy-ingest / jwt-validator per request, so those routes just fail (502; the Keycloak-gated ones
+# 500, because the token check itself cannot reach jwt-validator) until the platform + backend are up.
 #
 # Isolation from tree-twin / other demos (checked against the live VM registry):
 #   • project `smartbuddy` · container `smartbuddy-frontend`
