@@ -326,7 +326,9 @@ function _registerSolaceHandlers() {
     const p = _takePendingForPayload(parsed);
     if (!p) {
       const id = _extractCorrelationId(parsed);
-      if (SAM_SINGLE_PENDING_FALLBACK && _pending.size === 1) {
+      // Fallback ONLY for a reply with no correlationId (an agent that doesn't echo it). A reply carrying
+      // someone else's id — another tab, or the live sync on the shared live topic — is never ours.
+      if (SAM_SINGLE_PENDING_FALLBACK && !id && _pending.size === 1) {
         const fallbackId = _pending.keys().next().value;
         const fp = _pending.get(fallbackId);
         _pending.delete(fallbackId);
@@ -347,8 +349,9 @@ function _registerSolaceHandlers() {
     let p = null;
     if (SAM_USE_SOLACE_FIFO) p = _takePendingFifo();
     else {
-      p = _takePendingForPayload(_normalizeInboundPayload(payload).obj ?? payload);
-      if (!p && SAM_SINGLE_PENDING_FALLBACK && _pending.size === 1) {
+      const errObj = _normalizeInboundPayload(payload).obj ?? payload;
+      p = _takePendingForPayload(errObj);
+      if (!p && SAM_SINGLE_PENDING_FALLBACK && !_extractCorrelationId(errObj) && _pending.size === 1) {   // id-less only
         const fallbackId = _pending.keys().next().value;
         p = _pending.get(fallbackId) ?? null;
         if (p) _pending.delete(fallbackId);

@@ -20,9 +20,10 @@ Engineering / Management) picks the views: an OneMap map of the 332 schools (dot
 by level / error rate / speed; PBS bookstore and stamp-point layers), school details with stalls and
 terminals tabs, Network Overview, Terminal Health with a service route planner, Wearables (Feb + Mar),
 Purchases and Saving (Mar), Playback, Upload (chunked, resumable), and a SAM chat panel over Solace.
-A **Demo | Live** toggle on the nav bar picks which SAM agent the chat talks to: Demo is the uploaded
-extract with the demo agent and the Upload entry; Live talks to the live agent and offers no Upload
-(`DEPLOY.md` "Demo and Live"; `#mode=live` in a link forces it). Compare up to four schools, stalls or
+A **Demo | Live** toggle on the nav bar switches the dashboard: Demo is the uploaded extract with every
+view, Upload and the demo agent; Live is a Live overview, a live map and the live agent in the chat,
+all from the last **Sync** (the backend asks the live agent — today the only path to Redshift — and
+stores the answers) (`DEPLOY.md` "Demo and Live"; `#mode=live` in a link forces it). Compare up to four schools, stalls or
 terminals side by side; opt-in tours; keyboard-usable; deep links (`#role=`, `#school=`, `#terminal=`,
 `#layers=`, `#mode=`). Details: `client/README.md`.
 

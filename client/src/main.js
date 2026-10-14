@@ -19,6 +19,7 @@ import { initSolace } from './solace/solace.js';
 import { initSam, setSamMode } from './sam/samClient.js';
 import { initSamPanel, setSamExpanded, setSamPanelMode } from './sam/samPanel.js';
 import { initMode, getMode, setMode, onModeChange, MODES } from './mode.js';
+import * as L from './live.js';
 import { closeAll, info, esc } from './windowing.js';
 import { setCompareData, clearCompare, toggle as toggleCompare, followMap, pinnedKind, isPinned, pinsParam, restorePins, openDetail as openCompare } from './compare.js';
 import { startTour, openTours, CHAPTERS } from './tour.js';
@@ -65,9 +66,11 @@ function setHash(key, val) {
     history.replaceState(null, '', location.pathname + location.search + (h.length ? '#' + h.join('&') : ''));
 }
 
-/* ---------- Demo | Live (mode.js): which SAM agent the chat talks to; Live offers no Upload ---------- */
-// #mode= in the link → the browser's stored choice → VITE_SB_DEFAULT_MODE → demo. The views read the
-// same ClickHouse extract in both modes; only the chat topics and the Upload entry differ.
+/* ---------- Demo | Live (mode.js) ---------- */
+// #mode= in the link → the browser's stored choice → VITE_SB_DEFAULT_MODE → demo.
+// Demo: the uploaded ClickHouse extract, every view, Upload, the demo agent.
+// Live: only what the last live sync stored (live.js): the Live overview + live map + Sync, the live
+// agent in the chat; every Demo view and tool is hidden (central-specs change live-dashboard-sync).
 initMode({ defaultMode: import.meta.env.VITE_SB_DEFAULT_MODE, hashValue: hashParam('mode') });
 const MODE_LABEL = { demo: 'Demo', live: 'Live' };
 const MODE_TITLE = { demo: 'Demo: the uploaded extract and the demo agent (Upload available)',
@@ -86,10 +89,39 @@ renderModeToggle();
 onModeChange((m) => {
     setHash('mode', m);                                                              // shareable
     if (m === 'live') document.querySelector('.up-overlay.show .up-x')?.click();     // no upload in Live
-    renderNav();                                                                     // menu + toggle
     setSamMode(m);                                                                   // chat topics
     setSamPanelMode(m);                                                              // header + new chat
+    if (m === 'live') enterLive(); else leaveLive();                                 // dashboard + nav
 });
+
+// Live in, Live out. Demo's markers, legend, search, compare and coverage strip are hidden by the
+// body class (theme.css); Demo's data stays loaded underneath, so switching back is instant.
+async function enterLive() {
+    document.body.classList.add('mode-live');
+    closeAll(); clearCompare();
+    renderNav();
+    await L.loadMonths();
+    await L.loadPanels(L.live.month);
+    if (getMode() !== 'live') return;                     // switched back while loading
+    showLive();
+}
+function showLive() {
+    renderNav();
+    const draw = () => { if (getMode() === 'live') L.drawMap(map, maplibregl); };
+    if (!map || mapReady) draw(); else map.once('load', draw);
+    closeAll();
+    L.openOverview({ onSchool: (sid) => L.flyTo(map, sid) });
+}
+async function switchLiveMonth(m) {
+    await L.loadPanels(m);
+    if (getMode() === 'live') showLive();
+}
+function leaveLive() {
+    document.body.classList.remove('mode-live');
+    L.stopSyncPolling(); L.clearMap(); closeAll();
+    renderNav();
+    openFirstAvailable(role);
+}
 const markerEls = new Map();
 const markers = new Map();
 let mapReady = false;
@@ -149,9 +181,12 @@ function openFirstAvailable(r) {
 }
 function renderNav() {
     const nv = document.getElementById('nav-views');
-    let keys = [...(role ? ROLES[role].views : Object.keys(VIEWS))].filter((k) => VIEWS[k] && viewAvailable(k));
-    if (!keys.includes('playback')) keys.push('playback');  // always
-    nv.innerHTML = keys.map((k) => `<button class="nav-btn" data-view="${k}" title="${VIEWS[k].title || VIEWS[k].label}">${VIEWS[k].label}</button>`).join('') +
+    const isLive = getMode() === 'live';
+    let keys = isLive ? [] : [...(role ? ROLES[role].views : Object.keys(VIEWS))].filter((k) => VIEWS[k] && viewAvailable(k));
+    if (!isLive && !keys.includes('playback')) keys.push('playback');  // always (Demo)
+    nv.innerHTML = (isLive
+        ? '<button class="nav-btn" data-live="overview" title="Live overview: the last live sync">Live overview</button><span id="live-sync" class="nav-sync-wrap"></span>'
+        : keys.map((k) => `<button class="nav-btn" data-view="${k}" title="${VIEWS[k].title || VIEWS[k].label}">${VIEWS[k].label}</button>`).join('')) +
         `<button class="nav-role" id="role-btn" popovertarget="nav-menu" title="${getMode() === 'live' ? 'Workspace, tours, sign out' : 'Workspace, upload, sign out'}">${role ? ROLES[role].icon + ' ' + ROLES[role].label : '☰ All views'} ▾</button>
         <div id="nav-menu" class="nav-menu" popover>
           <button data-act="role">Switch workspace…</button>
@@ -163,6 +198,10 @@ function renderNav() {
         </div>`;
     nv.querySelectorAll('[data-view]').forEach((b) =>
         b.addEventListener('click', () => VIEWS[b.dataset.view].open()));
+    if (isLive) {
+        nv.querySelector('[data-live="overview"]').addEventListener('click', () => L.openOverview({ onSchool: (sid) => L.flyTo(map, sid) }));
+        L.mountSync(document.getElementById('live-sync'), { onDone: showLive });
+    }
     const menu = nv.querySelector('#nav-menu'), rb = nv.querySelector('#role-btn');
     menu.addEventListener('toggle', (e) => {                // popovers open centred; pin it under the button
         if (e.newState !== 'open') return;
@@ -191,7 +230,7 @@ function renderCoverage() {
     const right = document.querySelector('.nav-right');
     if (!right) return;
     let el = document.getElementById('month-cov');
-    if (!MONTHS.length || !curMonth) { el?.remove(); return; }
+    if (!MONTHS.length || !curMonth || getMode() === 'live') { el?.remove(); return; }   // Demo only
     if (!el) {
         el = document.createElement('div');
         el.id = 'month-cov'; el.className = 'month-cov';
@@ -209,18 +248,24 @@ function renderMonthPicker() {
     const right = document.querySelector('.nav-right');
     if (!right) return;
     let sel = document.getElementById('month-picker');
-    if (!MONTHS.length) { sel?.remove(); return; }
+    const isLive = getMode() === 'live';
+    // Live: the months the live agent reported in the last sync (an unsynced one says so). Demo: uploaded months.
+    const list = isLive ? L.live.months : MONTHS;
+    if (!list.length) { sel?.remove(); return; }
     if (!sel) {
         sel = document.createElement('select');
-        sel.id = 'month-picker'; sel.className = 'month-picker'; sel.title = 'Data month';
+        sel.id = 'month-picker'; sel.className = 'month-picker';
         right.insertBefore(sel, right.firstChild);
         sel.addEventListener('change', () => switchMonth(sel.value));
     }
+    sel.title = isLive ? 'Live month (from the live agent)' : 'Data month';
     const fmt = (m) => { const [y, mo] = m.split('-'); return `${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo]} ${y}`; };
-    sel.innerHTML = MONTHS.map((m) => `<option value="${m.month}"${m.month === curMonth ? ' selected' : ''}>${fmt(m.month)}</option>`).join('');
+    const cur = isLive ? L.live.month : curMonth;
+    sel.innerHTML = list.map((m) => `<option value="${m.month}"${m.month === cur ? ' selected' : ''}>${fmt(m.month)}${isLive && !m.synced_at ? ' · not synced' : ''}</option>`).join('');
 }
 
 async function switchMonth(m) {
+    if (getMode() === 'live') return switchLiveMonth(m);
     if (m === curMonth) return;
     if (await loadMonth(m) === false) return;
     renderNav();
@@ -340,7 +385,8 @@ document.addEventListener('keydown', (e) => {
 function buildSamContext() {
     return {
         source: 'smart-buddy-frontend',
-        scope: curMonth ? `month ${curMonth}` : 'no data loaded',
+        scope: getMode() === 'live' ? (L.live.month ? `month ${L.live.month}` : 'live: no month synced')
+            : curMonth ? `month ${curMonth}` : 'no data loaded',
         role: role || 'all',
         mode: getMode(),
         viewing: { school: samActive.school, stall: samActive.stall, terminal: samActive.terminal },
@@ -530,6 +576,7 @@ async function boot() {
     colorMode = ROLE_COLOR[role] || 'level';         // saved role's default colouring, before the first paint
     await loadMonth(curMonth);
     renderNav();
+    if (getMode() === 'live') return enterLive();     // Live opens on its own overview; Demo deep links don't apply
 
     const h = location.hash;
     const mRole = h.match(/role=(\w+)/);
@@ -691,6 +738,7 @@ document.addEventListener('smartbuddy:sam-ask', () => tick('sam'));
 /* ---------- opt-in tours (tour.js): ▾ menu → Tours, checklist, first-visit picker, "▶ Tour" on a view — never by themselves ---------- */
 // Chapters this viewer can take: the shared ones + the views in their workspace that this month has (Playback always).
 function tourKeys() {
+    if (getMode() === 'live') return ['sam', 'menu'].filter((k) => CHAPTERS[k]);   // the Demo chapters walk Demo views
     const views = new Set([...(role ? ROLES[role].views : Object.keys(VIEWS)), 'playback'].filter((k) => VIEWS[k] && viewAvailable(k)));
     return Object.keys(CHAPTERS).filter((k) => !CHAPTERS[k].view || views.has(k));
 }

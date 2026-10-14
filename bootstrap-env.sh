@@ -68,6 +68,7 @@ r="$(cfg VITE_SAM_DEMO_TOPIC_ERROR    "$DEMO_TOPIC_BASE/error")";    DERR_SRC="$
 r="$(cfg VITE_SAM_LIVE_TOPIC_REQUEST  "$LIVE_TOPIC_BASE/request")";  LREQ_SRC="${r%%$'\t'*}"; LREQ="${r#*$'\t'}"
 r="$(cfg VITE_SAM_LIVE_TOPIC_RESPONSE "$LIVE_TOPIC_BASE/response")"; LRES_SRC="${r%%$'\t'*}"; LRES="${r#*$'\t'}"
 r="$(cfg VITE_SAM_LIVE_TOPIC_ERROR    "$LIVE_TOPIC_BASE/error")";    LERR_SRC="${r%%$'\t'*}"; LERR="${r#*$'\t'}"
+r="$(cfg VITE_SB_LIVE_URL /smartbuddy-live)";                         LURL_SRC="${r%%$'\t'*}"; LIVE_URL="${r#*$'\t'}"
 unset r
 
 if [ -f "$OUT" ]; then
@@ -99,6 +100,8 @@ VITE_SAM_DEMO_TOPIC_ERROR=$DERR
 VITE_SAM_LIVE_TOPIC_REQUEST=$LREQ
 VITE_SAM_LIVE_TOPIC_RESPONSE=$LRES
 VITE_SAM_LIVE_TOPIC_ERROR=$LERR
+# Live dashboard: the Sync API path (this nginx proxies it to the backend's smartbuddy-live-sync)
+VITE_SB_LIVE_URL=$LIVE_URL
 
 # shared docker network (override only if the platform compose project name differs)
 BACKEND_NETWORK=solace-pubsub-geo-filtering_backend
@@ -122,6 +125,7 @@ VITE_SAM_DEMO_TOPIC_ERROR=$DERR
 VITE_SAM_LIVE_TOPIC_REQUEST=$LREQ
 VITE_SAM_LIVE_TOPIC_RESPONSE=$LRES
 VITE_SAM_LIVE_TOPIC_ERROR=$LERR
+VITE_SB_LIVE_URL=$LIVE_URL
 EOF
 
 echo "wrote $OUT + client/.env (chmod 600). Values (none shown):"
@@ -132,5 +136,6 @@ echo "  ✓ VITE_SOLACE_PASSWORD  — $PW_SRC"
 echo "  ✓ VITE_SB_DEFAULT_MODE  — $MODE_SRC"
 echo "  ✓ VITE_SAM_DEMO_TOPIC_REQUEST / _RESPONSE / _ERROR  — $DREQ_SRC / $DRES_SRC / $DERR_SRC"
 echo "  ✓ VITE_SAM_LIVE_TOPIC_REQUEST / _RESPONSE / _ERROR  — $LREQ_SRC / $LRES_SRC / $LERR_SRC"
+echo "  ✓ VITE_SB_LIVE_URL      — $LURL_SRC"
 echo
 echo "Next: docker compose up -d --build (see DEPLOY.md). Backend env: backend/bootstrap-env.sh."

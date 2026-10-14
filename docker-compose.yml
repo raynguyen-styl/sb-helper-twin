@@ -66,6 +66,8 @@ services:
         VITE_SAM_LIVE_TOPIC_REQUEST: ${VITE_SAM_LIVE_TOPIC_REQUEST:-}
         VITE_SAM_LIVE_TOPIC_RESPONSE: ${VITE_SAM_LIVE_TOPIC_RESPONSE:-}
         VITE_SAM_LIVE_TOPIC_ERROR: ${VITE_SAM_LIVE_TOPIC_ERROR:-}
+        # Live dashboard's Sync API (empty = /smartbuddy-live, proxied by this container's nginx).
+        VITE_SB_LIVE_URL: ${VITE_SB_LIVE_URL:-}
     container_name: smartbuddy-frontend
     restart: always
     ports:

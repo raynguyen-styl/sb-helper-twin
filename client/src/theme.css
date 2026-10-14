@@ -111,6 +111,25 @@ select.up-in { cursor: pointer; }
 .mode-toggle button:hover { color: #fff; }
 .mode-toggle button[aria-pressed="true"] { background: var(--primary); color: #fff; }
 .mode-toggle button:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+/* Live (central-specs change live-dashboard-sync): only the last live sync is shown — hide every Demo
+   tool and Demo marker; live markers (.lmk) and the live legend take their place. */
+body.mode-live .maplibregl-marker:not(.lmk), body.mode-live #legend, body.mode-live #search,
+body.mode-live #search-results, body.mode-live #compare-row, body.mode-live #onboard,
+body.mode-live #month-cov { display: none !important; }
+.nav-sync-wrap { display: inline-flex; align-items: center; gap: 7px; }
+.nav-sync { height: 28px; border: none; border-radius: var(--r-pill); padding: 0 13px; cursor: pointer;
+    background: var(--primary); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.nav-sync:hover { background: var(--primary-focus); }
+.nav-sync:disabled { opacity: .7; cursor: progress; }
+.nav-sync-st { font-size: 11px; color: rgba(255,255,255,.72); white-space: nowrap; }
+.lmk { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid #fff; cursor: pointer;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.28); }
+.lmk:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.live-legend .lg-title { font-weight: 650; font-size: 12px; margin: 2px 0 6px; }
+.live-share .live-bar { display: inline-block; height: 6px; max-width: 56px; background: var(--primary);
+    border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+.live-empty { margin-top: 6px; line-height: 1.5; }
+.live-foot { margin-top: 14px; }
 /* workspace menu (native popover → Esc / click-away close; main.js pins it under the button) */
 .nav-menu { inset: auto; margin: 0; position: fixed; min-width: 200px; padding: 6px; border: 1px solid var(--hairline);
     border-radius: var(--r-md); background: var(--canvas); box-shadow: 0 10px 30px rgba(0,0,0,.18); }

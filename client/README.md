@@ -8,8 +8,9 @@ of the map (up to 4, one type at a time, lettered A–D with a matching badge on
 numbers). The map zooms to fit the pinned items. "Compare ▸" opens one topic at a time (Spend / Errors / Speed /
 Network / Food & menu) as graphs — a bar chart per measure, lines over time, 100% bars for shares — with the exact
 numbers behind "Show numbers". The topic and the map key's "Colour by" follow each other.
-**Top bar:** a Demo | Live toggle (which SAM agent the chat talks to — Demo is the uploaded extract with the demo
-agent, Live is the live agent and hides Upload data; kept per browser, `#mode=live` in a link forces it), views +
+**Top bar:** a Demo | Live toggle (Demo = the uploaded extract, every view below, Upload, the demo agent; Live = the
+Live overview, a live map coloured by spend and the live agent, all from the last **Sync**, with the Demo views and
+tools hidden — `src/live.js`; kept per browser, `#mode=live` in a link forces it), views +
 month + search; the workspace menu (role ▾) holds Switch workspace, Upload data (Demo only), Sign out. A
 "Not this month: …" chip appears only when a dataset is missing. **New viewers:** role picker (with Skip), then a
 3-step getting-started checklist that ticks itself off; one-time tip on the drawer's Back. **Tour:** an opt-in

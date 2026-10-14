@@ -38,6 +38,7 @@ lives in this repository's `.env`; the backend's are in `backend/.env`.
 | `VITE_KEYCLOAK_URL` / `VITE_KEYCLOAK_REALM` / `VITE_KEYCLOAK_CLIENT_ID` | realm `styl-iot`, client `smart-buddy`. Empty URL → no login (local dev only) |
 | `VITE_SOLACE_URL` / `VITE_SOLACE_VPN` / `VITE_SOLACE_USER` / `VITE_SOLACE_PASSWORD` | the SAM chat transport — see "Solace defaults" |
 | `VITE_SB_DEFAULT_MODE`, `VITE_SAM_DEMO_TOPIC_*`, `VITE_SAM_LIVE_TOPIC_*` | the Demo \| Live chat routing — see "Demo and Live" |
+| `VITE_SB_LIVE_URL` | the Live dashboard's Sync API — default `/smartbuddy-live` (this nginx proxies it to the backend's `smartbuddy-live-sync`); a full URL only for local dev |
 | `BACKEND_NETWORK` | the shared external docker network (default `solace-pubsub-geo-filtering_backend`) |
 
 **Solace defaults.** With none of the four set, the build targets the shared local Solace that
@@ -54,12 +55,18 @@ values at another broker to use it. They ship in the browser bundle: low-privile
 only, scoped to the smartbuddy chat topics. There is no proxy for the broker in this nginx, by
 decision (`central-specs`, change `split-sb-helper-repos`, D12).
 
-**Demo and Live.** The nav bar's Demo | Live toggle picks which SAM agent the chat talks to; nothing
-else moves. *Demo* is the uploaded ClickHouse extract with the demo agent, and the Upload entry in
-the ▾ menu. *Live* publishes the chat to the live agent's topics and offers no Upload (the data behind
-the live agent is not something a viewer uploads); the dashboard windows keep reading the ClickHouse
-extract. The choice is kept per browser; `#mode=live` or `#mode=demo` in a link forces it. The keys,
-all baked at build time (empty = the default):
+**Demo and Live.** The nav bar's Demo | Live toggle switches the whole dashboard. *Demo* is the
+uploaded ClickHouse extract: every view, the Upload entry in the ▾ menu, and the demo agent in the
+chat. *Live* is the live (Redshift) data, which today reaches us only through the live SAM agent:
+the nav shows **Live overview** and **Sync**, the map shows the live schools coloured by spend, the
+month picker lists the months the agent reported, and every Demo view and tool (search, compare,
+playback, Upload, the Demo map key) is hidden. **Sync** asks the backend's `smartbuddy-live-sync` to
+put one data question per panel to the live agent and store the answers (it takes a few minutes; the
+button shows progress, then "Synced <time>", naming any panel that failed). Live always shows the
+last sync — the page itself never asks the agent. The choice of mode is kept per browser;
+`#mode=live` or `#mode=demo` in a link forces it. `VITE_SB_LIVE_URL` (default `/smartbuddy-live`,
+proxied by this nginx, §3) is where Sync and its status live; leave it. The chat keys, all baked at
+build time (empty = the default):
 - `VITE_SB_DEFAULT_MODE` — `demo` (default) or `live`: the mode a fresh browser opens in;
 - `VITE_SAM_DEMO_TOPIC_REQUEST`, `VITE_SAM_DEMO_TOPIC_RESPONSE`, `VITE_SAM_DEMO_TOPIC_ERROR` — the
   Demo chat's Solace topics, default `STYL/iot/smartbuddy/system/shared/v1/sam/chat/request`,
@@ -84,6 +91,8 @@ platform nginx-proxy is untouched:
 - `/smartbuddy-mcp/` → `smartbuddy-mcp:3501`, guarded by the MCP's own Bearer (`SB_MCP_API_KEY`, set
   in backend);
 - `/smartbuddy-ingest/` → `smartbuddy-ingest:8200`, Keycloak-gated, large chunked uploads allowed;
+- `/smartbuddy-live/` → `smartbuddy-live-sync:3330` (the Live dashboard's Sync), Keycloak-gated, roles
+  forwarded so the backend's `SB_LIVE_ALLOWED_ROLES` can restrict who may press Sync;
 - `/healthz` → 200.
 
 For that the container joins the external `backend` network and resolves the backend containers by
