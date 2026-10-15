@@ -9,14 +9,14 @@ import { openWindow } from './windowing.js';
 // month-specific view here is safe — it just doesn't show in a month that lacks it.
 export const ROLES = {
     fnb:  { label: 'F&B / Operations', icon: '🍜', color: '#1baf7a',
-            desc: 'What sells, price points, revenue by school, stall and hour — plus nutrition & savings.',
-            views: ['overview', 'items', 'savings', 'feb'], primary: 'overview' },
+            desc: 'What sells, price points, revenue by school, stall and hour — plus nutrition, SSS subsidies & savings.',
+            views: ['overview', 'items', 'subsidy', 'savings', 'feb'], primary: 'overview' },
     eng:  { label: 'Engineering', icon: '🔧', color: '#2a78d6',
             desc: 'Terminal fleet health, machine-vs-location fault diagnosis, network, speed, signal.',
             views: ['eng', 'overview'], primary: 'eng' },
     mgmt: { label: 'Management', icon: '📊', color: '#7d5fd3',
-            desc: 'Everything — network overview, school spending, terminals, nutrition & savings.',
-            views: ['overview', 'eng', 'items', 'savings', 'feb'], primary: 'overview' },
+            desc: 'Everything — network overview, school spending, terminals, nutrition, SSS subsidies & savings.',
+            views: ['overview', 'eng', 'items', 'subsidy', 'savings', 'feb'], primary: 'overview' },
 };
 
 // onPick(role) · onPick(null) = "Skip — show all views" · onPick(undefined) = closed with ✕. onTour (first visit only)

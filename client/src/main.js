@@ -11,6 +11,7 @@ import { openStallExplorer, openStall } from './stall-window.js';
 import { openEng, openTerminal } from './eng-window.js';
 import { openItems } from './items-window.js';
 import { openSavings } from './savings-window.js';
+import { openSubsidy } from './subsidy-window.js';
 import { openHub, ROLES } from './hub-window.js';
 import { openPlayback, setPlaybackMonth } from './playback-window.js';
 import { authUser, logout } from './auth.js';
@@ -66,7 +67,7 @@ let mapReady = false;
 /* ---------- per-month data (fetched from the read API over the Postgres serving store) ---------- */
 // These start empty and are (re)filled by loadMonth() from the insight bundles. Windows receive
 // them as arguments at open time, so switching month + reopening a view shows the new month.
-let GLOBAL = {}, SCHOOLS = {}, FEB = null, STALLS = { stalls: [], terminals: [] }, ITEMS = null, SAVINGS = null;
+let GLOBAL = {}, SCHOOLS = {}, FEB = null, STALLS = { stalls: [], terminals: [] }, ITEMS = null, SAVINGS = null, SUBSIDY = null;
 let MONTHS = [];                 // [{month, kinds}]
 let curMonth = null, curKinds = [];
 
@@ -81,6 +82,7 @@ const VIEWS = {
     eng:      { label: 'Terminals',  title: 'Terminal Health',       kind: 'stalls',   open: (p) => openEng(STALLS, p || {}) },
     feb:      { label: 'Wearables',  title: 'Wearables & Health',    kind: 'wearable', open: (p) => openFeb(FEB, p) },
     items:    { label: 'Purchases',  title: 'Purchases & Nutrition', kind: 'items',    open: (p) => openItems(ITEMS, p) },
+    subsidy:  { label: 'Subsidy',    title: 'SSS Subsidies',         kind: 'subsidy',  open: (p) => openSubsidy(SUBSIDY, p) },
     savings:  { label: 'Saving',     title: 'Saving vs Spending',    kind: 'savings',  open: (p) => openSavings(SAVINGS, p) },
     playback: { label: 'Playback',   title: 'Timeline playback',     kind: null,       open: (p) => openPlayback(p || {}) },
 };
@@ -95,6 +97,7 @@ const COVERAGE = [
     ['global', 'Transactions'],
     ['wearable', 'Wearables'],
     ['items', 'Purchases'],
+    ['subsidy', 'Subsidies'],
     ['savings', 'Savings'],
 ];
 
@@ -208,6 +211,7 @@ window.SB = {
     openFeb: (tab) => { if (viewAvailable('feb') && FEB) openFeb(FEB, tab); },
     openItems: (tab) => { if (viewAvailable('items')) openItems(ITEMS, tab); },
     openSavings: () => { if (viewAvailable('savings')) openSavings(SAVINGS); },
+    openSubsidy: () => { if (viewAvailable('subsidy')) openSubsidy(SUBSIDY); },
     openPlayback: (preset) => openPlayback(preset || {}),
     focusSchool: (sid) => { samActive.school = sid; flyToSchool(sid); },
 };
@@ -451,23 +455,23 @@ async function loadMonth(m) {
     closeAll(); clearCompare();      // open views + pins hold the old month's data
     if (!m) {
         GLOBAL = {}; SCHOOLS = {}; STALLS = { stalls: [], terminals: [] };
-        FEB = ITEMS = SAVINGS = null; curKinds = [];
+        FEB = ITEMS = SAVINGS = SUBSIDY = null; curKinds = [];
         rebuildMap(); return;
     }
     localStorage.setItem('sb-month', m);
     const kinds = MONTHS.find((x) => x.month === m)?.kinds || [];
     setPlaybackMonth(m);
     const opt = (k) => kinds.includes(k) ? fetchBundle(m, k).catch(() => null) : null;
-    const [g, sc, st, feb, items, sav] = await Promise.all([
+    const [g, sc, st, feb, items, sav, sub] = await Promise.all([
         fetchBundle(m, 'global').catch(() => ({})),
         fetchBundle(m, 'schools').catch(() => ({ schools: {} })),
         fetchBundle(m, 'stalls').catch(() => ({ stalls: [], terminals: [] })),
-        opt('wearable'), opt('items'), opt('savings'),
+        opt('wearable'), opt('items'), opt('savings'), opt('subsidy'),
     ]);
     if (seq !== loadSeq) return false;
     curKinds = kinds;
     GLOBAL = g || {}; SCHOOLS = (sc && sc.schools) || {}; STALLS = st || { stalls: [], terminals: [] };
-    FEB = feb; ITEMS = items; SAVINGS = sav;
+    FEB = feb; ITEMS = items; SAVINGS = sav; SUBSIDY = sub;
     closeAll(); clearCompare();      // anything opened on the old markers while this month was loading
     rebuildMap();
 }
@@ -490,6 +494,7 @@ async function boot() {
     const mFeb = h.match(/feb(?:=(\w+))?/);
     const mItems = h.match(/items(?:=(\w+))?/);
     const mSav = h.match(/savings/);
+    const mSub = h.match(/subsidy/);
     const mPlay = h.match(/playback/);
     if (mRole && ROLES[mRole[1]]) setRole(mRole[1]);
     if (mSchool) open(mSchool[1].toUpperCase());
@@ -498,11 +503,13 @@ async function boot() {
     if (mFeb && viewAvailable('feb')) openFeb(FEB, mFeb[1]);
     if (mItems && viewAvailable('items')) openItems(ITEMS, mItems[1]);
     if (mSav && viewAvailable('savings')) openSavings(SAVINGS);
+    if (mSub && viewAvailable('subsidy')) openSubsidy(SUBSIDY);
     if (mPlay) openPlayback({});
     const mPins = linkPins && restorePins(linkPins) >= 2;
     if (mPins) { openCompare(); map?.once('moveend', () => fitPinned(pins)); }   // the drawer's padding ease cancels the first fit
     const openedByLink = mSchool || mStall || mTerm || (mFeb && viewAvailable('feb')) ||
-        (mItems && viewAvailable('items')) || (mSav && viewAvailable('savings')) || mRole || mPlay || mPins;
+        (mItems && viewAvailable('items')) || (mSav && viewAvailable('savings')) || (mSub && viewAvailable('subsidy')) ||
+        mRole || mPlay || mPins;
     if (!openedByLink) {
         if (role) openFirstAvailable(role);
         else if (localStorage.getItem('sb-hub-seen')) openFirstAvailable(null);   // skipped the picker before

@@ -11,6 +11,15 @@ const type = (id) => /^(school|stall|term)-/.exec(id || '')?.[1];
 // Feed text (school / stall / store names…) is data, never markup: escape it wherever it goes into innerHTML.
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+// The source systems each view draws on (central-specs decision 0004; the same mapping as the Source
+// column of backend/postgres/SEEDING.md §1). Keyed by window id, or by its prefix for school/stall/term.
+const SOURCES = {
+    overview: 'iSchool', eng: 'iSchool', items: 'iSchool', stalls: 'iSchool', route: 'iSchool',
+    school: 'iSchool', stall: 'iSchool', term: 'iSchool',
+    savings: 'SMART Buddy · iSchool', feb: 'SMART Buddy', subsidy: 'SSS · iSchool', playback: 'iSchool · SMART Buddy',
+};
+const sourceOf = (id) => SOURCES[id] || SOURCES[type(id)];
+
 export function openWindow({ id, title, sub, chips = [], onClose, wide = false, float = false }) {
     const existing = document.querySelector(`[data-win="${CSS.escape(id)}"]`);
     if (existing) { if (views.contains(existing)) keep(stack().indexOf(existing) + 1, true); return null; }
@@ -26,6 +35,7 @@ export function openWindow({ id, title, sub, chips = [], onClose, wide = false, 
     win.innerHTML = `
       <div class="tw-head">
         <span class="t">${esc(title)}</span>
+        ${sourceOf(id) ? `<span class="chip" title="Source system">${esc(sourceOf(id))}</span>` : ''}
         ${chips.join('')}
         <span class="sub">${esc(sub)}</span>
         ${!float && chapterFor(id) ? `<button class="tw-tour" data-tour="${chapterFor(id)}" title="A short guided tour of this view">▶ Tour</button>` : ''}
