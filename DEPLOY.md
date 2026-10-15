@@ -96,7 +96,10 @@ not work here.
 
 - **In the CIAM admin console** (client `demo-application`): add `https://<hostname>` — exactly, no
   path or trailing slash — to *Valid redirect URIs* and *Valid post logout redirect URIs*. Web origins
-  do not matter: the token call goes server-to-server through the proxy.
+  do not matter: the token call goes server-to-server through the proxy. **Check that *Service
+  accounts* and *Direct access grants* are OFF** for that client: `/auth/token` attaches the secret
+  to any grant it forwards, so with either on, anyone reaching it could get tokens without signing in
+  (decision 0003).
 - **The secret**: put `KEYCLOAK_CLIENT_SECRET=<the client's secret>` in this repository's `.env` on the
   VM (or export it before `./bootstrap-env.sh`, which keeps it). Then `docker compose up -d`. The
   container's start log says `40-keycloak-token-proxy: /auth/token -> ciam-uat.styl.solutions (client
