@@ -13,7 +13,7 @@ import { openItems } from './items-window.js';
 import { openSavings } from './savings-window.js';
 import { openHub, ROLES } from './hub-window.js';
 import { openPlayback, setPlaybackMonth } from './playback-window.js';
-import { initAuth, authReady, authRoles, logout } from './auth.js';
+import { authUser, logout } from './auth.js';
 import { initSolace } from './solace/solace.js';
 import { initSam } from './sam/samClient.js';
 import { initSamPanel, setSamExpanded } from './sam/samPanel.js';
@@ -23,12 +23,8 @@ import { startTour, openTours, CHAPTERS } from './tour.js';
 import { openShortcuts } from './shortcuts.js';
 import { initOnboarding, tick } from './onboard.js';
 
-// Force Keycloak login first when configured (live deploy). No-op stub in local dev (no VITE_KEYCLOAK_URL).
-// Fire-and-forget: login-required redirects unauthenticated browsers to Keycloak; sb-api calls await
-// `authReady` (see sbApi.js) so no request races the token.
-initAuth();
-// When auth settles, show who's signed in + a logout button in the nav.
-authReady.then(({ username }) => renderUser(username));
+// This module only runs once the viewer is signed in: entry.js imports it after the CIAM login
+// (auth.js) settles, so the map, the data calls and the chat never start behind the login.
 
 const LV_COLOR = { Primary: '#0a5fd8', Secondary: '#00955f', 'Junior College': '#6a3fd1', Other: '#48484d' };
 const SEV = (v, warn, bad) => (v == null ? 'none' : v >= bad ? 'bad' : v >= warn ? 'warn' : 'good');
@@ -90,7 +86,7 @@ const VIEWS = {
 };
 const viewAvailable = (k) => VIEWS[k].kind == null || curKinds.includes(VIEWS[k].kind);
 let role = localStorage.getItem('sb-role') || null;
-let username = null;
+let username = authUser();     // who is signed in (nav menu); null when the login is disabled
 
 // Canonical datasets shown in the per-month coverage strip. Each maps to the insight-bundle `kind`
 // that proves it was loaded, so the strip reflects exactly what THIS month has — making the
@@ -130,7 +126,7 @@ function renderNav() {
           <button data-act="role">Switch workspace…</button>
           <button data-act="tours">Tours…</button>
           <button data-act="keys">Keyboard &amp; mouse <kbd>?</kbd></button>
-          ${username ? `<div class="nav-menu-user">Signed in as <b>${username.replace(/[&<"]/g, '')}</b></div>
+          ${username ? `<div class="nav-menu-user">Signed in as <b>${esc(username)}</b></div>
             <button data-act="logout">Sign out</button>` : ''}
         </div>`;
     nv.querySelectorAll('[data-view]').forEach((b) =>
@@ -196,13 +192,6 @@ async function switchMonth(m) {
     if (await loadMonth(m) === false) return;
     renderNav();
     openFirstAvailable(role);
-}
-
-// User badge + logout in the top-right nav (only when Keycloak is enabled → username present).
-function renderUser(name) {
-    if (!name || name === 'dev') return;                      // local dev / no-auth → no sign-out entry
-    username = name;
-    renderNav();
 }
 
 /* ---------- cross-window API (used by stall/eng/school windows + SAM actions) ---------- */

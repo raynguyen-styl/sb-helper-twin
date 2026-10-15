@@ -14,16 +14,16 @@
 #
 #   docker compose up -d --build          # smartbuddy-frontend
 #
-# The frontend starts with or without the backend: its nginx resolves smartbuddy-api / jwt-validator per
-# request, so /smartbuddy-api/ just fails (500 while the token check cannot reach jwt-validator, 502
-# while smartbuddy-api is down) until the platform + backend are up.
+# The frontend starts with or without the backend: its nginx resolves smartbuddy-api per request, so
+# /smartbuddy-api/ just answers 502 until the backend is up. The route is not token-checked (central-
+# specs decision 0003): the browser's STYL CIAM login is the only gate.
 #
 # Isolation from tree-twin / other demos (checked against the live VM registry):
 #   • project `smartbuddy` · container `smartbuddy-frontend`
 #   • ONE public hostname: the ALB maps smartbuddy-helper-uat.styl.solutions/* → the frontend
 #     (host 8097, free on the VM). Its nginx same-origin-proxies /smartbuddy-api/ to the backend
 #     container — so the shared nginx-proxy is NOT touched.
-#   • `sb-net` + the shared external `backend` net (to reach smartbuddy-api / jwt-validator)
+#   • `sb-net` + the shared external `backend` net (to reach smartbuddy-api)
 #
 # SAM chat transport: with no VITE_SOLACE_* set, the build targets the shared local Solace that
 # atlantic-platform/common runs on every box (ws://localhost:8008, VPN + client-username `default`,
@@ -46,10 +46,14 @@ services:
       args:
         # Read API base (proxied sb-api). Empty → Playback uses bundled demo data (offline dev).
         VITE_SB_API_URL: ${VITE_SB_API_URL:-}
-        # Keycloak (shared realm styl-iot). Empty → app runs without login (local dev only).
-        VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL:-}
-        VITE_KEYCLOAK_REALM: ${VITE_KEYCLOAK_REALM:-styl-iot}
-        VITE_KEYCLOAK_CLIENT_ID: ${VITE_KEYCLOAK_CLIENT_ID:-smart-buddy}
+        # Login: STYL CIAM realm `demo`, client `demo-application` (central-specs decision 0003), as in
+        # Bibo Bus. On only when "true" (bootstrap-env.sh writes it); off → no login (local dev only).
+        VITE_KEYCLOAK_ENABLED: ${VITE_KEYCLOAK_ENABLED:-false}
+        VITE_KEYCLOAK_OIDC_CONFIG_URL: ${VITE_KEYCLOAK_OIDC_CONFIG_URL:-https://ciam-uat.styl.solutions/realms/demo/.well-known/openid-configuration}
+        VITE_KEYCLOAK_CLIENT_ID: ${VITE_KEYCLOAK_CLIENT_ID:-demo-application}
+        # Path of this container's token proxy (relative to the base); empty = keycloak-js calls the
+        # token endpoint directly (a public client).
+        VITE_KEYCLOAK_TOKEN_PROXY: ${VITE_KEYCLOAK_TOKEN_PROXY:-auth/token}
         # SAM chat transport. Defaults = the box's shared local Solace (atlantic-platform/common);
         # the values are baked into the browser bundle, so only ever low-privilege demo creds here.
         VITE_SOLACE_URL: ${VITE_SOLACE_URL:-ws://localhost:8008}
@@ -64,6 +68,13 @@ services:
         VITE_SAM_TOPIC_ERROR: ${VITE_SAM_TOPIC_ERROR:-}
     container_name: smartbuddy-frontend
     restart: always
+    # RUNTIME settings of the /auth/token proxy (client/docker/40-keycloak-token-proxy.sh): the
+    # confidential client's credentials, added to the token requests on the way to CIAM. The secret
+    # is never a build arg, so changing it needs only `docker compose up -d`, no rebuild.
+    environment:
+      KEYCLOAK_CLIENT_ID: ${VITE_KEYCLOAK_CLIENT_ID:-demo-application}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
+      KEYCLOAK_TOKEN_ENDPOINT: ${KEYCLOAK_TOKEN_ENDPOINT:-https://ciam-uat.styl.solutions/realms/demo/protocol/openid-connect/token}
     ports:
       - "${SB_FRONTEND_PORT:-8097}:8080"    # ALB maps smartbuddy-helper-uat.styl.solutions/* here (8097 free on the VM)
     # on `backend` too: this container's nginx same-origin-proxies /smartbuddy-api/ to the backend

@@ -22,19 +22,24 @@ backend's container is an "orphan" (both repositories use project `smartbuddy`):
 pass `--remove-orphans`**, it would stop the backend.
 
 The frontend starts with or without the backend: its nginx resolves `smartbuddy-api` per request, so
-`/smartbuddy-api/` fails until the platform and the backend are up (500 while the token check cannot
-reach `jwt-validator`, 502 while the API is down), and `/healthz` answers 200 regardless.
+`/smartbuddy-api/` answers 502 until the backend is up, and `/healthz` answers 200 regardless.
 
 ## 2 · Environment (`.env` → build arguments)
 
-`VITE_*` values are baked into the bundle at **build** time: rebuild after changing any. No secret
-lives in this repository's `.env`; the backend's is in `backend/.env`.
+`VITE_*` values are baked into the bundle at **build** time: rebuild after changing any. The one secret
+in this repository's `.env` is the login's `KEYCLOAK_CLIENT_SECRET`, a **runtime** setting of the
+container (§4) — never a build argument; the backend's secrets are in `backend/.env`.
 
 | Variable | Notes |
 |---|---|
 | `SB_FRONTEND_PORT` | host port (default **8097**; the VM's ALB rule points here) |
 | `VITE_SB_API_URL` | api-service base — same-origin `/smartbuddy-api` (this nginx proxies it). Empty → Playback uses bundled demo data |
-| `VITE_KEYCLOAK_URL` / `VITE_KEYCLOAK_REALM` / `VITE_KEYCLOAK_CLIENT_ID` | realm `styl-iot`, client `smart-buddy`. Empty URL → no login (local dev only) |
+| `VITE_KEYCLOAK_ENABLED` | `true` → the STYL CIAM login gates the app (the bootstrap writes `true`; `client/.env` gets `false`). Anything else → no login (local dev only) |
+| `VITE_KEYCLOAK_OIDC_CONFIG_URL` | the realm's discovery URL (default `https://ciam-uat.styl.solutions/realms/demo/.well-known/openid-configuration`) |
+| `VITE_KEYCLOAK_CLIENT_ID` | default `demo-application`; also the token proxy's client id at runtime |
+| `VITE_KEYCLOAK_TOKEN_PROXY` | the token proxy's path, relative to the base (default `auth/token`); empty → keycloak-js calls the token endpoint directly (a public client) |
+| `KEYCLOAK_CLIENT_SECRET` | **runtime only**: `demo-application`'s secret, added by the `/auth/token` proxy. Not baked in: change it with `docker compose up -d`, no rebuild. The bootstrap keeps it across re-runs and marks it MISSING when unset |
+| `KEYCLOAK_TOKEN_ENDPOINT` | runtime only: where the proxy forwards (default the CIAM `demo` realm's token endpoint) |
 | `VITE_SOLACE_URL` / `VITE_SOLACE_VPN` / `VITE_SOLACE_USER` / `VITE_SOLACE_PASSWORD` | the SAM chat transport — see "Solace defaults" |
 | `VITE_SAM_TOPIC_REQUEST` / `VITE_SAM_TOPIC_RESPONSE` / `VITE_SAM_TOPIC_ERROR` | the chat's Solace topics — see "The chat" |
 | `BACKEND_NETWORK` | the shared external docker network (default `solace-pubsub-geo-filtering_backend`) |
@@ -70,27 +75,55 @@ rest of the dashboard is unaffected. There is no Demo | Live toggle and no `#mod
 
 ONE hostname: the ALB maps it to this container and nginx same-origin-routes the rest, so the shared
 platform nginx-proxy is untouched:
-- `/` → the static SPA (Keycloak login in the browser via keycloak-js);
-- `/smartbuddy-api/` → `smartbuddy-api:3320`, gated by Keycloak JWT (`auth_request` → the shared
-  `jwt-validator:3200`) — the only backend route;
+- `/` → the static SPA (the STYL CIAM login in the browser via keycloak-js, §4);
+- `/smartbuddy-api/` → `smartbuddy-api:3320` — the only backend route, **not token-checked**
+  (`central-specs/decisions/0003`: the shared `jwt-validator` trusts only the old `styl-iot` realm, and
+  the browser login is the only gate). Anyone who can reach the hostname can read it;
+- `POST /auth/token` → the CIAM token endpoint, with the client secret added (§4); any other method → 403;
 - `/healthz` → 200.
 
 For that the container joins the external `backend` network and resolves the backend container by
 name per request (`resolver 127.0.0.11`). The retired routes `/smartbuddy-mcp/`, `/smartbuddy-ingest/`
 and `/smartbuddy-live/` fall through to the SPA; no backend receives them.
 
-## 4 · Keycloak
+## 4 · Keycloak (STYL CIAM)
 
-Register a **`smart-buddy`** client in the Keycloak admin console (realm `styl-iot`), add it to the
-platform **`JWT_ALLOWED_CLIENTS`**, and add `https://<hostname>/*` to its redirect URIs — exactly like
-the other demos. Never reuse `nparks-tree-twin`. To skip Keycloak (local dev / internal-only), leave
-`VITE_KEYCLOAK_URL` empty and gate at the proxy instead.
+The dashboard logs in the way Bibo Bus does (`central-specs/decisions/0003`, change
+`ciam-keycloak-login`): realm **`demo`** on `https://ciam-uat.styl.solutions`, confidential client
+**`demo-application`** (shared with Bibo Bus), authorization code + PKCE S256, `check-sso`, scope
+`openid`, returning to the bare origin. Viewers need an account in that realm; old `styl-iot` logins do
+not work here.
+
+- **In the CIAM admin console** (client `demo-application`): add `https://<hostname>` — exactly, no
+  path or trailing slash — to *Valid redirect URIs* and *Valid post logout redirect URIs*. Web origins
+  do not matter: the token call goes server-to-server through the proxy.
+- **The secret**: put `KEYCLOAK_CLIENT_SECRET=<the client's secret>` in this repository's `.env` on the
+  VM (or export it before `./bootstrap-env.sh`, which keeps it). Then `docker compose up -d`. The
+  container's start log says `40-keycloak-token-proxy: /auth/token -> ciam-uat.styl.solutions (client
+  credentials set)`; without it, "forwarding as a public client", and sign-in fails with
+  `unauthorized_client`. Rotating it (it is shared with Bibo Bus) means one `docker compose up -d` in
+  each twin.
+- **How the secret stays out of the browser**: keycloak-js posts the code exchange and every refresh
+  to this container's `/auth/token`; `client/docker/40-keycloak-token-proxy.sh` writes, at container
+  start, an nginx include (mode 600) that adds the secret as HTTP Basic, drops the visitor's Cookie,
+  Origin and Referer, and forwards to CIAM over verified TLS. Trade-off, accepted in decision 0003:
+  anyone who can reach `/auth/token` gets the secret attached to their request, but a real sign-in, a
+  valid code and its PKCE verifier are still required.
+- **Sessions**: tokens are kept in the tab's `sessionStorage` (a reload does not redirect); a failed
+  refresh sends the viewer back to login. If CIAM cannot be reached the dashboard does not load and
+  says "Sign-in failed".
+- **Local dev**: `npm run dev` runs without login (the dev server has no token proxy).
+- **Rollback**: check out the previous commit and `docker compose up -d --build`; the old `styl-iot`
+  client `smart-buddy` and the platform's `jwt-validator` are untouched, so the old login works again.
 
 ## 5 · Verify
 
 - `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8097/healthz` → 200; the same for `/` (the
   SPA) → 200.
-- In the browser: login; the map renders (OneMap tiles need outbound internet); the month picker shows
+- `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8097/auth/token` → 403 (POST only), and
+  `docker logs smartbuddy-frontend 2>&1 | grep 40-keycloak` → "client credentials set".
+- In the browser: the CIAM login page; after signing in, the map renders; a reload does not go back to
+  CIAM; the ☰ menu shows "Signed in as …" and Sign out returns to the login page; the map renders (OneMap tiles need outbound internet); the month picker shows
   the seeded months (or the drawer says "No data yet" before the seed); Playback animates (needs the
   backend); SAM chat answers (needs the broker + the agent; "offline" otherwise).
 

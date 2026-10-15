@@ -1,8 +1,8 @@
 // Client for sb-api (the SMART Buddy read API, backed by the shared ClickHouse `smartbuddy` db).
-// Playback is a DAILY timeline for the selected month. Calls carry the Keycloak Bearer (the /smartbuddy-api/ proxy
-// route validates it), so we wait for auth to settle before the first request. With no VITE_SB_API_URL
+// Playback is a DAILY timeline for the selected month. Calls carry the CIAM Bearer (nothing checks it today,
+// central-specs decision 0003; it is sent so a future gate needs no client change). With no VITE_SB_API_URL
 // set (offline dev) it falls back to deterministic DEMO data so the Playback UI is still usable.
-import { authReady, authToken } from './auth.js';
+import { validToken } from './auth.js';
 
 const BASE = (import.meta.env.VITE_SB_API_URL || '').replace(/\/$/, '');
 export const isLive = () => !!BASE;
@@ -15,9 +15,8 @@ export const getMonth = () => MONTH;
 const mq = () => (MONTH ? `?month=${encodeURIComponent(MONTH)}` : '');
 
 async function get(path) {
-  await authReady;
   const headers = {};
-  const t = authToken();
+  const t = await validToken();
   if (t) headers.Authorization = `Bearer ${t}`;
   const r = await fetch(`${BASE}${path}`, { headers });
   if (!r.ok) throw new Error(`sb-api ${path} -> HTTP ${r.status}`);

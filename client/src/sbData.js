@@ -2,13 +2,12 @@
 // from the read API (ClickHouse-backed) instead of JSON baked into the bundle, so the data is live
 // and the month is switchable. Bundles: global · schools · stalls · wearable (Feb) · items/savings
 // (March). Shapes match what the windows expect (they're built by backend/ingestion-service/build_insights.py).
-import { authReady, authToken } from './auth.js';
+import { validToken } from './auth.js';
 
 const BASE = (import.meta.env.VITE_SB_API_URL || '').replace(/\/$/, '');
 
 async function api(path) {
-  await authReady;                                   // don't race the Keycloak token
-  const tok = authToken();
+  const tok = await validToken();                    // refreshed through the token proxy when near expiry
   const r = await fetch(BASE + path, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} });
   if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
   return r.json();

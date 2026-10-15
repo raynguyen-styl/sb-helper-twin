@@ -46,7 +46,7 @@ with nothing configured it targets the shared local broker from `atlantic-platfo
 docker compose up -d --build    # smartbuddy-frontend → host :8097
 ```
 
-Frontend runbook: **DEPLOY.md** (env, the Solace defaults, the chat topics, routing, Keycloak). Whole
+Frontend runbook: **DEPLOY.md** (env, the Solace defaults, the chat topics, routing, the STYL CIAM login). Whole
 stack, seeding and the one-time VM cutover: **`backend/DEPLOY.md`**.
 
 ## Layout
@@ -54,7 +54,8 @@ stack, seeding and the one-time VM cutover: **`backend/DEPLOY.md`**.
 | Path | What |
 |---|---|
 | `client/src/` | the app: one module per window (map, school, terminals, network, wearables, items, savings, playback, compare, tour, shortcuts), `sam/` (the chat client) and `solace/` (the broker session) |
-| `client/nginx.conf` | same-origin routing to the read API (`/smartbuddy-api/`, Keycloak-gated) and the SPA |
+| `client/nginx.conf` | same-origin routing to the read API (`/smartbuddy-api/`, not token-checked: decision 0003), the login's token proxy (`/auth/token`) and the SPA |
+| `client/docker/40-keycloak-token-proxy.sh` | writes the `/auth/token` include from the container's runtime environment (the client secret) |
 | `client/Dockerfile` | Vite build → nginx; the `VITE_*` build args |
 | `docker-compose.yml` | `smartbuddy-frontend` only (compose project `smartbuddy`, shared with backend — never `--remove-orphans`) |
 | `bootstrap-env.sh`, `.env.example` | the frontend env |
