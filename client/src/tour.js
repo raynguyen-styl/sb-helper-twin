@@ -145,19 +145,16 @@ export const CHAPTERS = {
         { t: 'Start over', b: '“New” starts a fresh chat. SAM folds to its rail when a view opens.',
           before: (c) => c.sam(true), target: () => document.getElementById('sam-new-chat') },
     ] },
-    menu: { title: 'Menu, upload & keys', end: (c) => c.upload(false), steps: [
-        { t: 'The ▾ menu', b: 'Switch workspace, pick a tour, or see every key and mouse action. In Demo mode, upload data too.',
+    menu: { title: 'Menu & keys', steps: [
+        { t: 'The ▾ menu', b: 'Switch workspace, pick a tour, or see every key and mouse action.',
           target: () => document.getElementById('role-btn') },
-        { t: 'Upload a month', b: 'Pick the month and dataset; the hint says which file it expects.',
-          when: () => window.SB?.mode?.() !== 'live',   // Live offers no upload (main.js)
-          before: (c) => c.upload(true), target: () => document.querySelector('.up-overlay.show .up-modal') },
         { t: 'Keys and mouse', b: 'Press ? anywhere for the full list: Esc goes back, Shift-click compares.',
-          before: (c) => c.upload(false), target: () => document.getElementById('role-btn') },
+          target: () => document.getElementById('role-btn') },
     ] },
 };
 
 let ctx, ch, steps, list, i = 0, active = false, raf = 0, launcher = null, ring, card, live;
-// A chapter's steps for the current state: a step with `when` is left out while it returns false (e.g. Upload in Live).
+// A chapter's steps for the current state: a step with `when` is left out while it returns false.
 const visibleSteps = (key) => CHAPTERS[key].steps.filter((s) => { try { return !s.when || s.when(); } catch { return true; } });
 const doneSet = () => { try { return new Set(JSON.parse(localStorage.getItem('sb-tours') || '[]')); } catch { return new Set(); } };
 

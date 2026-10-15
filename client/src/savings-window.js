@@ -15,8 +15,8 @@ export function openSavings(SAV, _preset) {
     if (!body) return;
 
     if (!SAV || !SAV.totals) {
-        body.innerHTML = `<div class="cap">No saving/spending data for this month. Upload the
-          <b>Student saving vs spending</b> dataset, then rebuild insights.</div>`;
+        body.innerHTML = `<div class="cap">No saving/spending data for this month: the store
+          holds no <b>savings</b> bundle for it.</div>`;
         return;
     }
     const t = SAV.totals;

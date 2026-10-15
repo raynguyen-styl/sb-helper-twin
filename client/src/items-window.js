@@ -15,8 +15,8 @@ export function openItems(ITEMS, tab) {
     if (!body) return;
 
     if (!ITEMS || !ITEMS.meta) {
-        body.innerHTML = `<div class="cap">No purchase-item data for this month. Upload the
-          <b>Student purchase items</b> dataset, then rebuild insights.</div>`;
+        body.innerHTML = `<div class="cap">No purchase-item data for this month: the store
+          holds no <b>items</b> bundle for it.</div>`;
         return;
     }
     const m = ITEMS.meta;

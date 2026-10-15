@@ -2,10 +2,10 @@
 
 This repository deploys one container: **`smartbuddy-frontend`** (Vite build served by nginx), the
 only published service of SMART Buddy helper (host port **8097**; the ALB maps
-`smartbuddy-helper-uat.styl.solutions/*` to it). Everything behind it — `smartbuddy-api`,
-`smartbuddy-mcp`, `smartbuddy-ingest`, the one-shots, the data — is deployed from the sibling
-**backend** repository. The whole-stack runbook, including the one-time VM **cutover** from the old
-monorepo checkout, is **`backend/DEPLOY.md`**: read it first on a VM that still runs
+`smartbuddy-helper-uat.styl.solutions/*` to it). Everything behind it — `smartbuddy-api` and the
+Postgres serving store it reads — is deployed from the sibling **backend** repository and
+`atlantic-platform/common`. The whole-stack runbook, including seeding and the one-time VM **cutover**
+from the old monorepo checkout, is **`backend/DEPLOY.md`**: read it first on a VM that still runs
 `/data/smart-buddy-data`, and never `git pull` there.
 
 ## 1 · Build and run
@@ -18,18 +18,17 @@ docker compose up -d --build   # smartbuddy-frontend
 
 A frontend-only change is: commit → push `origin` + `github` → on the VM `git pull` **here** → the
 command above. The container is recreated in place under the same name. Compose warns that the
-backend's containers are "orphans" (both repositories use project `smartbuddy`): expected — **never
+backend's container is an "orphan" (both repositories use project `smartbuddy`): expected — **never
 pass `--remove-orphans`**, it would stop the backend.
 
-The frontend starts with or without the backend: its nginx resolves the backend containers per
-request, so `/smartbuddy-api/`, `/smartbuddy-mcp/` and `/smartbuddy-ingest/` fail until the platform
-and the backend are up (502; the Keycloak-gated routes 500, because the token check itself cannot
-reach `jwt-validator`), and `/healthz` answers 200 regardless.
+The frontend starts with or without the backend: its nginx resolves `smartbuddy-api` per request, so
+`/smartbuddy-api/` fails until the platform and the backend are up (500 while the token check cannot
+reach `jwt-validator`, 502 while the API is down), and `/healthz` answers 200 regardless.
 
 ## 2 · Environment (`.env` → build arguments)
 
 `VITE_*` values are baked into the bundle at **build** time: rebuild after changing any. No secret
-lives in this repository's `.env`; the backend's are in `backend/.env`.
+lives in this repository's `.env`; the backend's is in `backend/.env`.
 
 | Variable | Notes |
 |---|---|
@@ -37,8 +36,7 @@ lives in this repository's `.env`; the backend's are in `backend/.env`.
 | `VITE_SB_API_URL` | api-service base — same-origin `/smartbuddy-api` (this nginx proxies it). Empty → Playback uses bundled demo data |
 | `VITE_KEYCLOAK_URL` / `VITE_KEYCLOAK_REALM` / `VITE_KEYCLOAK_CLIENT_ID` | realm `styl-iot`, client `smart-buddy`. Empty URL → no login (local dev only) |
 | `VITE_SOLACE_URL` / `VITE_SOLACE_VPN` / `VITE_SOLACE_USER` / `VITE_SOLACE_PASSWORD` | the SAM chat transport — see "Solace defaults" |
-| `VITE_SB_DEFAULT_MODE`, `VITE_SAM_DEMO_TOPIC_*`, `VITE_SAM_LIVE_TOPIC_*` | the Demo \| Live chat routing — see "Demo and Live" |
-| `VITE_SB_LIVE_URL` | the Live dashboard's Sync API — default `/smartbuddy-live` (this nginx proxies it to the backend's `smartbuddy-live-sync`); a full URL only for local dev |
+| `VITE_SAM_TOPIC_REQUEST` / `VITE_SAM_TOPIC_RESPONSE` / `VITE_SAM_TOPIC_ERROR` | the chat's Solace topics — see "The chat" |
 | `BACKEND_NETWORK` | the shared external docker network (default `solace-pubsub-geo-filtering_backend`) |
 
 **Solace defaults.** With none of the four set, the build targets the shared local Solace that
@@ -55,31 +53,18 @@ values at another broker to use it. They ship in the browser bundle: low-privile
 only, scoped to the smartbuddy chat topics. There is no proxy for the broker in this nginx, by
 decision (`central-specs`, change `split-sb-helper-repos`, D12).
 
-**Demo and Live.** The nav bar's Demo | Live toggle switches the whole dashboard. *Demo* is the
-uploaded ClickHouse extract: every view, the Upload entry in the ▾ menu, and the demo agent in the
-chat. *Live* is the live (Redshift) data, which today reaches us only through the live SAM agent:
-the nav shows **Live overview** and **Sync**, the map shows the live schools coloured by spend, the
-month picker lists the months the agent reported, and every Demo view and tool (search, compare,
-playback, Upload, the Demo map key) is hidden. **Sync** asks the backend's `smartbuddy-live-sync` to
-put one data question per panel to the live agent and store the answers (it takes a few minutes; the
-button shows progress, then "Synced <time>", naming any panel that failed). Live always shows the
-last sync — the page itself never asks the agent. The choice of mode is kept per browser;
-`#mode=live` or `#mode=demo` in a link forces it. `VITE_SB_LIVE_URL` (default `/smartbuddy-live`,
-proxied by this nginx, §3) is where Sync and its status live; leave it. The chat keys, all baked at
-build time (empty = the default):
-- `VITE_SB_DEFAULT_MODE` — `demo` (default) or `live`: the mode a fresh browser opens in;
-- `VITE_SAM_DEMO_TOPIC_REQUEST`, `VITE_SAM_DEMO_TOPIC_RESPONSE`, `VITE_SAM_DEMO_TOPIC_ERROR` — the
-  Demo chat's Solace topics, default `STYL/iot/smartbuddy/system/shared/v1/sam/chat/request`,
-  `…/response`, `…/error`;
-- `VITE_SAM_LIVE_TOPIC_REQUEST`, `VITE_SAM_LIVE_TOPIC_RESPONSE`, `VITE_SAM_LIVE_TOPIC_ERROR` — the
-  Live chat's Solace topics, default `STYL/iot/smartbuddy-live/system/shared/v1/sam/chat/request`,
-  `…/response`, `…/error`.
-
-The mesh owner must have a gateway rule on each mode's request topic that replies on its response
-topic (`backend/DEPLOY.md` §7); until the live rule exists a Live question times out and the panel
-shows "offline". The older `VITE_SAM_QUERY_TOPIC` / `VITE_SAM_RESPONSE_TOPIC` / `VITE_SAM_ERROR_TOPIC`
-still override the Demo topics. `bootstrap-env.sh` writes all seven keys (environment → existing
-`.env` → default), so `.env` always shows the topics in use.
+**The chat.** One topic set (central-specs capability `sam-chat`): the chat publishes each question as
+`{correlationId, text, context, ts}` on `VITE_SAM_TOPIC_REQUEST` and takes the reply from
+`VITE_SAM_TOPIC_RESPONSE` (errors from `VITE_SAM_TOPIC_ERROR`), matched by `correlationId`. The
+defaults are `STYL/iot/smartbuddy-live/system/shared/v1/sam/chat/request`, `…/response`, `…/error` —
+the topics the Redshift agent's gateway rule answers on (`backend/DEPLOY.md` §7). When the orchestrator
+of `central-specs/docs/sb_helper_agent_system.md` exists, the mesh owner points that rule at it; the
+twin does not change. The older `VITE_SAM_QUERY_TOPIC` / `VITE_SAM_RESPONSE_TOPIC` / `VITE_SAM_ERROR_TOPIC`
+still override. `bootstrap-env.sh` resolves each key from the environment → an existing `.env`'s same
+key → that file's pre-October `VITE_SAM_LIVE_TOPIC_*` → the default, so a box keeps the topics it used,
+and its checklist names the source. No agent on the topic → the panel shows "offline" after 60 s; the
+rest of the dashboard is unaffected. There is no Demo | Live toggle and no `#mode=` any more
+(`central-specs/decisions/0002`).
 
 ## 3 · Routing (`client/nginx.conf`)
 
@@ -87,16 +72,12 @@ ONE hostname: the ALB maps it to this container and nginx same-origin-routes the
 platform nginx-proxy is untouched:
 - `/` → the static SPA (Keycloak login in the browser via keycloak-js);
 - `/smartbuddy-api/` → `smartbuddy-api:3320`, gated by Keycloak JWT (`auth_request` → the shared
-  `jwt-validator:3200`);
-- `/smartbuddy-mcp/` → `smartbuddy-mcp:3501`, guarded by the MCP's own Bearer (`SB_MCP_API_KEY`, set
-  in backend);
-- `/smartbuddy-ingest/` → `smartbuddy-ingest:8200`, Keycloak-gated, large chunked uploads allowed;
-- `/smartbuddy-live/` → `smartbuddy-live-sync:3330` (the Live dashboard's Sync), Keycloak-gated, roles
-  forwarded so the backend's `SB_LIVE_ALLOWED_ROLES` can restrict who may press Sync;
+  `jwt-validator:3200`) — the only backend route;
 - `/healthz` → 200.
 
-For that the container joins the external `backend` network and resolves the backend containers by
-name per request (`resolver 127.0.0.11`).
+For that the container joins the external `backend` network and resolves the backend container by
+name per request (`resolver 127.0.0.11`). The retired routes `/smartbuddy-mcp/`, `/smartbuddy-ingest/`
+and `/smartbuddy-live/` fall through to the SPA; no backend receives them.
 
 ## 4 · Keycloak
 
@@ -110,10 +91,10 @@ the other demos. Never reuse `nparks-tree-twin`. To skip Keycloak (local dev / i
 - `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8097/healthz` → 200; the same for `/` (the
   SPA) → 200.
 - In the browser: login; the map renders (OneMap tiles need outbound internet); the month picker shows
-  both months; Playback animates (needs the backend); SAM chat answers (needs the broker + the agent;
-  "offline" otherwise).
+  the seeded months (or the drawer says "No data yet" before the seed); Playback animates (needs the
+  backend); SAM chat answers (needs the broker + the agent; "offline" otherwise).
 
 The full end-to-end list is `backend/DEPLOY.md` §8.
 
-*Companion docs: `README.md` (the dashboard, dev) · `backend/DEPLOY.md` (whole stack + cutover) ·
-`central-specs/HANDOVER.md` (orientation, the local harness).*
+*Companion docs: `README.md` (the dashboard, dev) · `backend/DEPLOY.md` (whole stack, seeding, cutover) ·
+`central-specs/HANDOVER.md` (orientation).*

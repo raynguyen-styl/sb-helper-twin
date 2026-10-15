@@ -131,17 +131,6 @@ export function setSamExpanded(on) {
   applyPanelState(panel);
 }
 
-// Demo | Live: name the mode in the header and, on an actual change, start a new chat — the two agents
-// do not share a conversation. main.js calls this once at init and on every switch.
-let _panelMode = null;
-export function setSamPanelMode(mode) {
-  const sub = document.querySelector("#sam-header .sam-sub");
-  if (sub) sub.textContent = mode === "live" ? "Data assistant · Live" : "Data assistant · Demo";
-  const changed = _panelMode !== null && _panelMode !== mode;
-  _panelMode = mode;
-  if (changed) document.getElementById("sam-new-chat")?.click();
-}
-
 export function initSamPanel(getContext) {
   if (typeof getContext === "function") _getContext = getContext;
   if (isMobilePanel()) panelExpanded = false;

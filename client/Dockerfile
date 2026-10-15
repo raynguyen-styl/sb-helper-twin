@@ -6,9 +6,9 @@
 # referenced above.
 #
 # SMART Buddy dashboard — frontend (Vite build → nginx), tree-digital-twin pattern.
-# The classic windows read precomputed JSON bundled at compile time; Playback reads the
-# proxied sb-api (VITE_SB_API_URL) and the chat panel talks to SAM over Solace. Keycloak
-# login (VITE_KEYCLOAK_*) gates the app in live deploys. All VITE_* are baked at build time.
+# Every window reads the proxied read API (VITE_SB_API_URL) and the chat panel talks to the agents
+# over Solace. Keycloak login (VITE_KEYCLOAK_*) gates the app in live deploys. All VITE_* are baked
+# at build time.
 
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
@@ -25,18 +25,11 @@ ARG VITE_SOLACE_URL=
 ARG VITE_SOLACE_VPN=
 ARG VITE_SOLACE_USER=
 ARG VITE_SOLACE_PASSWORD=
-# Demo | Live chat routing (central-specs change dashboard-demo-live-modes). Empty = the code's defaults:
-# demo → STYL/iot/smartbuddy/system/shared/v1/sam/chat/{request,response,error},
-# live → STYL/iot/smartbuddy-live/system/shared/v1/sam/chat/{request,response,error}, default mode demo.
-ARG VITE_SB_DEFAULT_MODE=
-ARG VITE_SAM_DEMO_TOPIC_REQUEST=
-ARG VITE_SAM_DEMO_TOPIC_RESPONSE=
-ARG VITE_SAM_DEMO_TOPIC_ERROR=
-ARG VITE_SAM_LIVE_TOPIC_REQUEST=
-ARG VITE_SAM_LIVE_TOPIC_RESPONSE=
-ARG VITE_SAM_LIVE_TOPIC_ERROR=
-# Live dashboard's Sync API (central-specs change live-dashboard-sync). Empty = /smartbuddy-live (nginx).
-ARG VITE_SB_LIVE_URL=
+# The chat's Solace topics — one set (central-specs capability sam-chat). Empty = the code's default:
+# STYL/iot/smartbuddy-live/system/shared/v1/sam/chat/{request,response,error}.
+ARG VITE_SAM_TOPIC_REQUEST=
+ARG VITE_SAM_TOPIC_RESPONSE=
+ARG VITE_SAM_TOPIC_ERROR=
 ENV VITE_SB_API_URL=$VITE_SB_API_URL \
     VITE_KEYCLOAK_URL=$VITE_KEYCLOAK_URL \
     VITE_KEYCLOAK_REALM=$VITE_KEYCLOAK_REALM \
@@ -45,14 +38,9 @@ ENV VITE_SB_API_URL=$VITE_SB_API_URL \
     VITE_SOLACE_VPN=$VITE_SOLACE_VPN \
     VITE_SOLACE_USER=$VITE_SOLACE_USER \
     VITE_SOLACE_PASSWORD=$VITE_SOLACE_PASSWORD \
-    VITE_SB_DEFAULT_MODE=$VITE_SB_DEFAULT_MODE \
-    VITE_SAM_DEMO_TOPIC_REQUEST=$VITE_SAM_DEMO_TOPIC_REQUEST \
-    VITE_SAM_DEMO_TOPIC_RESPONSE=$VITE_SAM_DEMO_TOPIC_RESPONSE \
-    VITE_SAM_DEMO_TOPIC_ERROR=$VITE_SAM_DEMO_TOPIC_ERROR \
-    VITE_SAM_LIVE_TOPIC_REQUEST=$VITE_SAM_LIVE_TOPIC_REQUEST \
-    VITE_SAM_LIVE_TOPIC_RESPONSE=$VITE_SAM_LIVE_TOPIC_RESPONSE \
-    VITE_SAM_LIVE_TOPIC_ERROR=$VITE_SAM_LIVE_TOPIC_ERROR \
-    VITE_SB_LIVE_URL=$VITE_SB_LIVE_URL
+    VITE_SAM_TOPIC_REQUEST=$VITE_SAM_TOPIC_REQUEST \
+    VITE_SAM_TOPIC_RESPONSE=$VITE_SAM_TOPIC_RESPONSE \
+    VITE_SAM_TOPIC_ERROR=$VITE_SAM_TOPIC_ERROR
 RUN npm run build
 
 FROM nginx:1.27-alpine

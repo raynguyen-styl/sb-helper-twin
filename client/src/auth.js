@@ -46,7 +46,7 @@ export function authUser() {
   return kc?.tokenParsed?.preferred_username || kc?.tokenParsed?.name || null;
 }
 
-// Roles from the token (realm + client), lowercased — used to gate admin-only UI (e.g. Upload).
+// Roles from the token (realm + client), lowercased — used to gate admin-only UI.
 export function authRoles() {
   const t = kc?.tokenParsed || {};
   const realm = t.realm_access?.roles || [];

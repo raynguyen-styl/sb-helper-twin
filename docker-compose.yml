@@ -6,24 +6,24 @@
 # referenced above.
 #
 # SMART Buddy — the digital twin: the dashboard a viewer sees (Vite → nginx), deployed on the shared VM
-# alongside the platform. Everything behind it — the read API, the SAM agent's MCP adapter, the upload
-# service and the one-shots — lives in the sibling `backend` repository with its own compose files.
-# Both repositories declare compose project `smartbuddy`, so containers, images and networks keep the
-# names they had when this was one repository. This stack therefore sees the backend's containers as
-# "orphans" and compose warns — expected; NEVER pass --remove-orphans here (it would stop the backend).
+# alongside the platform. Everything behind it — the read API over the Postgres serving store — lives in
+# the sibling `backend` repository with its own compose file. Both repositories declare compose project
+# `smartbuddy`, so containers, images and networks keep the names they had when this was one repository.
+# This stack therefore sees the backend's container as an "orphan" and compose warns — expected; NEVER
+# pass --remove-orphans here (it would stop the backend).
 #
 #   docker compose up -d --build          # smartbuddy-frontend
 #
-# The frontend starts with or without the backend: its nginx resolves smartbuddy-api / smartbuddy-mcp /
-# smartbuddy-ingest / jwt-validator per request, so those routes just fail (502; the Keycloak-gated ones
-# 500, because the token check itself cannot reach jwt-validator) until the platform + backend are up.
+# The frontend starts with or without the backend: its nginx resolves smartbuddy-api / jwt-validator per
+# request, so /smartbuddy-api/ just fails (500 while the token check cannot reach jwt-validator, 502
+# while smartbuddy-api is down) until the platform + backend are up.
 #
 # Isolation from tree-twin / other demos (checked against the live VM registry):
 #   • project `smartbuddy` · container `smartbuddy-frontend`
 #   • ONE public hostname: the ALB maps smartbuddy-helper-uat.styl.solutions/* → the frontend
-#     (host 8097, free on the VM). Its nginx same-origin-proxies /smartbuddy-api/ + /smartbuddy-mcp/ +
-#     /smartbuddy-ingest/ to the backend containers — so the shared nginx-proxy is NOT touched.
-#   • `sb-net` + the shared external `backend` net (to reach smartbuddy-api / -mcp / -ingest / jwt-validator)
+#     (host 8097, free on the VM). Its nginx same-origin-proxies /smartbuddy-api/ to the backend
+#     container — so the shared nginx-proxy is NOT touched.
+#   • `sb-net` + the shared external `backend` net (to reach smartbuddy-api / jwt-validator)
 #
 # SAM chat transport: with no VITE_SOLACE_* set, the build targets the shared local Solace that
 # atlantic-platform/common runs on every box (ws://localhost:8008, VPN + client-username `default`,
@@ -39,12 +39,12 @@ networks:
     name: ${BACKEND_NETWORK:-solace-pubsub-geo-filtering_backend}
 
 services:
-  # ── frontend (Vite → nginx). Playback reads sb-api; chat reaches SAM over Solace ─────────────────
+  # ── frontend (Vite → nginx). Every window reads sb-api; the chat reaches the agents over Solace ──
   smartbuddy-frontend:
     build:
       context: ./client
       args:
-        # Playback API base (proxied sb-api). Empty → Playback uses bundled demo data (offline dev).
+        # Read API base (proxied sb-api). Empty → Playback uses bundled demo data (offline dev).
         VITE_SB_API_URL: ${VITE_SB_API_URL:-}
         # Keycloak (shared realm styl-iot). Empty → app runs without login (local dev only).
         VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL:-}
@@ -56,24 +56,18 @@ services:
         VITE_SOLACE_VPN: ${VITE_SOLACE_VPN:-default}
         VITE_SOLACE_USER: ${VITE_SOLACE_USER:-default}
         VITE_SOLACE_PASSWORD: ${VITE_SOLACE_PASSWORD:-default}
-        # Demo | Live chat routing (central-specs change dashboard-demo-live-modes). Empty = the code's
-        # defaults: demo → STYL/iot/smartbuddy/system/shared/v1/sam/chat/*, live → …/smartbuddy-live/…,
-        # a fresh browser opens in demo. See DEPLOY.md "Demo and Live".
-        VITE_SB_DEFAULT_MODE: ${VITE_SB_DEFAULT_MODE:-}
-        VITE_SAM_DEMO_TOPIC_REQUEST: ${VITE_SAM_DEMO_TOPIC_REQUEST:-}
-        VITE_SAM_DEMO_TOPIC_RESPONSE: ${VITE_SAM_DEMO_TOPIC_RESPONSE:-}
-        VITE_SAM_DEMO_TOPIC_ERROR: ${VITE_SAM_DEMO_TOPIC_ERROR:-}
-        VITE_SAM_LIVE_TOPIC_REQUEST: ${VITE_SAM_LIVE_TOPIC_REQUEST:-}
-        VITE_SAM_LIVE_TOPIC_RESPONSE: ${VITE_SAM_LIVE_TOPIC_RESPONSE:-}
-        VITE_SAM_LIVE_TOPIC_ERROR: ${VITE_SAM_LIVE_TOPIC_ERROR:-}
-        # Live dashboard's Sync API (empty = /smartbuddy-live, proxied by this container's nginx).
-        VITE_SB_LIVE_URL: ${VITE_SB_LIVE_URL:-}
+        # The chat's Solace topics — one set (central-specs capability sam-chat). Empty = the code's
+        # default: STYL/iot/smartbuddy-live/system/shared/v1/sam/chat/{request,response,error}, the
+        # topics the Redshift agent's gateway rule answers on today. See DEPLOY.md "The chat".
+        VITE_SAM_TOPIC_REQUEST: ${VITE_SAM_TOPIC_REQUEST:-}
+        VITE_SAM_TOPIC_RESPONSE: ${VITE_SAM_TOPIC_RESPONSE:-}
+        VITE_SAM_TOPIC_ERROR: ${VITE_SAM_TOPIC_ERROR:-}
     container_name: smartbuddy-frontend
     restart: always
     ports:
       - "${SB_FRONTEND_PORT:-8097}:8080"    # ALB maps smartbuddy-helper-uat.styl.solutions/* here (8097 free on the VM)
-    # on `backend` too: this container's nginx same-origin-proxies /smartbuddy-api/ + /smartbuddy-mcp/ +
-    # /smartbuddy-ingest/ to the backend containers (see client/nginx.conf) — one hostname serves all.
+    # on `backend` too: this container's nginx same-origin-proxies /smartbuddy-api/ to the backend
+    # container (see client/nginx.conf) — one hostname serves all.
     networks: [sb-net, backend]
     deploy: { resources: { limits: { memory: 64m } } }
     logging: { options: { max-size: 10m } }

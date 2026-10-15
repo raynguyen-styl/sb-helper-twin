@@ -33,8 +33,8 @@ export function openFeb(FEB, tab) {
     if (!body) return;
 
     if (!FEB || !FEB.meta) {
-        body.innerHTML = `<div class="cap">No wearable / heart-rate data for this month. Upload the
-          <b>Wearable activity</b> and <b>Heart rate</b> datasets, then rebuild insights.</div>`;
+        body.innerHTML = `<div class="cap">No wearable / heart-rate data for this month: the
+          store holds no <b>wearable</b> bundle for it.</div>`;
         return;
     }
     const m = FEB.meta;

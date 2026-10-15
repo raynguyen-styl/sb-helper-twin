@@ -8,11 +8,10 @@ of the map (up to 4, one type at a time, lettered A–D with a matching badge on
 numbers). The map zooms to fit the pinned items. "Compare ▸" opens one topic at a time (Spend / Errors / Speed /
 Network / Food & menu) as graphs — a bar chart per measure, lines over time, 100% bars for shares — with the exact
 numbers behind "Show numbers". The topic and the map key's "Colour by" follow each other.
-**Top bar:** a Demo | Live toggle (Demo = the uploaded extract, every view below, Upload, the demo agent; Live = the
-Live overview, a live map coloured by spend and the live agent, all from the last **Sync**, with the Demo views and
-tools hidden — `src/live.js`; kept per browser, `#mode=live` in a link forces it), views +
-month + search; the workspace menu (role ▾) holds Switch workspace, Upload data (Demo only), Sign out. A
-"Not this month: …" chip appears only when a dataset is missing. **New viewers:** role picker (with Skip), then a
+**Top bar:** the month picker, the views of the workspace, search; the workspace menu (role ▾) holds Switch
+workspace, Tours, Keyboard & mouse, Sign out. A "Not this month: …" chip appears only when a dataset is missing.
+There is one mode and no upload: the data is whatever an operator seeded into the Postgres serving store
+(`backend/postgres/SEEDING.md`); before the seed the drawer says "No data yet". **New viewers:** role picker (with Skip), then a
 3-step getting-started checklist that ticks itself off; one-time tip on the drawer's Back. **Tour:** an opt-in
 6-step spotlight tour (`src/tour.js`) — offered in the role picker, the checklist and the ▾ menu, never auto-started.
 **Controls:** ▾ menu → "Keyboard & mouse" (or press `?`) lists them all (`src/shortcuts.js`). Highlights: Shift-click a
@@ -67,9 +66,11 @@ Without a reachable API the basemap renders but the map is empty — run against
 
 ## Data
 
-Read live per month (**Feb + March 2026**) from ClickHouse via api-service: uploads land in the
-`smartbuddy` db and `backend/ingestion-service/build_insights.py` precomputes each month's bundles
-(`global`, `schools`, `stalls`, + `wearable` / `items` / `savings` where present). How the map view is
+Read per month (**Feb + March 2026** once seeded) from the Postgres serving store via api-service:
+the `insights` table holds each month's precomputed bundles (`global`, `schools`, `stalls`, +
+`wearable` / `items` / `savings` where present) in the shapes `backend/ingestion-service/build_insights.py`
+defines, and the `pb_*` tables the Playback series (`backend/postgres/SEEDING.md` §1 is the contract).
+The chat's agents read Redshift, not this store (`central-specs/decisions/0002`). How the map view is
 built: `central-specs/design/MAP_DATA_FLOW.png`; runbooks: `../DEPLOY.md` (this frontend) and
 `backend/DEPLOY.md` (the whole stack).
 Exclusions from spend: STYL vendor test terminals, "Retrieve…" stalls (real sales at machines later pulled —
@@ -81,5 +82,5 @@ own prices don't contradict it; generic-named stalls are **Unclassified** (price
 No price-based category guessing. March receipts show what each stall actually sells, but never
 assign a food category.
 
-To refresh the data: upload through the dashboard (rebuilds that month's bundles), or rerun the
-`ch-insights` one-shot with `SB_MONTH=YYYY-MM` (`backend/DEPLOY.md` §4).
+To refresh the data: an operator re-seeds the month (`backend/postgres/SEEDING.md`); the dashboard
+picks it up on the next load.

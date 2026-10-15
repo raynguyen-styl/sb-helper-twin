@@ -29,7 +29,7 @@ const GROUPS = [
     ]],
     ['Anywhere', [
         ['<kbd>?</kbd>', 'This list'],
-        ['<kbd>Esc</kbd>', 'Close the menu, Upload, the tour or this list'],
+        ['<kbd>Esc</kbd>', 'Close the menu, the tour or this list'],
         ['▾ menu → Tours', 'Short guided tours, one per area'],
         ['“▶ Tour” on a view', 'A guided tour of that view'],
     ]],

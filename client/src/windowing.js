@@ -86,13 +86,13 @@ function insets(pushed = false) {
 }
 addEventListener('resize', () => insets());
 
-// Esc = Back one view (closes the drawer at the last one) — not while typing, nor when the menu, Upload, the tour or the
+// Esc = Back one view (closes the drawer at the last one) — not while typing, nor when the menu, the tour, the
 // role picker or a dialog (Keyboard & mouse) is open (they own Esc). Capture phase, so it decides before their own handlers run.
 addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !stack().length || e.target.closest?.('input:not([type=checkbox], [type=radio]), textarea, select')) return;
     let menuOpen = false;
     try { menuOpen = !!document.querySelector(':popover-open'); } catch { /* browser without popovers */ }
-    if (menuOpen || document.querySelector('.up-overlay, .tour-card, [data-win="hub"], dialog[open]')) return;
+    if (menuOpen || document.querySelector('.tour-card, [data-win="hub"], dialog[open]')) return;
     keep(stack().length - 1);
     (bar.querySelector('.dock-back, .dock-x') || document.querySelector('.maplibregl-canvas'))?.focus();   // keep keyboard focus: drawer, else the map
 }, true);

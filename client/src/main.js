@@ -13,14 +13,11 @@ import { openItems } from './items-window.js';
 import { openSavings } from './savings-window.js';
 import { openHub, ROLES } from './hub-window.js';
 import { openPlayback, setPlaybackMonth } from './playback-window.js';
-import { openUpload } from './upload-window.js';
 import { initAuth, authReady, authRoles, logout } from './auth.js';
 import { initSolace } from './solace/solace.js';
-import { initSam, setSamMode } from './sam/samClient.js';
-import { initSamPanel, setSamExpanded, setSamPanelMode } from './sam/samPanel.js';
-import { initMode, getMode, setMode, onModeChange, MODES } from './mode.js';
-import * as L from './live.js';
-import { closeAll, info, esc } from './windowing.js';
+import { initSam } from './sam/samClient.js';
+import { initSamPanel, setSamExpanded } from './sam/samPanel.js';
+import { openWindow, closeAll, info, esc } from './windowing.js';
 import { setCompareData, clearCompare, toggle as toggleCompare, followMap, pinnedKind, isPinned, pinsParam, restorePins, openDetail as openCompare } from './compare.js';
 import { startTour, openTours, CHAPTERS } from './tour.js';
 import { openShortcuts } from './shortcuts.js';
@@ -66,67 +63,11 @@ function setHash(key, val) {
     history.replaceState(null, '', location.pathname + location.search + (h.length ? '#' + h.join('&') : ''));
 }
 
-/* ---------- Demo | Live (mode.js) ---------- */
-// #mode= in the link → the browser's stored choice → VITE_SB_DEFAULT_MODE → demo.
-// Demo: the uploaded ClickHouse extract, every view, Upload, the demo agent.
-// Live: only what the last live sync stored (live.js): the Live overview + live map + Sync, the live
-// agent in the chat; every Demo view and tool is hidden (central-specs change live-dashboard-sync).
-initMode({ defaultMode: import.meta.env.VITE_SB_DEFAULT_MODE, hashValue: hashParam('mode') });
-const MODE_LABEL = { demo: 'Demo', live: 'Live' };
-const MODE_TITLE = { demo: 'Demo: the uploaded extract and the demo agent (Upload available)',
-                     live: 'Live: the live agent (no Upload)' };
-// The toggle on the nav bar (#mode-toggle in index.html): built once, its pressed state follows the mode.
-function renderModeToggle() {
-    const el = document.getElementById('mode-toggle');
-    if (!el) return;
-    if (!el.childElementCount) {
-        el.innerHTML = MODES.map((m) => `<button type="button" data-mode="${m}" title="${MODE_TITLE[m]}">${MODE_LABEL[m]}</button>`).join('');
-        el.addEventListener('click', (e) => { const m = e.target.closest('[data-mode]')?.dataset.mode; if (m) setMode(m); });
-    }
-    el.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === getMode())));
-}
-renderModeToggle();
-onModeChange((m) => {
-    setHash('mode', m);                                                              // shareable
-    if (m === 'live') document.querySelector('.up-overlay.show .up-x')?.click();     // no upload in Live
-    setSamMode(m);                                                                   // chat topics
-    setSamPanelMode(m);                                                              // header + new chat
-    if (m === 'live') enterLive(); else leaveLive();                                 // dashboard + nav
-});
-
-// Live in, Live out. Demo's markers, legend, search, compare and coverage strip are hidden by the
-// body class (theme.css); Demo's data stays loaded underneath, so switching back is instant.
-async function enterLive() {
-    document.body.classList.add('mode-live');
-    closeAll(); clearCompare();
-    renderNav();
-    await L.loadMonths();
-    await L.loadPanels(L.live.month);
-    if (getMode() !== 'live') return;                     // switched back while loading
-    showLive();
-}
-function showLive() {
-    renderNav();
-    const draw = () => { if (getMode() === 'live') L.drawMap(map, maplibregl); };
-    if (!map || mapReady) draw(); else map.once('load', draw);
-    closeAll();
-    L.openOverview({ onSchool: (sid) => L.flyTo(map, sid) });
-}
-async function switchLiveMonth(m) {
-    await L.loadPanels(m);
-    if (getMode() === 'live') showLive();
-}
-function leaveLive() {
-    document.body.classList.remove('mode-live');
-    L.stopSyncPolling(); L.clearMap(); closeAll();
-    renderNav();
-    openFirstAvailable(role);
-}
 const markerEls = new Map();
 const markers = new Map();
 let mapReady = false;
 
-/* ---------- per-month data (fetched from the ClickHouse-backed read API) ---------- */
+/* ---------- per-month data (fetched from the read API over the Postgres serving store) ---------- */
 // These start empty and are (re)filled by loadMonth() from the insight bundles. Windows receive
 // them as arguments at open time, so switching month + reopening a view shows the new month.
 let GLOBAL = {}, SCHOOLS = {}, FEB = null, STALLS = { stalls: [], terminals: [] }, ITEMS = null, SAVINGS = null;
@@ -135,10 +76,10 @@ let curMonth = null, curKinds = [];
 
 /* ---------- views & roles ---------- */
 // Each view maps to an insight-bundle kind; renderNav only shows the ones the current month has
-// (Feb → wearable; March → items/savings). Playback + Upload are always available.
+// (Feb → wearable; March → items/savings). Playback is always available.
 // `label` is the compact nav text; `title` is the full name shown on hover. Keeping labels short
 // stops the top bar from overflowing when a role shows several views (see renderNav). Utility actions
-// (switch workspace, upload, sign out) live in the workspace menu instead (renderNav).
+// (switch workspace, tours, keys, sign out) live in the workspace menu instead (renderNav).
 const VIEWS = {
     overview: { label: 'Overview',   title: 'Network Overview',      kind: 'global',   open: () => openOverview(GLOBAL, SCHOOLS, FEB?.special) },
     eng:      { label: 'Terminals',  title: 'Terminal Health',       kind: 'stalls',   open: (p) => openEng(STALLS, p || {}) },
@@ -181,16 +122,12 @@ function openFirstAvailable(r) {
 }
 function renderNav() {
     const nv = document.getElementById('nav-views');
-    const isLive = getMode() === 'live';
-    let keys = isLive ? [] : [...(role ? ROLES[role].views : Object.keys(VIEWS))].filter((k) => VIEWS[k] && viewAvailable(k));
-    if (!isLive && !keys.includes('playback')) keys.push('playback');  // always (Demo)
-    nv.innerHTML = (isLive
-        ? '<button class="nav-btn" data-live="overview" title="Live overview: the last live sync">Live overview</button><span id="live-sync" class="nav-sync-wrap"></span>'
-        : keys.map((k) => `<button class="nav-btn" data-view="${k}" title="${VIEWS[k].title || VIEWS[k].label}">${VIEWS[k].label}</button>`).join('')) +
-        `<button class="nav-role" id="role-btn" popovertarget="nav-menu" title="${getMode() === 'live' ? 'Workspace, tours, sign out' : 'Workspace, upload, sign out'}">${role ? ROLES[role].icon + ' ' + ROLES[role].label : '☰ All views'} ▾</button>
+    const keys = [...(role ? ROLES[role].views : Object.keys(VIEWS))].filter((k) => VIEWS[k] && viewAvailable(k));
+    if (!keys.includes('playback')) keys.push('playback');  // always
+    nv.innerHTML = keys.map((k) => `<button class="nav-btn" data-view="${k}" title="${VIEWS[k].title || VIEWS[k].label}">${VIEWS[k].label}</button>`).join('') +
+        `<button class="nav-role" id="role-btn" popovertarget="nav-menu" title="Workspace, tours, sign out">${role ? ROLES[role].icon + ' ' + ROLES[role].label : '☰ All views'} ▾</button>
         <div id="nav-menu" class="nav-menu" popover>
           <button data-act="role">Switch workspace…</button>
-          ${getMode() === 'demo' ? '<button data-act="upload">⬆ Upload data</button>' : ''}
           <button data-act="tours">Tours…</button>
           <button data-act="keys">Keyboard &amp; mouse <kbd>?</kbd></button>
           ${username ? `<div class="nav-menu-user">Signed in as <b>${username.replace(/[&<"]/g, '')}</b></div>
@@ -198,10 +135,6 @@ function renderNav() {
         </div>`;
     nv.querySelectorAll('[data-view]').forEach((b) =>
         b.addEventListener('click', () => VIEWS[b.dataset.view].open()));
-    if (isLive) {
-        nv.querySelector('[data-live="overview"]').addEventListener('click', () => L.openOverview({ onSchool: (sid) => L.flyTo(map, sid) }));
-        L.mountSync(document.getElementById('live-sync'), { onDone: showLive });
-    }
     const menu = nv.querySelector('#nav-menu'), rb = nv.querySelector('#role-btn');
     menu.addEventListener('toggle', (e) => {                // popovers open centred; pin it under the button
         if (e.newState !== 'open') return;
@@ -213,12 +146,10 @@ function renderNav() {
         if (!act) return;
         menu.hidePopover();
         if (act === 'role') openHub(pickRole);
-        else if (act === 'upload') openUpload(onUploaded);
         else if (act === 'tours') { rb.focus(); openTours(tourKeys(), tour); }   // focus comes back to the ▾ button after
         else if (act === 'keys') { rb.focus(); openShortcuts(); }
         else logout();
     });
-    renderModeToggle();
     renderMonthPicker();
     renderCoverage();
 }
@@ -230,7 +161,7 @@ function renderCoverage() {
     const right = document.querySelector('.nav-right');
     if (!right) return;
     let el = document.getElementById('month-cov');
-    if (!MONTHS.length || !curMonth || getMode() === 'live') { el?.remove(); return; }   // Demo only
+    if (!MONTHS.length || !curMonth) { el?.remove(); return; }
     if (!el) {
         el = document.createElement('div');
         el.id = 'month-cov'; el.className = 'month-cov';
@@ -248,36 +179,23 @@ function renderMonthPicker() {
     const right = document.querySelector('.nav-right');
     if (!right) return;
     let sel = document.getElementById('month-picker');
-    const isLive = getMode() === 'live';
-    // Live: the months the live agent reported in the last sync (an unsynced one says so). Demo: uploaded months.
-    const list = isLive ? L.live.months : MONTHS;
-    if (!list.length) { sel?.remove(); return; }
+    if (!MONTHS.length) { sel?.remove(); return; }
     if (!sel) {
         sel = document.createElement('select');
         sel.id = 'month-picker'; sel.className = 'month-picker';
         right.insertBefore(sel, right.firstChild);
         sel.addEventListener('change', () => switchMonth(sel.value));
     }
-    sel.title = isLive ? 'Live month (from the live agent)' : 'Data month';
+    sel.title = 'Data month';
     const fmt = (m) => { const [y, mo] = m.split('-'); return `${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo]} ${y}`; };
-    const cur = isLive ? L.live.month : curMonth;
-    sel.innerHTML = list.map((m) => `<option value="${m.month}"${m.month === cur ? ' selected' : ''}>${fmt(m.month)}${isLive && !m.synced_at ? ' · not synced' : ''}</option>`).join('');
+    sel.innerHTML = MONTHS.map((m) => `<option value="${m.month}"${m.month === curMonth ? ' selected' : ''}>${fmt(m.month)}</option>`).join('');
 }
 
 async function switchMonth(m) {
-    if (getMode() === 'live') return switchLiveMonth(m);
     if (m === curMonth) return;
     if (await loadMonth(m) === false) return;
     renderNav();
     openFirstAvailable(role);
-}
-
-// Called by the upload window after a successful load — refresh months + current data.
-async function onUploaded() {
-    MONTHS = await fetchMonths().catch(() => MONTHS);
-    if (!MONTHS.find((x) => x.month === curMonth) && MONTHS.length) curMonth = MONTHS.at(-1).month;
-    if (await loadMonth(curMonth) === false) return;
-    renderNav();
 }
 
 // User badge + logout in the top-right nav (only when Keycloak is enabled → username present).
@@ -292,7 +210,6 @@ function renderUser(name) {
 // the agent what's on screen (a hint only — the agent answers from the DB).
 const samActive = { school: null, stall: null, terminal: null };
 window.SB = {
-    mode: getMode,                                   // Demo | Live (the tour's step predicate reads it)
     openSchool: (sid) => { samActive.school = sid; return open(sid); },
     openStall: (id) => { samActive.stall = id; return openStall(STALLS, id); },
     openTerminal: (tid) => { samActive.terminal = tid; return openTerminal(STALLS, tid); },
@@ -385,10 +302,8 @@ document.addEventListener('keydown', (e) => {
 function buildSamContext() {
     return {
         source: 'smart-buddy-frontend',
-        scope: getMode() === 'live' ? (L.live.month ? `month ${L.live.month}` : 'live: no month synced')
-            : curMonth ? `month ${curMonth}` : 'no data loaded',
+        scope: curMonth ? `month ${curMonth}` : 'no data loaded',
         role: role || 'all',
-        mode: getMode(),
         viewing: { school: samActive.school, stall: samActive.stall, terminal: samActive.terminal },
         hash: location.hash || null,
     };
@@ -576,7 +491,7 @@ async function boot() {
     colorMode = ROLE_COLOR[role] || 'level';         // saved role's default colouring, before the first paint
     await loadMonth(curMonth);
     renderNav();
-    if (getMode() === 'live') return enterLive();     // Live opens on its own overview; Demo deep links don't apply
+    if (!MONTHS.length) return openNoData();          // nothing seeded yet: say so instead of opening Playback on nothing
 
     const h = location.hash;
     const mRole = h.match(/role=(\w+)/);
@@ -607,6 +522,16 @@ async function boot() {
     if (localStorage.getItem('sb-hub-seen')) initOnboarding();
 }
 boot();
+
+// The serving store holds no month yet (a fresh deploy before the seed, or an API that cannot be reached):
+// say so in the drawer rather than opening Playback on nothing. The months appear on the next reload.
+function openNoData() {
+    const body = openWindow({ id: 'nodata', title: 'No data yet', sub: 'the store holds no month', chips: [] });
+    if (!body) return;
+    body.innerHTML = `<div class="note-box">The dashboard reads the Postgres serving store through the read API, and no month
+      was returned. Either the store has not been seeded yet (an operator fills it following
+      <code>backend/postgres/SEEDING.md</code>) or the API is not reachable. Reload once a month has been seeded.</div>`;
+}
 
 function open(sid) {
     const s = SCHOOLS[sid];
@@ -725,20 +650,17 @@ function openUnmapped() {
     });
 }
 
-/* ---------- SAM data assistant (chat over the ClickHouse store, month-aware, via the mesh) ---------- */
+/* ---------- SAM data assistant (the agents on the mesh, which read Redshift; month-aware context) ---------- */
 // Additive + fully optional: with no VITE_SOLACE_*/VITE_SAM_* env set, the panel
 // renders and simply shows "offline" — the rest of the app is unaffected.
 initSolace();
 initSam();
 initSamPanel(buildSamContext);
-setSamMode(getMode());          // route the chat to the active mode's agent
-setSamPanelMode(getMode());     // and name it in the panel header
 document.addEventListener('smartbuddy:sam-ask', () => tick('sam'));
 
 /* ---------- opt-in tours (tour.js): ▾ menu → Tours, checklist, first-visit picker, "▶ Tour" on a view — never by themselves ---------- */
 // Chapters this viewer can take: the shared ones + the views in their workspace that this month has (Playback always).
 function tourKeys() {
-    if (getMode() === 'live') return ['sam', 'menu'].filter((k) => CHAPTERS[k]);   // the Demo chapters walk Demo views
     const views = new Set([...(role ? ROLES[role].views : Object.keys(VIEWS)), 'playback'].filter((k) => VIEWS[k] && viewAvailable(k)));
     return Object.keys(CHAPTERS).filter((k) => !CHAPTERS[k].view || views.has(k));
 }
@@ -760,9 +682,6 @@ function tour(key = 'basics') {
         compare: () => { if (pins.length >= 2) openCompare(); },
         view: (k) => VIEWS[k].open(),
         sam: setSamExpanded,
-        upload: (on) => { if (getMode() === 'live') return;   // no upload in Live (its tour step is hidden too)
-            const x = document.querySelector('.up-overlay.show .up-x');
-            if (on && !x) openUpload(onUploaded); else if (!on) x?.click(); },
     }, tourKeys());
 }
 document.addEventListener('smartbuddy:tour', (e) => tour(e.detail || 'basics'));
