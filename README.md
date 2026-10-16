@@ -18,9 +18,10 @@ One mode (decision `0002`): the months present in the Postgres serving store —
 bundled). A role hub (F&B / Engineering / Management) picks the views: an OneMap map of the 332 schools
 (dots sized by spend, coloured by level / error rate / speed; PBS bookstore and stamp-point layers),
 school details with stalls and terminals tabs, Network Overview, Terminal Health with a service route
-planner, Wearables (Feb + Mar), Purchases and Saving (Mar), Playback, and a SAM chat panel over Solace
-to the agents on the mesh, which answer from Redshift (so the chat and the dashboard can disagree:
-`central-specs/decisions/0002`). Compare up to four schools, stalls or terminals side by side; opt-in
+planner, Wearables (Feb + Mar), Purchases and Saving (Mar), Playback, and a chat panel ("SMART Buddy",
+the orchestrator of the specialist agents on the mesh, over Solace) that shows which agent answers,
+renders report answers as figures and charts, and answers from Redshift (so the chat and the dashboard
+can disagree: `central-specs/decisions/0002`). Compare up to four schools, stalls or terminals side by side; opt-in
 tours; keyboard-usable; deep links (`#role=`, `#school=`, `#terminal=`, `#layers=`, `#pins=`).
 There is no upload and no sync: the store is seeded by an operator (`backend/postgres/SEEDING.md`);
 until it is, the dashboard says "No data yet". Details: "The dashboard" below.
@@ -93,7 +94,10 @@ rotate / tilt).
   **Map key** (bottom-left, collapsible) is also the layer filter: colour by Level / Errors / Speed, then a show/hide row with a count for Primary · Secondary · Junior College · Other · **PBS Bookstores** (squares) · **Stamp points** (diamonds) — any combination, "Reset view" when filtered, kept in the URL
   (`#layers=…`). PBS and Self Serve Stamps are vendors, not schools: their shops/points sit beside the host school
   only when the placement is evidenced (`backend/ingestion-service/pbs_hosts.csv`, `stamp_hosts.csv`); "Lists: PBS
-  bookstores" in the legend shows every shop, unplaced ones first.
+  bookstores" in the legend shows every shop, unplaced ones first. The basemap is OneMap Grey, washed to grey;
+  OneMap's "South China Sea / Pedra Branca" inset box in the sea off the East Coast (drawn in its z11 and z12 tiles;
+  the dashboard shows the z12 tiles at its opening zoom) is covered with the sea colour — a territorial-claim mark,
+  not geography (`central-specs` capability `basemap`). `SB.map` in the console is the MapLibre instance.
 - **Search** (top bar) — by school ID or name; works for unmapped schools too. Picking a school flies the map there.
 - **School window** (click a marker) — spend/ticket/cards/error/speed stats, MOE badges
   (Independent · IP · GEP · SAP), and two tabs:

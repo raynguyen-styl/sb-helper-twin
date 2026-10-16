@@ -73,9 +73,23 @@ of `central-specs/docs/sb_helper_agent_system.md` exists, the mesh owner points 
 twin does not change. The older `VITE_SAM_QUERY_TOPIC` / `VITE_SAM_RESPONSE_TOPIC` / `VITE_SAM_ERROR_TOPIC`
 still override. `bootstrap-env.sh` resolves each key from the environment → an existing `.env`'s same
 key → that file's pre-October `VITE_SAM_LIVE_TOPIC_*` → the default, so a box keeps the topics it used,
-and its checklist names the source. No agent on the topic → the panel shows "offline" after 60 s; the
-rest of the dashboard is unaffected. There is no Demo | Live toggle and no `#mode=` any more
+and its checklist names the source. There is no Demo | Live toggle and no `#mode=` any more
 (`central-specs/decisions/0002`).
+
+The reply (central-specs capability `agent-system`) is `{correlationId, reply, actions, kind?,
+agents?, report?, suggestions?}`: the panel shows the orchestrator's routing card with one row per
+specialist in `agents[]`, attributes a single-specialist answer to that specialist, renders a
+`report` as KPI tiles, inline-SVG charts (a "Numbers" table under each), tables and notes with Copy
+and CSV, styles `kind: "refusal"` as a refusal and offers `suggestions[]` as chips. A message with
+the same `correlationId`, `status: "working"` and no `reply` is progress: it updates the rows and
+restarts the wait. The wait is `VITE_SAM_TIMEOUT_MS` (default 60 s), doubled for a question that
+asks for a report; with no reply or progress in that time the panel shows "offline" and the rest of
+the dashboard is unaffected. A specialist marked `failed` or `timeout` gets a Retry chip that
+re-sends the question with `retry: ask only <agent_name>` in the context hint. A reply with only
+`reply` still renders as one text bubble. Registering the agents: `central-specs/docs/
+sb_helper_agent_mesh_setup.md`. To render a captured reply without the broker (debugging), in the
+browser console of a dev build: `import('/src/sam/samPanel.js').then(m => m.replay({ question,
+progress: [...], reply }))`.
 
 ## 3 · Routing (`nginx.conf`)
 

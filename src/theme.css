@@ -7,6 +7,9 @@
     /* status text/borders: Okabe-Ito hues darkened to >=4.5:1 on white (map/chart marks use charts.js ST) */
     --good: #00785A; --warn: #9A5F00; --bad: #B34700; --neutral: #8e8e93;
     --lv-pri: #2a78d6; --lv-sec: #1baf7a; --lv-jc: #7d5fd3; --lv-other: #8e8e93;
+    /* the chat's agents (central-specs design/agent-chat): the orchestrator is neutral, the five specialists take
+       the data-viz categorical slots 1–5 in roster order; a name always sits beside the swatch */
+    --agent-0: #52514e; --agent-1: #2a78d6; --agent-2: #eb6834; --agent-3: #1baf7a; --agent-4: #eda100; --agent-5: #e87ba4;
     --r-sm: 8px; --r-md: 11px; --r-lg: 18px; --r-pill: 9999px;
     --font-display: "SF Pro Display", system-ui, -apple-system, "Inter", sans-serif;
     --font-text: "SF Pro Text", system-ui, -apple-system, "Inter", sans-serif;

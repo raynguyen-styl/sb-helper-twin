@@ -6,7 +6,7 @@ const KEY = 'sb-onboard';
 const STEPS = [
     { id: 'school', t: 'Open a school', h: 'Click any dot on the map.' },
     { id: 'compare', t: 'Compare two schools', h: '“＋ Compare” in a school, or Shift-click dots.' },
-    { id: 'sam', t: 'Ask SAM a question', h: '<button class="ob-sam">Open SAM</button> — plain English, real numbers.' },
+    { id: 'sam', t: 'Ask the assistant a question', h: '<button class="ob-sam">Open the chat</button> — plain English, real numbers.' },
 ];
 let st;
 try { st = JSON.parse(localStorage.getItem(KEY)) || { done: [] }; } catch { st = { done: [] }; }

@@ -24,7 +24,7 @@ export const CHAPTERS = {
           before: (c) => c.pin(), target: () => document.querySelector('.cmp-tray') || top('.pin-btn') },
         { t: 'Views, months, search', b: 'Switch views or months, or search any school, stall or machine.',
           target: () => document.querySelector('.nav-right') },
-        { t: 'Ask SAM', b: 'Ask about the data in plain English. More tours: ▾ menu → Tours, or “▶ Tour” on a view.',
+        { t: 'Ask the assistant', b: 'Ask about the data in plain English. More tours: ▾ menu → Tours, or “▶ Tour” on a view.',
           target: () => document.getElementById('sam-panel') },
     ] },
     map: { title: 'Map & Map key', end: (c) => c.colour(), steps: [
@@ -137,12 +137,12 @@ export const CHAPTERS = {
         { t: 'Play it', b: 'Play, drag the slider to any day, or change the speed.',
           target: () => top('.pb-bar') },
     ] },
-    sam: { title: 'SAM assistant', steps: [
-        { t: 'Meet SAM', b: 'Ask about this data in plain English; answers come with real numbers.',
+    sam: { title: 'Data assistant', steps: [
+        { t: 'Meet SMART Buddy', b: 'Ask about this data in plain English. It hands the question to a specialist agent and answers with real numbers; add “as a report” for figures and charts.',
           before: (c) => c.sam(true), target: () => document.getElementById('sam-panel') },
         { t: 'Ask a question', b: 'Start from a suggestion or type your own. Enter sends, Shift+Enter adds a line.',
           before: (c) => c.sam(true), target: () => document.querySelector('#sam-thread .sam-empty-state:not([hidden])') || document.getElementById('sam-footer') },
-        { t: 'Start over', b: '“New” starts a fresh chat. SAM folds to its rail when a view opens.',
+        { t: 'Start over', b: '“New” starts a fresh chat. The assistant folds to its rail when a view opens.',
           before: (c) => c.sam(true), target: () => document.getElementById('sam-new-chat') },
     ] },
     menu: { title: 'Menu & keys', steps: [

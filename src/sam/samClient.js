@@ -8,6 +8,12 @@
  *     central-specs capability sam-chat). The payload carries a correlationId the agent echoes; an
  *     id-less reply falls back to the sole in-flight request.
  *  2) HTTP: VITE_SAM_ENDPOINT → POST {base}/chat with optional Bearer VITE_SAM_API_KEY.
+ *
+ * The reply (central-specs capability agent-system, docs/sb_helper_agent_system.md §5) is
+ * {correlationId, reply, actions, kind?, agents?, report?, suggestions?}; a message with the same id,
+ * status "working" and no reply is progress — it re-arms the question's timeout and reaches the
+ * panel through onProgress without resolving. Everything is normalised here; the panel never reads
+ * the raw payload.
  */
 
 import { publish, subscribe } from "../solace/solace.js";
@@ -106,8 +112,17 @@ function _contextPreamble(context) {
   if (v.school) bits.push(`viewing school ${v.school}`);
   if (v.stall) bits.push(`viewing stall ${v.stall}`);
   if (v.terminal) bits.push(`viewing terminal ${v.terminal}`);
+  // Retry of one specialist (sam-chat spec): the hint ends in "retry: ask only <agent_name>" and the
+  // orchestrator delegates to that agent only. A hint, not a new envelope field — the gateway rule
+  // maps payload.context and nothing else would reach the agent.
+  if (context.retryOnly) bits.push(`retry: ask only ${_sanitizeAgentName(context.retryOnly)}`);
   return bits.length ? `(Context: ${bits.join("; ")}.)` : "";
 }
+const _sanitizeAgentName = (s) => String(s ?? "").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64);
+
+// A question that asks for a report waits twice as long (the specialists build several queries).
+const REPORT_LIKE = /\b(report|summar(y|ise|ize)|statistic|breakdown|break down|compar(e|ison)|trend|overview)\b/i;
+export function isReportLike(text) { return REPORT_LIKE.test(String(text ?? "")); }
 function _composeTextMessage(text, context) {
   const pre = _contextPreamble(context);
   return pre ? `${pre}\n\n${String(text ?? "")}` : String(text ?? "");
@@ -142,6 +157,30 @@ function _takePendingForPayload(payload) {
   const p = _pending.get(oldestId);
   _pending.delete(oldestId);
   return p;
+}
+// Progress keeps the question in flight: look the request up without taking it. An id-less working
+// message is only trusted when exactly one question is pending (same rule as replies).
+function _peekPendingForPayload(payload) {
+  const id = _extractCorrelationId(payload);
+  if (id) return _pending.get(id) ?? null;
+  return SAM_SINGLE_PENDING_FALLBACK && _pending.size === 1 ? _pending.values().next().value : null;
+}
+// A streamed chunk of the agent's JSON (an agent with streaming on): starts with "{" but its braces do
+// not balance. Never a reply — the agents emit exactly one whole object — so it is dropped, not shown.
+function _looksLikeFragment(obj) {
+  if (!obj || typeof obj !== "object" || typeof obj.text !== "string" || Object.keys(obj).length !== 1) return false;
+  const s = obj.text.trim();
+  if (!s.startsWith("{")) return false;
+  let depth = 0;
+  for (const ch of s) { if (ch === "{") depth++; else if (ch === "}") depth--; }
+  return depth !== 0;
+}
+// {correlationId, status: "working", agents: [...]} and no answer text → progress, not a reply.
+function _isProgress(obj) {
+  if (!obj || typeof obj !== "object") return false;
+  const st = typeof obj.status === "string" ? obj.status.toLowerCase() : "";
+  if (!/^(working|progress|routing|running|querying)$/.test(st)) return false;
+  return !_pickReplyText(obj) && obj.report == null;
 }
 
 function _removePendingFifoEntry(entry) {
@@ -254,17 +293,131 @@ function _salvageProseShapedJson(text) {
   return reply ? { reply, actions } : null;
 }
 
+// ── the extended envelope (agents, report, kind, suggestions) ─────────────────
+// Everything below coerces untrusted model output into plain values the panel renders with
+// textContent: strings are clipped, numbers must be finite, unknown kinds and shapes are dropped.
+const REPORT_LIMITS = Object.freeze({ kpis: 6, charts: 4, tables: 3, rows: 50, points: 400, series: 6, columns: 12, notes: 12 });
+const _str = (v, max = 200) => (v == null ? "" : String(v)).trim().slice(0, max);
+const _num = (v) => { const n = typeof v === "number" ? v : Number(v); return Number.isFinite(n) ? n : null; };
+const _cell = (v) => (typeof v === "number" ? (Number.isFinite(v) ? v : "") : _str(v, 160));
+const AGENT_STATUS = new Set(["routing", "querying", "working", "done", "failed", "timeout", "skipped"]);
+const REPLY_KINDS = new Set(["answer", "refusal", "scope", "clarify"]);
+
+export function normalizeAgents(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const a of list.slice(0, 12)) {
+    if (!a || typeof a !== "object") continue;
+    const name = _sanitizeAgentName(a.name ?? a.agent ?? a.id);
+    if (!name) continue;
+    const status = _str(a.status, 20).toLowerCase();
+    const ms = _num(a.ms ?? a.elapsed_ms ?? a.elapsedMs);
+    out.push({
+      name,
+      display: _str(a.display ?? a.display_name ?? a.displayName, 60) || undefined,
+      role: /orch/i.test(_str(a.role, 20)) || name === "sb_orchestrator" ? "orchestrator" : "specialist",
+      status: AGENT_STATUS.has(status) ? status : "done",
+      source: _str(a.source, 160) || undefined,
+      ms: ms != null && ms >= 0 ? ms : undefined,
+    });
+  }
+  return out;
+}
+
+function _normalizeSeries(ch) {
+  // §5 shape: series[{name, points:[[x,y]]}]; the design's draft shape put `points` on the chart itself.
+  const raw = Array.isArray(ch.series) && ch.series.length ? ch.series : (Array.isArray(ch.points) ? [{ name: ch.title, points: ch.points }] : []);
+  const series = [];
+  let trimmed = false;
+  for (const s of raw.slice(0, REPORT_LIMITS.series)) {
+    const pts = Array.isArray(s?.points) ? s.points : [];
+    const points = [];
+    for (const p of pts) {
+      if (points.length >= REPORT_LIMITS.points) { trimmed = true; break; }
+      if (!Array.isArray(p) || p.length < 2) continue;
+      const y = _num(p[1]); if (y == null) continue;
+      points.push([_str(p[0], 80), y]);
+    }
+    if (points.length) series.push({ name: _str(s?.name, 60) || _str(ch.title, 60) || "value", points });
+  }
+  return { series, trimmed };
+}
+
+export function normalizeReport(r) {
+  if (!r || typeof r !== "object") return null;
+  const dropped = [];
+  const kpis = [];
+  for (const k of (Array.isArray(r.kpis) ? r.kpis : [])) {
+    if (!k || typeof k !== "object") continue;
+    const value = _num(k.value); if (value == null) continue;
+    if (kpis.length >= REPORT_LIMITS.kpis) { dropped.push("figures"); break; }
+    const d = k.delta && typeof k.delta === "object" ? k.delta : null;
+    const pct = d ? _num(d.pct ?? d.value) : null;
+    kpis.push({ label: _str(k.label, 60) || "Value", value, unit: _str(k.unit, 12) || undefined,
+      delta: pct != null ? { pct, vs: _str(d.vs ?? d.label, 40) } : undefined, agent: _sanitizeAgentName(k.agent) || undefined });
+  }
+  const charts = [];
+  for (const c of (Array.isArray(r.charts) ? r.charts : [])) {
+    if (!c || typeof c !== "object") continue;
+    const kind = _str(c.kind, 12).toLowerCase();
+    if (!["bar", "line", "stacked"].includes(kind)) { dropped.push("a chart of an unknown kind"); continue; }
+    const { series, trimmed } = _normalizeSeries(c);
+    if (!series.length) continue;
+    if (charts.length >= REPORT_LIMITS.charts) { dropped.push("charts"); break; }
+    if (trimmed) dropped.push(`points beyond ${REPORT_LIMITS.points} in "${_str(c.title, 40)}"`);
+    const marks = [];
+    for (const m of (Array.isArray(c.marks) ? c.marks.slice(0, 6) : [])) {
+      if (m && typeof m === "object") marks.push({ from: _str(m.from, 40), to: _str(m.to ?? m.from, 40), label: _str(m.label, 30) });
+    }
+    charts.push({ kind, title: _str(c.title, 80) || "Chart", unit: _str(c.unit, 12) || undefined, x: _str(c.x, 30) || undefined,
+      series, marks, agent: _sanitizeAgentName(c.agent) || undefined });
+  }
+  const tables = [];
+  for (const t of (Array.isArray(r.tables) ? r.tables : [])) {
+    if (!t || typeof t !== "object" || !Array.isArray(t.rows)) continue;
+    if (tables.length >= REPORT_LIMITS.tables) { dropped.push("tables"); break; }
+    const columns = (Array.isArray(t.columns) ? t.columns : []).slice(0, REPORT_LIMITS.columns).map((c) => _str(c, 60));
+    const width = columns.length || Math.max(0, ...t.rows.map((row) => (Array.isArray(row) ? row.length : 0)));
+    const rows = [];
+    for (const row of t.rows) {
+      if (!Array.isArray(row)) continue;
+      if (rows.length >= REPORT_LIMITS.rows) { dropped.push(`rows beyond ${REPORT_LIMITS.rows} in "${_str(t.title, 40)}"`); break; }
+      rows.push(Array.from({ length: Math.min(width, REPORT_LIMITS.columns) }, (_, i) => _cell(row[i])));
+    }
+    if (!rows.length) continue;
+    const units = (Array.isArray(t.units) ? t.units : []).slice(0, REPORT_LIMITS.columns).map((u) => _str(u, 12) || undefined);
+    tables.push({ title: _str(t.title, 80) || "Table", columns, rows, units, agent: _sanitizeAgentName(t.agent) || undefined });
+  }
+  const notes = (Array.isArray(r.notes) ? r.notes : []).slice(0, REPORT_LIMITS.notes).map((n) => _str(n, 400)).filter(Boolean);
+  if (!kpis.length && !charts.length && !tables.length) return null;
+  return { title: _str(r.title, 120) || "Report", period: _str(r.period, 40), source: _str(r.source, 160),
+    kpis, charts, tables, notes, dropped: [...new Set(dropped)] };
+}
+
+function _extendedFields(...objs) {
+  const pick = (k) => { for (const o of objs) if (o && typeof o === "object" && o[k] !== undefined) return o[k]; return undefined; };
+  const kindRaw = _str(pick("kind"), 20).toLowerCase();
+  return {
+    kind: REPLY_KINDS.has(kindRaw) ? kindRaw : "answer",
+    agents: normalizeAgents(pick("agents")),
+    report: normalizeReport(pick("report")),
+    suggestions: (Array.isArray(pick("suggestions")) ? pick("suggestions") : []).slice(0, 8).map((s) => _str(s, 160)).filter(Boolean),
+  };
+}
+
 function _normalizePayload(rawPayload) {
   const { obj: payload, plainText } = _normalizeInboundPayload(rawPayload);
+  const base = { kind: "answer", agents: [], report: null, suggestions: [] };
   if (plainText && (!payload || Object.keys(payload).length === 0)) {
     const salvaged = _salvageProseShapedJson(plainText);
-    if (salvaged) { console.warn("[sam] agent returned prose — salvaged via regex."); return salvaged; }
-    return { reply: plainText.trim(), actions: [] };
+    if (salvaged) { console.warn("[sam] agent returned prose — salvaged via regex."); return { ...base, ...salvaged }; }
+    return { ...base, reply: plainText.trim(), actions: [] };
   }
-  if (!payload || typeof payload !== "object") return { reply: plainText?.trim() || "SAM response received.", actions: [] };
+  if (!payload || typeof payload !== "object") return { ...base, reply: plainText?.trim() || "SAM response received.", actions: [] };
 
   const inner = payload.data && typeof payload.data === "object" ? payload.data : payload;
   const inner2 = inner.result && typeof inner.result === "object" ? inner.result : inner;
+  const ext = _extendedFields(inner2, inner, payload);
 
   let reply =
     _pickReplyText(inner2) ?? _pickReplyText(inner) ?? _pickReplyText(payload) ??
@@ -282,8 +435,10 @@ function _normalizePayload(rawPayload) {
     const salvaged = _salvageProseShapedJson(reply);
     if (salvaged) { console.warn("[sam] agent returned prose — salvaged via regex."); reply = salvaged.reply; if (!actions.length) actions = salvaged.actions; }
   }
-  return { reply: reply ? String(reply).trim() : "SAM response received.", actions };
+  return { ...ext, reply: reply ? String(reply).trim() : "SAM response received.", actions };
 }
+/** Normalise a raw reply payload (a captured message, for replay / debugging) exactly as a live one. */
+export function normalizeReply(rawPayload) { return _normalizePayload(rawPayload); }
 
 function _registerSolaceHandlers() {
   if (_solaceHandlersRegistered || !useSolaceSam()) return;
@@ -300,6 +455,14 @@ function _registerSolaceHandlers() {
     }
     const { obj } = _normalizeInboundPayload(payload);
     const parsed = obj && typeof obj === "object" ? obj : (typeof payload === "object" && payload !== null ? payload : { text: String(payload ?? "") });
+    if (_looksLikeFragment(payload)) { console.warn("[sam] streamed fragment ignored (not a whole reply)."); return; }
+    if (_isProgress(parsed)) {
+      const pp = _peekPendingForPayload(parsed);
+      if (!pp) { console.warn("[sam] progress for no in-flight request — ignored."); return; }
+      pp.arm();                                   // the agents are alive: restart the wait
+      try { pp.onProgress?.(normalizeAgents(parsed.agents)); } catch (e) { console.warn("[sam] onProgress failed:", e); }
+      return;
+    }
     const p = _takePendingForPayload(parsed);
     if (!p) {
       const id = _extractCorrelationId(parsed);
@@ -338,7 +501,7 @@ function _registerSolaceHandlers() {
     clearTimeout(p.timer);
     const normalized = _normalizePayload(payload);
     const err = normalized.reply ?? payload?.message ?? payload?.error ?? payload?.text ?? JSON.stringify(payload);
-    p.resolve({ reply: `SAM error: ${err}`, actions: [] });
+    p.resolve({ kind: "answer", agents: [], report: null, suggestions: [], reply: `SAM error: ${err}`, actions: [] });
   };
 
   subscribe(SAM_TOPICS.response, onResponse);
@@ -359,23 +522,32 @@ export function initSam() {
 /**
  * Send a chat message to SAM.
  * @param {string} text  Natural-language question
- * @param {object} context  Dashboard state snapshot
- * @returns {Promise<{reply?: string; actions?: object[]; offline?: boolean}>}
+ * @param {object} context  Dashboard state snapshot (+ retryOnly: an agent name to re-ask alone)
+ * @param {{onProgress?: (agents: object[]) => void}} [opts]  progress rows while the agents work
+ * @returns {Promise<{reply?: string; actions?: object[]; kind?: string; agents?: object[]; report?: object|null; suggestions?: string[]; offline?: boolean}>}
  */
-export async function chat(text, context = {}) {
+export async function chat(text, context = {}, opts = {}) {
   if (useSolaceSam()) {
     _registerSolaceHandlers();
     const correlationId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `sb-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    // One build-time wait (VITE_SAM_TIMEOUT_MS); a report question starts with twice it, and every
+    // progress message restarts it — a dead mesh still times out, a busy one does not.
+    const wait = isReportLike(text) ? SAM_TIMEOUT_SOLACE_MS * 2 : SAM_TIMEOUT_SOLACE_MS;
     return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        if (_pending.has(correlationId)) { _pending.delete(correlationId); console.warn("[sam] Solace reply timeout"); resolve({ offline: true }); }
-      }, SAM_TIMEOUT_SOLACE_MS);
-      _pending.set(correlationId, { resolve, timer });
+      const entry = { resolve, timer: null, onProgress: opts.onProgress, arm: null };
+      entry.arm = () => {
+        clearTimeout(entry.timer);
+        entry.timer = setTimeout(() => {
+          if (_pending.has(correlationId)) { _pending.delete(correlationId); console.warn("[sam] Solace reply timeout"); resolve({ offline: true }); }
+        }, wait);
+      };
+      entry.arm();
+      _pending.set(correlationId, entry);
       // JSON envelope {correlationId, text, context, ts} — matches the styl-office-uwb wire + the SAM
       // gateway rule ({payload.text}/{payload.correlationId}/{payload.context}/{payload.ts}).
       const body = JSON.stringify({ correlationId, text: String(text ?? ""), context: _contextPreamble(context), ts: Date.now() });
       const topic = SAM_TOPICS.request;
-      console.log(`[sam] publish → ${topic} (corr ${correlationId})`);
+      console.log(`[sam] publish → ${topic} (corr ${correlationId}, wait ${wait} ms)`);
       publish(topic, body);
     });
   }
@@ -391,7 +563,7 @@ export async function chat(text, context = {}) {
     if (!res.ok) { console.warn(`[sam] non-OK response: ${res.status}`); return { offline: true }; }
     const data = await res.json().catch(() => null);
     if (!data) return { offline: true };
-    return { reply: data.reply ?? data.message ?? data.text ?? "SAM response received.", actions: Array.isArray(data.actions) ? data.actions : [] };
+    return _normalizePayload(data);
   } catch (err) {
     console.warn("[sam] offline:", err.message);
     return { offline: true };

@@ -314,13 +314,25 @@ try {
             sources: { onemap: { type: 'raster',
                 tiles: ['https://www.onemap.gov.sg/maps/tiles/Grey/{z}/{x}/{y}.png'],
                 tileSize: 256, minzoom: 11, maxzoom: 19,
-                attribution: '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" style="height:20px;width:20px;vertical-align:middle" alt="OneMap"> <a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener">OneMap</a> ©2026 contributors | <a href="https://www.sla.gov.sg/" target="_blank" rel="noopener">Singapore Land Authority</a>' } },
+                attribution: '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" style="height:20px;width:20px;vertical-align:middle" alt="OneMap"> <a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener">OneMap</a> ©2026 contributors | <a href="https://www.sla.gov.sg/" target="_blank" rel="noopener">Singapore Land Authority</a>' },
+                // OneMap's z12 tiles (3230-3231/2033) carry a "South China Sea / Pedra Branca" inset box in the open sea
+                // off the East Coast — a territorial-claim mark, not geography. Raster labels can't be switched off, so a
+                // sea-coloured polygon covers its extent. MapLibre picks 256px raster tiles at round(zoom + 1), so with
+                // minZoom 11 the z12 tiles are on screen for zoom 11–11.49 and z13+ (no inset) from 11.5; the z11 tiles
+                // (which draw the inset further south-east) are never used.
+                'inset-cover': { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon',
+                    coordinates: [
+                        [[[103.903, 1.230], [104.004, 1.230], [104.004, 1.2958], [103.903, 1.2958], [103.903, 1.230]]],     // the box and its side labels
+                        [[[103.934, 1.2958], [103.976, 1.2958], [103.976, 1.3045], [103.934, 1.3045], [103.934, 1.2958]]],  // the latitude label above it, just off the East Coast shore
+                    ] } } } },
             layers: [
                 // OneMap's sea grey — tiles it skips (open sea at high zoom) blend in instead of showing white
-                { id: 'sea', type: 'background', paint: { 'background-color': '#d1d1d1' } },
+                { id: 'sea', type: 'background', paint: { 'background-color': '#d0d0d0' } },
                 // wash the basemap out to neutral grey so the coloured school dots stand out
                 { id: 'onemap', type: 'raster', source: 'onemap',
                   paint: { 'raster-saturation': -1, 'raster-brightness-min': 0.25, 'raster-contrast': -0.2 } },
+                // the washed sea's grey (sampled: #d0d0d0), while the z12 tiles are on screen (central-specs capability basemap)
+                { id: 'inset-cover', type: 'fill', source: 'inset-cover', maxzoom: 11.5, paint: { 'fill-color': '#d0d0d0' } },
             ],
         },
         center: [103.832, 1.352],
@@ -333,6 +345,7 @@ try {
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    window.SB.map = map;   // the instance, for the console and the basemap checks (SB.map.getZoom(), getBounds())
 } catch (e) {
     // no WebGL (headless / old GPU) — the windows and search still work
     console.warn('Map unavailable:', e.message);

@@ -24,7 +24,7 @@ const GROUPS = [
         ['Hover or <kbd>Tab</kbd> to a chip', 'Preview its numbers'],
         ['<kbd>←</kbd> <kbd>→</kbd> · <kbd>Home</kbd> <kbd>End</kbd> on the topics', 'Switch topic (the map colour follows)'],
     ]],
-    ['SAM assistant', [
+    ['Data assistant', [
         ['<kbd>Enter</kbd> · <kbd>Shift</kbd> + <kbd>Enter</kbd>', 'Send · new line'],
     ]],
     ['Anywhere', [
