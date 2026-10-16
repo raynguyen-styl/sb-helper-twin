@@ -12,7 +12,7 @@ from the old monorepo checkout, is **`backend/DEPLOY.md`**: read it first on a V
 
 ```bash
 cd /data/sb-helper/twin        # the twin checkout on the VM (locally: wherever you cloned it)
-./bootstrap-env.sh             # writes .env + client/.env; prints where each value came from, never a value
+./bootstrap-env.sh             # writes .env + .env.development.local; prints where each value came from, never a value
 docker compose up -d --build   # smartbuddy-frontend
 ```
 
@@ -20,6 +20,12 @@ A frontend-only change is: commit → push `origin` + `github` → on the VM `gi
 command above. The container is recreated in place under the same name. Compose warns that the
 backend's container is an "orphan" (both repositories use project `smartbuddy`): expected — **never
 pass `--remove-orphans`**, it would stop the backend.
+
+**Once, after the pull that flattened this repository** (the app used to sit in `client/`; change
+`flatten-twin-repo`): `client/` is left holding only ignored files (an old `client/.env`, maybe
+`node_modules/` and `dist/`). Nothing reads them: `rm -rf client`. The root `.env` and the command
+above are unchanged. The build context is now this root, and `.dockerignore` keeps every `.env*` out
+of the image.
 
 The frontend starts with or without the backend: its nginx resolves `smartbuddy-api` per request, so
 `/smartbuddy-api/` answers 502 until the backend is up, and `/healthz` answers 200 regardless.
@@ -34,7 +40,7 @@ container (§4) — never a build argument; the backend's secrets are in `backen
 |---|---|
 | `SB_FRONTEND_PORT` | host port (default **8097**; the VM's ALB rule points here) |
 | `VITE_SB_API_URL` | api-service base — same-origin `/smartbuddy-api` (this nginx proxies it). Empty → Playback uses bundled demo data |
-| `VITE_KEYCLOAK_ENABLED` | `true` → the STYL CIAM login gates the app (the bootstrap writes `true`; `client/.env` gets `false`). Anything else → no login (local dev only) |
+| `VITE_KEYCLOAK_ENABLED` | `true` → the STYL CIAM login gates the app (the bootstrap writes `true` in `.env`, and `false` in `.env.development.local`, which only `npm run dev` reads). Anything else → no login (local dev only) |
 | `VITE_KEYCLOAK_OIDC_CONFIG_URL` | the realm's discovery URL (default `https://ciam-uat.styl.solutions/realms/demo/.well-known/openid-configuration`) |
 | `VITE_KEYCLOAK_CLIENT_ID` | default `demo-application`; also the token proxy's client id at runtime |
 | `VITE_KEYCLOAK_TOKEN_PROXY` | the token proxy's path, relative to the base (default `auth/token`); empty → keycloak-js calls the token endpoint directly (a public client) |
@@ -71,7 +77,7 @@ and its checklist names the source. No agent on the topic → the panel shows "o
 rest of the dashboard is unaffected. There is no Demo | Live toggle and no `#mode=` any more
 (`central-specs/decisions/0002`).
 
-## 3 · Routing (`client/nginx.conf`)
+## 3 · Routing (`nginx.conf`)
 
 ONE hostname: the ALB maps it to this container and nginx same-origin-routes the rest, so the shared
 platform nginx-proxy is untouched:
@@ -107,7 +113,7 @@ not work here.
   `unauthorized_client`. Rotating it (it is shared with Bibo Bus) means one `docker compose up -d` in
   each twin.
 - **How the secret stays out of the browser**: keycloak-js posts the code exchange and every refresh
-  to this container's `/auth/token`; `client/docker/40-keycloak-token-proxy.sh` writes, at container
+  to this container's `/auth/token`; `docker/40-keycloak-token-proxy.sh` writes, at container
   start, an nginx include (mode 600) that adds the secret as HTTP Basic, drops the visitor's Cookie,
   Origin and Referer, and forwards to CIAM over verified TLS. Trade-off, accepted in decision 0003:
   anyone who can reach `/auth/token` gets the secret attached to their request, but a real sign-in, a

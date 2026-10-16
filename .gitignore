@@ -11,8 +11,9 @@
 # Local env files (secrets: ClickHouse creds, MCP key, Solace creds) — NEVER commit
 .env
 .env.bak.*
+# Vite's local overrides (bootstrap-env.sh writes .env.development.local: the login off for npm run dev)
+.env.*.local
 !.env.example
-/client/.env
 /api-service/.env
 /mcp-service/.env
 /ingestion-service/.env
@@ -23,15 +24,15 @@ __pycache__/
 
 # ── Node / Vite build output ──
 node_modules/
-/client/dist/
-/client/.vite/
+/dist/
+/.vite/
 
 # ── Generated reports — embed real sample card/device/user IDs; kept out per repo scope ──
 /SMART_Buddy_*.html
 /SMART_Buddy_*.pdf
 /analysis/*_spliced.html
 
-# ── Generated pipeline output JSON (regenerable; duplicates client/src/data) ──
+# ── Generated pipeline output JSON (regenerable; the pre-ClickHouse app bundled it in src/data) ──
 /analysis/appdata/
 # build_app_data.py --quarter output (feeds the Findings PDF splice)
 /analysis/appdata_quarter/

@@ -2,7 +2,7 @@
 // from Bibo Bus's twin (uwb/transit/bibo-bus/twin/src/auth/authInit.js) so both demos log in the same
 // way. keycloak-js gets the realm's discovery document as its provider, with the token endpoint
 // pointed at this container's own nginx (`/auth/token`): the client `demo-application` is
-// confidential, and the proxy adds its secret on the way (client/docker/40-keycloak-token-proxy.sh).
+// confidential, and the proxy adds its secret on the way (docker/40-keycloak-token-proxy.sh).
 // The browser never holds the secret.
 //
 // Enabled ONLY when VITE_KEYCLOAK_ENABLED === 'true' (bootstrap-env.sh writes it for the VM build).

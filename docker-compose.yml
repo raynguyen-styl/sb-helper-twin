@@ -42,7 +42,7 @@ services:
   # ── frontend (Vite → nginx). Every window reads sb-api; the chat reaches the agents over Solace ──
   smartbuddy-frontend:
     build:
-      context: ./client
+      context: .                            # the repository root (.dockerignore keeps every .env* out)
       args:
         # Read API base (proxied sb-api). Empty → Playback uses bundled demo data (offline dev).
         VITE_SB_API_URL: ${VITE_SB_API_URL:-}
@@ -68,7 +68,7 @@ services:
         VITE_SAM_TOPIC_ERROR: ${VITE_SAM_TOPIC_ERROR:-}
     container_name: smartbuddy-frontend
     restart: always
-    # RUNTIME settings of the /auth/token proxy (client/docker/40-keycloak-token-proxy.sh): the
+    # RUNTIME settings of the /auth/token proxy (docker/40-keycloak-token-proxy.sh): the
     # confidential client's credentials, added to the token requests on the way to CIAM. The secret
     # is never a build arg, so changing it needs only `docker compose up -d`, no rebuild.
     environment:
@@ -78,7 +78,7 @@ services:
     ports:
       - "${SB_FRONTEND_PORT:-8097}:8080"    # ALB maps smartbuddy-helper-uat.styl.solutions/* here (8097 free on the VM)
     # on `backend` too: this container's nginx same-origin-proxies /smartbuddy-api/ to the backend
-    # container (see client/nginx.conf) — one hostname serves all.
+    # container (see nginx.conf) — one hostname serves all.
     networks: [sb-net, backend]
     deploy: { resources: { limits: { memory: 64m } } }
     logging: { options: { max-size: 10m } }
