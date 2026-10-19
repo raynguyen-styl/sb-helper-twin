@@ -269,16 +269,23 @@ function reportToText(rp, reply) {
   if (rp.notes.length) out.push("", ...rp.notes.map((n) => `- ${n}`));
   return out.join("\n");
 }
-const csvCell = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+// The report's text comes from the agents (and through them from data such as stall names), so a text cell a
+// spreadsheet would read as a formula (= + - @ tab CR first) gets a leading '. Plain numbers stay numbers.
+const csvCell = (v) => {
+  let s = String(v ?? "");
+  if (typeof v !== "number" && /^[=+\-@\t\r]/.test(s) && !/^[+-]?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+};
 function reportToCsv(rp) {
   const lines = [];
   for (const ch of rp.charts) {
-    lines.push(`# ${ch.title}${ch.unit ? ` (${ch.unit})` : ""}`, [ch.x || (ch.kind === "line" ? "date" : "category"), ...ch.series.map((s) => s.name)].map(csvCell).join(","));
+    const unit = ch.unit ? ` (${ch.unit})` : "";
+    lines.push(csvCell(`# ${ch.title}${unit}`), [ch.x || (ch.kind === "line" ? "date" : "category"), ...ch.series.map((s) => s.name)].map(csvCell).join(","));
     const xs = ch.series[0].points.map((p) => p[0]);
     xs.forEach((x, i) => lines.push([x, ...ch.series.map((s) => s.points[i]?.[0] === x ? s.points[i][1] : (s.points.find((p) => p[0] === x)?.[1] ?? ""))].map(csvCell).join(",")));
     lines.push("");
   }
-  for (const tb of rp.tables) { lines.push(`# ${tb.title}`, tb.columns.map(csvCell).join(",")); for (const r of tb.rows) lines.push(r.map(csvCell).join(",")); lines.push(""); }
+  for (const tb of rp.tables) { lines.push(csvCell(`# ${tb.title}`), tb.columns.map(csvCell).join(",")); for (const r of tb.rows) lines.push(r.map(csvCell).join(",")); lines.push(""); }
   return lines.join("\n");
 }
 function download(name, text, type) {
