@@ -15,4 +15,5 @@ dist
 # repository docs and tooling — not part of the app
 *.md
 bootstrap-env.sh
+scripts
 docker-compose.yml
