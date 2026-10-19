@@ -4,10 +4,10 @@
 // over time, 100% bars for shares); the exact numbers sit behind "Show numbers". An item keeps one colour + letter
 // everywhere (chip, chart, table column, map badge).
 import { openWindow, closeView, esc } from './windowing.js';
-import { mk, opts, ax, line, CAT_COLOR, C } from './charts.js';
+import { mk, opts, ax, line, CAT_COLOR, C, PIN, BAND, token } from './charts.js';
 
 const MAX = 4;
-const COLORS = ['#0072B2', '#E69F00', '#009E73', '#CC79A7'];   // Okabe-Ito; validated — letters + table carry identity too
+const COLORS = PIN;                                             // Okabe-Ito tokens (--pin-a…d); letters + table carry identity too
 const LETTERS = 'ABCD';
 const slots = Array(MAX).fill(null);                            // fixed slots → a pin keeps its letter
 let kind = null;
@@ -19,7 +19,7 @@ const fmt = (v, d = 0) => v == null ? '–' : Number(v).toLocaleString('en-SG', 
 const F = { $: (v) => v == null ? '–' : '$' + fmt(v, 2), $0: (v) => v == null ? '–' : '$' + fmt(v), n: (v) => fmt(v),
     pct: (v) => v == null ? '–' : `${fmt(v, 1)}%`, s: (v) => v == null ? '–' : `${(v / 1000).toFixed(1)}s`, t: (v) => esc(v ?? '–') };
 const CATS = ['Drinks', 'Snacks & Desserts', 'Cooked Food', 'Mixed', 'Bookshop & Supplies', 'Unclassified'];
-const BAND_RAMP = ['#7fb3db', '#4a8cc4', '#1f5f9e', '#0b2f5c'];   // ordered price bands: one hue, light → dark (validated)
+const BAND_RAMP = BAND;                                          // ordered price bands: one hue, light → dark (--band-1…4)
 const wk = (arr, key, k = 1) => [...(arr || [])].sort((a, b) => a.week.localeCompare(b.week)).map((w) => [w.week.slice(5, 10), w[key] == null ? null : w[key] / k]);
 const days = (arr, k = 1) => (arr || []).map((v, i) => [i + 1, v == null ? null : v / k]);
 // Error rate of a stall's machines, weighted by their transactions.
@@ -70,7 +70,7 @@ const KINDS = {
             { g: 'errors', l: 'Machines', v: (s) => s.terms.length, f: F.n, b: 0 },
             { g: 'food', l: 'Category', v: (s) => s.cat, f: F.t, text: 1 },
             { g: 'food', l: 'Most-sold price', v: (s) => s.prices?.[0] ? s.prices[0][0] / 100 : null, f: F.$, b: 0 },
-            { g: 'food', l: 'Healthier choice (receipts)', v: (s) => s.receipt?.healthy_sh, f: F.pct, b: 1, max: 100 },
+            { g: 'food', l: 'Marked healthier on the menu (unverified)', v: (s) => s.receipt?.healthy_sh, f: F.pct, b: 0, max: 100 },
             ...[0, 1, 2, 3].map((i) => ({ g: 'food', l: (D) => `Price ${D.stalls.bands?.[i] || `band ${i + 1}`}`, stack: 'bands',
                 v: (s) => s.bands?.[i], f: F.pct, b: 0 })),
         ],
@@ -140,13 +140,15 @@ export function restorePins(param) {
     return pinned().length;
 }
 
-// "＋ Compare" toggle in a school / stall / terminal view's header.
+// "＋ Compare" toggle among a school / stall / terminal view's header actions (before Tour).
 export function pinButton(body, k, item) {
     const b = document.createElement('button');
+    b.type = 'button';
     b.className = 'pin-btn'; b.dataset.pin = `${k}:${KINDS[k].id(item)}`;
     b.title = k === 'school' ? 'Add to comparison — or Shift-click school dots on the map' : 'Add to comparison';
     b.addEventListener('click', () => toggle(k, item));
-    body.closest('.tw').querySelector('.tw-head').appendChild(b);
+    const head = body.closest('.tw').querySelector('.tw-head');
+    (head.querySelector('.acts') || head).prepend(b);
     syncPins();
 }
 function syncPins() {
@@ -251,7 +253,7 @@ export function openDetail() {
 // Value at the end of each bar (text ink, not the series colour), so no value hides in a tooltip.
 const endLabels = (text) => ({ id: 'endLabels', afterDatasetsDraw(ch) {
     const { ctx } = ch;
-    ctx.save(); ctx.font = '600 11px system-ui, -apple-system, sans-serif'; ctx.fillStyle = '#1d1d1f'; ctx.textBaseline = 'middle';
+    ctx.save(); ctx.font = `600 11px ${token('--font')}`; ctx.fillStyle = C.ink; ctx.textBaseline = 'middle';
     ch.getDatasetMeta(0).data.forEach((b, i) => ctx.fillText(text(i), (Number.isFinite(b.x) ? b.x : ch.scales.x.left) + 6, b.y));
     ctx.restore();
 } });
@@ -307,7 +309,7 @@ function renderDetail(body) {
         const s = stacks[+cv.dataset.stack], parts = s.parts(D), colors = s.colors(D);
         charts.push(mk(cv, { type: 'bar',
             data: { labels: P.map((p) => `${p.L}  ${short(p)}`), datasets: parts.map((part, j) => ({ label: part,
-                data: P.map((p) => s.v(p.it)[j] ?? 0), backgroundColor: colors[j], borderColor: '#fff',
+                data: P.map((p) => s.v(p.it)[j] ?? 0), backgroundColor: colors[j], borderColor: C.surface,
                 borderWidth: { right: 2 }, borderSkipped: false, categoryPercentage: 0.78, barPercentage: 1, maxBarThickness: 20 })) },
             options: { ...opts({ legend: true, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt(c.raw, 1)}%` } },
                 scales: { x: ax({ stacked: true, max: 100, ticks: { maxTicksLimit: 5, callback: (v) => `${v}%` } }),

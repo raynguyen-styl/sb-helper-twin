@@ -1,0 +1,55 @@
+/* SMART Buddy Insights — design tokens. The ONE place a colour, type size, radius or shadow is defined
+   (central-specs change overhaul-dashboard-and-agent-replies, design D2). Colour families follow
+   central-specs design/dashboard-redesign/colors.css (light values): one meaning per colour, everywhere.
+   Status keeps the Okabe-Ito hues chosen on 7 October for colour-blind safety, always with an icon or a word.
+   Light theme only. charts.js reads the data colours below at start-up, so Chart.js follows these tokens. */
+:root {
+    color-scheme: light;
+    /* surfaces + ink */
+    --page: #f3f2ee; --surface: #fcfcfb; --surface-2: #f6f5f1; --surface-3: #eeede8;
+    --raise: rgba(252, 252, 251, .95);
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #6b6a65;
+    --hair: rgba(11, 11, 11, .10); --hair-2: rgba(11, 11, 11, .06);
+    --grid: #e7e6e0; --axis: #c3c2b7;
+    /* one accent: links, focus, the current view, Ask */
+    --accent: #256abf; --accent-strong: #1b4f8f; --accent-weak: rgba(37, 106, 191, .10); --on-accent: #ffffff;
+    --sel: #0b0b0b; --on-sel: #fcfcfb;               /* a chosen segment or chip */
+    /* status — marks (map dots, chart marks) and text (>= 4.5:1 on the surfaces) */
+    --st-good: #009e73; --st-warn: #e69f00; --st-bad: #d55e00; --st-none: #8e8e93;
+    --good: #00785a; --warn: #9a5f00; --bad: #b34700;
+    --good-bg: rgba(0, 158, 115, .11); --warn-bg: rgba(230, 159, 0, .14); --bad-bg: rgba(213, 94, 0, .10);
+    /* school level (marks), and the darker text of a level chip (>= 4.5:1) */
+    --lv-p: #2a78d6; --lv-s: #eb6834; --lv-j: #1baf7a; --lv-o: #a3a19a;
+    --lv-p-ink: #1f5fa8; --lv-s-ink: #a94512; --lv-j-ink: #127a55;
+    --on-mark: #ffffff;                              /* the ring and letters on a coloured mark */
+    /* data families */
+    --money: #6250d6; --money-weak: rgba(98, 80, 214, .45);
+    --wear: #d55181; --save: #eda100; --books: #6e7480; --none: #c9c8bf;
+    --food-cooked: #2f7d32; --food-drinks: #2a9d8f; --food-snacks: #c98a00; --food-mixed: #6cbf5f;
+    /* the chat's agents: the orchestrator neutral, the five specialists in roster order */
+    --agent-0: #52514e; --agent-1: #2a78d6; --agent-2: #eb6834; --agent-3: #1baf7a; --agent-4: #c98a00; --agent-5: #d55181;
+    /* compare pins (Okabe-Ito; a letter always rides along) */
+    --pin-a: #0072b2; --pin-b: #e69f00; --pin-c: #009e73; --pin-d: #cc79a7;
+    /* ordered price bands, one hue light → dark; holiday days shaded behind a chart */
+    --band-1: #7fb3db; --band-2: #4a8cc4; --band-3: #1f5f9e; --band-4: #0b2f5c;
+    --shade: rgba(98, 80, 214, .10);
+    /* the tour's card: dark, so it never reads as part of the dashboard */
+    --tour-link: #8ec5ff;
+    /* the washed OneMap sea, sampled in the browser */
+    --map-sea: #d0d0d0;
+    /* type */
+    --font: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+    --fs-xs: 11px; --fs-sm: 12.5px; --fs-md: 14px; --fs-lg: 15px; --fs-xl: 22px;
+    /* shape */
+    --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-pill: 999px;
+    --shadow: 0 1px 2px rgba(11, 11, 11, .06), 0 8px 24px rgba(11, 11, 11, .08);
+    --shadow-lg: 0 2px 6px rgba(11, 11, 11, .08), 0 24px 64px rgba(11, 11, 11, .18);
+    /* the frame (design D3): wide >= 1100 px, compact 720–1099 px, phone < 720 px */
+    --top-h: 56px; --rail-w: 76px; --tab-h: 60px; --drawer-w: 440px; --drawer-wide-w: 600px;
+    --tap: 32px;                                     /* the smallest control; 44px on touch (below) */
+    --chart-h: 190px; --chart-h-tall: 240px; --chart-min: 0px;
+}
+@media (max-width: 1099px) { :root { --rail-w: 64px; --drawer-w: 420px; --drawer-wide-w: 420px; } }
+@media (max-width: 719px) { :root { --top-h: 52px; --rail-w: 0px; --chart-h: 180px; --chart-h-tall: 220px; --chart-min: 160px; } }
+@media (pointer: coarse) { :root { --tap: 44px; } }

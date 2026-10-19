@@ -2,33 +2,79 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <link rel="icon" type="image/png" href="/icon.png" />
   <link rel="apple-touch-icon" href="/icon.png" />
-  <title>SMART Buddy — Network &amp; Spending Intelligence</title>
+  <title>SMART Buddy Insights</title>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="./src/theme.css" />
+  <link rel="stylesheet" href="./src/styles/tokens.css" />
+  <link rel="stylesheet" href="./src/styles/base.css" />
+  <link rel="stylesheet" href="./src/styles/shell.css" />
+  <link rel="stylesheet" href="./src/styles/views.css" />
+  <link rel="stylesheet" href="./src/styles/chat.css" />
 </head>
 <body>
   <div id="app" class="app">
-    <nav class="nav">
-      <span class="brand"><img src="/icon.png" alt="" class="brand-logo" /><span class="brand-txt"><span class="brand-name">SMART Buddy</span><span class="brand-sub"> — Network &amp; Spending Intelligence</span></span></span>
-      <div class="nav-right">
-        <input id="search" class="search" placeholder="Search school, stall or machine…" autocomplete="off"
-          role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" aria-label="Search school, stall or machine" />
-        <div id="nav-views" class="nav-views"></div>
-      </div>
-    </nav>
-    <div class="stage">
+    <header class="top">
+      <a class="brand" href="./" aria-label="SMART Buddy Insights, home">
+        <span class="mark"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 2.5h7l1 4.5v10l-1 4.5h-7l-1-4.5V7Z"/><circle cx="12" cy="12" r="2.6"/></svg></span>
+        <span class="brand-txt"><b>SMART Buddy</b><span>Insights</span></span>
+      </a>
+      <div id="month-switch" class="month-switch"></div>
+      <span class="grow"></span>
+      <button id="search-open" class="search-btn" type="button" aria-label="Search schools, stalls and machines" aria-haspopup="dialog">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+        <span class="lbl">Search school, stall or machine</span><kbd>Ctrl K</kbd>
+      </button>
+      <button id="ask-btn" class="ask-btn" type="button" aria-pressed="false" aria-controls="sam-panel" title="Ask SMART Buddy about the data">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7.5a3 3 0 0 1-3 3h-6.8L6 20.5v-4H7a3 3 0 0 1-3-3Z"/><path d="M8.5 8.5h7M8.5 11.5h4.5"/></svg>
+        <span class="lbl">Ask</span>
+      </button>
+      <button id="menu-btn" class="icon-btn" type="button" popovertarget="nav-menu" aria-label="Menu: workspace, tours, sign out">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div id="nav-menu" class="nav-menu" popover></div>
+    </header>
+    <nav id="rail" class="rail" aria-label="Views"></nav>
+    <main id="stage" class="stage">
       <div id="map"></div>
-      <div class="maptop"><div id="compare-row" class="compare-row" aria-label="Pinned for comparison"></div></div>
-      <div class="mapbl"><div id="onboard" class="onboard" role="region" aria-label="Getting started" hidden></div>
-        <div class="legend" id="legend" aria-label="Map key and layers"></div></div>
-      <div id="search-results" class="search-results" role="listbox" aria-label="Search results"></div>
-      <aside id="dock" class="dock" aria-label="Details panel"><div class="dock-bar"></div><div class="dock-views"></div></aside>
+      <div class="maptop">
+        <div id="kpi-strip" class="kpi-strip" aria-label="This month"></div>
+        <div id="compare-row" class="compare-row" aria-label="Pinned for comparison"></div>
+      </div>
+      <div class="mapbl">
+        <div id="onboard" class="onboard" role="region" aria-label="Getting started" hidden></div>
+        <div class="legend" id="legend" role="region" aria-label="Map key and layers"></div>
+      </div>
+      <button id="key-btn" class="key-btn" type="button" aria-expanded="false" aria-controls="legend">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.5 9 5-9 5-9-5Z"/><path d="m3 13.5 9 5 9-5"/></svg>Map key
+      </button>
+      <aside id="dock" class="dock" aria-label="Details panel">
+        <button class="dock-handle" type="button" aria-label="Resize details (half height) — up or down arrow"><span></span></button>
+        <div class="dock-bar"></div>
+        <div class="dock-views"></div>
+      </aside>
       <div id="tw-layer" class="tw-layer"></div>
+    </main>
+    <nav id="tabbar" class="tabbar" aria-label="Views"></nav>
+  </div>
+
+  <div id="search-panel" class="search-panel" role="dialog" aria-modal="true" aria-label="Search" hidden>
+    <div class="search-box">
+      <div class="search-field">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+        <input id="search" type="search" placeholder="Search school, stall or machine…" autocomplete="off" spellcheck="false"
+          role="combobox" aria-expanded="true" aria-controls="search-results" aria-autocomplete="list" aria-label="Search school, stall or machine" />
+        <button id="search-close" class="icon-btn" type="button" aria-label="Close search">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div id="search-results" class="search-results" role="listbox" aria-label="Search results"></div>
+      <div class="search-hint"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span></div>
     </div>
   </div>
+  <div id="scrim" class="scrim" hidden></div>
+  <div id="more-sheet" class="more-sheet" role="dialog" aria-label="More views" hidden></div>
   <script type="module" src="./src/entry.js"></script>
 </body>
 </html>

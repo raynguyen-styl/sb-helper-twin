@@ -1,25 +1,35 @@
 /**
- * samPanel.js — the SMART Buddy chat panel (self-contained vanilla JS DOM widget).
+ * samPanel.js — the SMART Buddy chat (self-contained vanilla JS DOM widget; styles in src/styles/chat.css).
  *
- * Renders central-specs design/agent-chat on the live wire (capabilities sam-chat + agent-system): the
- * orchestrator's routing card with one row per specialist (progress when the mesh forwards it, the final
- * statuses otherwise), attribution on every answer, reports drawn from numbers (inline SVG, a "Numbers"
- * table under each chart), refusals with tappable suggestions, partial answers with Retry, and the
- * offline state. Every string from a reply enters the DOM through textContent — the reply text through
- * an escape-then-whitelist markdown-lite — so model output can never inject markup. getContext() is
- * folded into the outgoing envelope by samClient. Styling uses the app's design tokens (theme.css).
+ * Renders central-specs design/agent-chat on the live wire (capabilities sam-chat + agent-system, decision 0006):
+ *  - placement: one card anchored to the map's lower right, left of the drawer, opened from Ask in the top bar,
+ *    widened by Expand; a full-screen sheet below 720 px; below 1100 px the chat and the drawer replace each other
+ *    (smartbuddy:chat → windowing.js). Closing keeps the conversation until New or a reload.
+ *  - while a question waits: the steps Sent → Received → Answered with the seconds elapsed, until a progress
+ *    message names the agents and the routing card (one row per specialist) replaces them;
+ *  - the answer: its text from a safe Markdown subset (markdown.js — elements only, never innerHTML), a brief
+ *    visual (≤3 tiles + one chart or table) inside the bubble, or the full report card; "How it worked · N steps";
+ *    attribution on every answer; school names in table cells, KPI labels and bold runs become buttons that open
+ *    the school (resolvePlace / onPlace from main.js); refusals with tappable suggestions; partial answers with
+ *    Retry; the offline state.
+ * Every string from a reply enters the DOM through textContent, so model output can never inject markup.
+ * getContext() is folded into the outgoing envelope by samClient.
  *
- * replay() renders a captured exchange without the broker (debugging, the design's six conversations):
+ * replay() renders a captured exchange without the broker (debugging, the design's conversations):
  *   import('/src/sam/samPanel.js').then(m => m.replay({ question, progress: [...], reply }))
+ * A progress entry that is the gateway's receipt ("Request received by gateway…") marks "Received".
  */
 
-import { chat, normalizeReply, normalizeAgents } from "./samClient.js";
+import { chat, normalizeReply, normalizeAgents, isReceipt } from "./samClient.js";
+import { renderAnswer } from "./markdown.js";
 
-const MOBILE_BREAKPOINT = 720;
-const AVATAR = "/icon.png";                 // branded avatar (public/icon.png) — header, rail and empty state
-let panelExpanded = true;
+const AVATAR = "/icon.png";                 // branded avatar (public/icon.png) — header and empty state
+const PHONE = matchMedia("(max-width: 719px)");
 let _getContext = () => ({});
-let _ui = null;                             // { panel, thread, input, sendBtn } once initialised
+let _resolvePlace = () => null;
+let _onPlace = () => {};
+let _ui = null;                             // { panel, thread, input, sendBtn, askBtn, expandBtn } once initialised
+let isOpen = false;
 
 // The roster (docs/sb_helper_agent_system.md §3): mesh agent name → what the chat shows. Colours are the
 // --agent-N tokens in roster order (design/agent-chat: categorical slots 1–5, the orchestrator neutral). An
@@ -44,40 +54,18 @@ function agentView(a) {
 const ORCH = agentView({ name: ORCHESTRATOR });
 const isSpecialist = (a) => a.role !== "orchestrator" && a.name !== ORCHESTRATOR;
 
-const isMobilePanel = () => window.innerWidth <= MOBILE_BREAKPOINT;
-const isDesktopPanel = () => !isMobilePanel();
-
-// ── markdown-lite: escape, then apply a safe whitelist (bold, code, lists, line breaks) ──────────
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-function mdInline(s) {
-  return esc(s)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
-}
-function mdLite(text) {
-  const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
-  const html = []; let list = null;   // list = 'ul' | 'ol' | null
-  const closeList = () => { if (list) { html.push(`</${list}>`); list = null; } };
-  for (const raw of lines) {
-    const line = raw.replace(/\s+$/, "");
-    const b = line.match(/^\s*[-*]\s+(.*)$/);
-    const o = line.match(/^\s*\d+[.)]\s+(.*)$/);
-    if (b) { if (list !== "ul") { closeList(); html.push("<ul>"); list = "ul"; } html.push(`<li>${mdInline(b[1])}</li>`); }
-    else if (o) { if (list !== "ol") { closeList(); html.push("<ol>"); list = "ol"; } html.push(`<li>${mdInline(o[1])}</li>`); }
-    else if (line.trim() === "") { closeList(); }
-    else { closeList(); html.push(`<div class="sam-p">${mdInline(line)}</div>`); }
-  }
-  closeList();
-  return html.join("");
-}
-
 // ── small DOM + number helpers (labels are untrusted data: textContent only) ────────────────────
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const NS = "http://www.w3.org/2000/svg";
 const svgEl = (tag, attrs = {}) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
+// The few icons the chat draws (static path data, not reply text).
+const ICON = {
+  close: "m6 6 12 12M18 6 6 18",
+  expand: "M14.5 3.5h6v6M9.5 20.5h-6v-6M20.5 3.5 14 10M3.5 20.5 10 14",
+  narrow: "M20.5 3.5 14 10M14 4.5V10h5.5M3.5 20.5 10 14M10 19.5V14H4.5",
+  send: "M12 19V5.5M6.5 11 12 5.5l5.5 5.5",
+};
+const icon = (name) => { const s = svgEl("svg", { class: "ic", viewBox: "0 0 24 24", "aria-hidden": "true" }); s.append(svgEl("path", { d: ICON[name] })); return s; };
 const fmtInt = (v) => Math.round(v).toLocaleString("en-SG");
 const compact = (v) => { const a = Math.abs(v); return a >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : a >= 1e4 ? `${(v / 1e3).toFixed(1)}k` : fmtInt(v); };
 // Numbers come as numbers (SGD in dollars, percentages 0–100); the unit decides how they read.
@@ -130,23 +118,22 @@ const hideTip = () => _tip?.classList.remove("on");
 // ── charts: inline SVG per the data-viz rules (≤24px bars rounded at the data end, hairline grid, 2px
 //    lines with an end dot, selective direct labels, a tooltip, a focusable mark per bar) ───────────
 const SERIES_ALPHA = [1, 0.62, 0.38, 0.24, 0.16, 0.1];   // further series of the same agent fade, never change hue
-function seriesColour(i) { return i === 0 ? "var(--c)" : `color-mix(in srgb, var(--c) ${Math.round(SERIES_ALPHA[Math.min(i, SERIES_ALPHA.length - 1)] * 100)}%, var(--canvas))`; }
+function seriesColour(i) { return i === 0 ? "var(--c)" : `color-mix(in srgb, var(--c) ${Math.round(SERIES_ALPHA[Math.min(i, SERIES_ALPHA.length - 1)] * 100)}%, var(--surface))`; }
 
 function barChart(ch, colour) {
   const cats = ch.series[0].points.map((p) => p[0]);
   const stacked = ch.kind === "stacked" || ch.series.length > 1;
   const byCat = cats.map((c, i) => ch.series.map((s) => (s.points[i]?.[0] === c ? s.points[i][1] : (s.points.find((p) => p[0] === c)?.[1] ?? 0))));
   const totals = byCat.map((vals) => stacked ? vals.reduce((a, b) => a + Math.max(0, b), 0) : vals[0]);
-  const W = 360, rowH = 30, padL = 118, padR = 48, top = 6; const H = top + cats.length * rowH + 16;
+  const W = 360, rowH = 30, padL = 128, padR = 52, top = 6; const H = top + cats.length * rowH + 16;
   const max = nice(Math.max(...totals));
   const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": ch.title });
   const grid = svgEl("g", { class: "grid ax" });
   for (let i = 0; i <= 4; i++) { const x = padL + (W - padL - padR) * i / 4; grid.append(svgEl("line", { x1: x, x2: x, y1: top, y2: H - 16 })); const t = svgEl("text", { x, y: H - 2, "text-anchor": "middle" }); t.textContent = tickFmt(max * i / 4, ch.unit); grid.append(t); }
   svg.append(grid, svgEl("line", { class: "base", x1: padL, x2: padL, y1: top, y2: H - 16 }));
-  const maxIdx = totals.reduce((b, v, i, a) => (v > a[b] ? i : b), 0);
   cats.forEach((cat, i) => {
     const y = top + i * rowH + 4, h = 22;
-    const lab = svgEl("text", { x: padL - 8, y: y + h / 2, "text-anchor": "end", dy: 4 }); lab.textContent = xLabel(cat); svg.append(lab);
+    const lab = svgEl("text", { x: padL - 8, y: y + h / 2, "text-anchor": "end", dy: 4 }); lab.textContent = xLabel(cat, 20); svg.append(lab);
     let x0 = padL;
     const bars = [];
     byCat[i].forEach((v, si) => {
@@ -157,7 +144,8 @@ function barChart(ch, colour) {
       const bar = svgEl("path", { class: "bar", d, fill: seriesColour(si) }); svg.append(bar); bars.push(bar);
       x0 += w + (last ? 0 : 1);
     });
-    if (i === maxIdx) { const v = svgEl("text", { class: "val", x: Math.min(x0 + 6, W - 4), y: y + h / 2, dy: 4 }); v.textContent = fmtValue(totals[i], ch.unit); svg.append(v); }
+    // every bar carries its value when there are few bars (a ranking reads at a glance); else only the top one
+    if (cats.length <= 8 || i === totals.indexOf(Math.max(...totals))) { const v = svgEl("text", { class: "val", x: Math.min(x0 + 6, W - 4), y: y + h / 2, dy: 4 }); v.textContent = fmtValue(totals[i], ch.unit); svg.append(v); }
     const rows = stacked ? ch.series.map((s, si) => [s.name, fmtValue(byCat[i][si], ch.unit)]) : [[ch.title.toLowerCase(), fmtValue(totals[i], ch.unit)]];
     const hit = svgEl("rect", { class: "hit", x: 0, y: y - 2, width: W, height: h + 4, tabindex: 0, role: "img", "aria-label": `${cat}: ${rows.map((r) => `${r[0]} ${r[1]}`).join(", ")}` });
     const on = (e) => { bars.forEach((b) => b.classList.add("hl")); const r = hit.getBoundingClientRect(); showTip(e?.clientX ?? r.left + 60, e?.clientY ?? r.top, String(cat), rows, colour); };
@@ -184,7 +172,7 @@ function lineChart(ch, colour) {
     const a = xs.indexOf(m.from), b = xs.indexOf(m.to);
     if (a < 0 || b < 0) continue;
     const x1 = X(Math.min(a, b)) - 3, x2 = X(Math.max(a, b)) + 3;
-    svg.append(svgEl("rect", { x: x1, y: top, width: x2 - x1, height: H - top - bottom, fill: "var(--divider-soft)" }));
+    svg.append(svgEl("rect", { class: "shade", x: x1, y: top, width: x2 - x1, height: H - top - bottom }));
     if (m.label) { const t = svgEl("text", { class: "mark", x: (x1 + x2) / 2, y: H - bottom - 4, "text-anchor": "middle" }); t.textContent = m.label; svg.append(t); }
   }
   ch.series.forEach((s, si) => {
@@ -215,6 +203,7 @@ function lineChart(ch, colour) {
 }
 
 function numbersTable(columns, rows, units = []) {
+  const wrap = el("div", "sam-table");
   const t = el("table", "sam-mini"); const tr = el("tr");
   columns.forEach((c, i) => tr.append(el("th", i ? "num" : "", c))); t.append(tr);
   for (const r of rows) {
@@ -222,7 +211,8 @@ function numbersTable(columns, rows, units = []) {
     r.forEach((v, i) => tr2.append(el("td", typeof v === "number" || i ? "num" : "", typeof v === "number" ? fmtValue(v, units[i]) : String(v ?? ""))));
     t.append(tr2);
   }
-  return t;
+  wrap.append(t);
+  return wrap;
 }
 function chartTable(ch) {
   const xs = ch.series[0].points.map((p) => p[0]);
@@ -230,11 +220,47 @@ function chartTable(ch) {
   return numbersTable([ch.x ? xLabel(ch.x, 20) : (ch.kind === "line" ? "Date" : "Category"), ...ch.series.map((s) => s.name)], rows, [undefined, ...ch.series.map(() => ch.unit)]);
 }
 
-// ── the report card ─────────────────────────────────────────────────────────────────────────────
+// ── the visuals: KPI tiles, a chart section, a table section (shared by the brief and the full report) ──────
 function fromTag(agentName) {
   const a = agentView({ name: agentName });
   const f = el("span", "sam-from"); f.style.setProperty("--c", a.colour); f.append(el("span", "sam-sw"), el("span", null, a.display)); return f;
 }
+function kpiTiles(list) {
+  const k = el("div", "sam-kpis");
+  for (const x of list) {
+    const t = el("div", "sam-kpi"); if (x.agent) t.style.setProperty("--c", agentView({ name: x.agent }).colour);
+    const l = el("div", "l"); if (x.agent) l.append(el("span", "sam-sw")); l.append(el("span", null, x.label)); t.append(l, el("div", "v", fmtValue(x.value, x.unit)));
+    if (x.delta) t.append(el("div", `d ${x.delta.pct > 0.05 ? "up" : x.delta.pct < -0.05 ? "down" : "flat"}`, `${x.delta.pct >= 0 ? "+" : ""}${x.delta.pct.toFixed(1)}%${x.delta.vs ? ` vs ${x.delta.vs}` : ""}`));
+    k.append(t);
+  }
+  return k;
+}
+function chartSection(ch, withFrom = true) {
+  const a = agentView({ name: ch.agent });
+  const sec = el("div", "sam-sec"); const h = el("div", "sam-sec-h"); h.append(el("h4", null, `${ch.title}${ch.unit ? ` (${ch.unit})` : ""}`));
+  if (ch.agent && withFrom) h.append(fromTag(ch.agent)); sec.append(h);
+  const c = el("div", "sam-chart"); c.style.setProperty("--c", a.colour);
+  c.append(ch.kind === "line" ? lineChart(ch, a.colour) : barChart(ch, a.colour)); sec.append(c);
+  if (ch.series.length > 1) { const lg = el("div", "sam-legend"); lg.style.setProperty("--c", a.colour); ch.series.forEach((s, i) => { const d = el("span"); const sw = el("i"); sw.style.background = seriesColour(i); d.append(sw, el("span", null, s.name)); lg.append(d); }); sec.append(lg); }
+  const det = el("details", "sam-numbers"); det.append(el("summary", null, "Numbers"), chartTable(ch)); sec.append(det);
+  return sec;
+}
+function tableSection(tb, withFrom = true) {
+  const sec = el("div", "sam-sec"); const h = el("div", "sam-sec-h"); h.append(el("h4", null, tb.title));
+  if (tb.agent && withFrom) h.append(fromTag(tb.agent));
+  sec.append(h, numbersTable(tb.columns.length ? tb.columns : tb.rows[0].map((_, i) => `Column ${i + 1}`), tb.rows, tb.units));
+  return sec;
+}
+// A brief visual (decision 0006): no title row — the tiles, then its one chart or one table, inside the bubble.
+function briefVisual(rp) {
+  const box = el("div", "sam-brief");
+  if (rp.kpis.length) box.append(kpiTiles(rp.kpis));
+  for (const ch of rp.charts) box.append(chartSection(ch, false));
+  for (const tb of rp.tables) box.append(tableSection(tb, false));
+  if (rp.dropped.length) box.append(el("div", "sam-foot", `Not shown (beyond the chat's limits): ${rp.dropped.join(", ")}.`));
+  return box;
+}
+
 function reportToText(rp, reply) {
   const out = [rp.title, [rp.period && `period ${rp.period}`, rp.source].filter(Boolean).join(" · "), "", reply, ""];
   for (const k of rp.kpis) out.push(`${k.label}: ${fmtValue(k.value, k.unit)}${k.delta ? ` (${k.delta.pct >= 0 ? "+" : ""}${k.delta.pct.toFixed(1)}% vs ${k.delta.vs})` : ""}`);
@@ -269,30 +295,9 @@ function reportCard(rp, reply) {
   if (rp.source) meta.append(el("span", null, rp.source));
   head.append(meta); card.append(head);
   const body = el("div", "sam-rp-body");
-  if (rp.kpis.length) {
-    const k = el("div", "sam-kpis");
-    for (const x of rp.kpis) {
-      const t = el("div", "sam-kpi"); if (x.agent) t.style.setProperty("--c", agentView({ name: x.agent }).colour);
-      const l = el("div", "l"); if (x.agent) l.append(el("span", "sam-sw")); l.append(el("span", null, x.label)); t.append(l, el("div", "v", fmtValue(x.value, x.unit)));
-      if (x.delta) t.append(el("div", `d ${x.delta.pct > 0.05 ? "up" : x.delta.pct < -0.05 ? "down" : "flat"}`, `${x.delta.pct >= 0 ? "+" : ""}${x.delta.pct.toFixed(1)}%${x.delta.vs ? ` vs ${x.delta.vs}` : ""}`));
-      k.append(t);
-    }
-    body.append(k);
-  }
-  for (const ch of rp.charts) {
-    const a = agentView({ name: ch.agent });
-    const sec = el("div", "sam-sec"); const h = el("div", "sam-sec-h"); h.append(el("h4", null, `${ch.title}${ch.unit ? ` (${ch.unit})` : ""}`));
-    if (ch.agent) h.append(fromTag(ch.agent)); sec.append(h);
-    const c = el("div", "sam-chart"); c.style.setProperty("--c", a.colour);
-    c.append(ch.kind === "line" ? lineChart(ch, a.colour) : barChart(ch, a.colour)); sec.append(c);
-    if (ch.series.length > 1) { const lg = el("div", "sam-legend"); lg.style.setProperty("--c", a.colour); ch.series.forEach((s, i) => { const d = el("span"); const sw = el("i"); sw.style.background = seriesColour(i); d.append(sw, el("span", null, s.name)); lg.append(d); }); sec.append(lg); }
-    const det = el("details", "sam-numbers"); det.append(el("summary", null, "Numbers"), chartTable(ch)); sec.append(det);
-    body.append(sec);
-  }
-  for (const tb of rp.tables) {
-    const sec = el("div", "sam-sec"); const h = el("div", "sam-sec-h"); h.append(el("h4", null, tb.title));
-    if (tb.agent) h.append(fromTag(tb.agent)); sec.append(h, numbersTable(tb.columns.length ? tb.columns : tb.rows[0].map((_, i) => `Column ${i + 1}`), tb.rows, tb.units)); body.append(sec);
-  }
+  if (rp.kpis.length) body.append(kpiTiles(rp.kpis));
+  for (const ch of rp.charts) body.append(chartSection(ch));
+  for (const tb of rp.tables) body.append(tableSection(tb));
   const notes = [...rp.notes];
   if (rp.dropped.length) notes.push(`Not shown (beyond the chat's limits): ${rp.dropped.join(", ")}.`);
   if (notes.length) { const ul = el("ul", "sam-notes"); for (const n of notes) ul.append(el("li", null, n)); body.append(ul); }
@@ -306,16 +311,46 @@ function reportCard(rp, reply) {
   return card;
 }
 
+// "How it worked · N steps": one line per step with its agent's swatch and name, folded.
+function stepsBlock(steps) {
+  const d = el("details", "sam-steps");
+  d.append(el("summary", null, `How it worked · ${steps.length} step${steps.length === 1 ? "" : "s"}`));
+  const ol = el("ol");
+  for (const s of steps) {
+    const a = agentView({ name: s.agent || ORCHESTRATOR });
+    const li = el("li"); li.style.setProperty("--c", a.colour);
+    li.append(el("span", "sam-sw"), el("b", null, a.display), el("span", null, s.text));
+    ol.append(li);
+  }
+  d.append(ol);
+  return d;
+}
+
+// School names that exactly match a school of the selected month (main.js resolvePlace) become buttons — in table
+// cells, KPI labels and bold runs only. Nothing else in an answer is ever a link.
+function linkPlaces(root) {
+  const cands = root.querySelectorAll(".sam-table td, .sam-table th:first-child, .sam-kpi .l > span:last-child, .sam-msg-sam strong");
+  for (const node of cands) {
+    if (node.children.length) continue;                 // text only (a bold run inside a cell is reached on its own)
+    const text = node.textContent.trim();
+    if (!text || text.length > 120) continue;
+    const sid = _resolvePlace(text);
+    if (!sid) continue;
+    const b = el("button", "sam-place", text);
+    b.type = "button"; b.dataset.sid = sid; b.title = "Open this school and show it on the map";
+    b.addEventListener("click", () => _onPlace(sid));
+    node.replaceChildren(b);
+  }
+}
+
 // ── thread rows ─────────────────────────────────────────────────────────────────────────────────
-function focusSamInput({ preserveValue = true } = {}) {
-  const input = _ui?.input;
-  if (!input || !panelExpanded || !isDesktopPanel()) return;
-  input.focus({ preventScroll: true });
-  const end = input.value.length;
-  if (preserveValue) input.setSelectionRange(end, end); else input.select();
+function focusInput() {
+  if (!_ui || !isOpen || PHONE.matches) return;
+  _ui.input.focus({ preventScroll: true });
+  const end = _ui.input.value.length;
+  _ui.input.setSelectionRange(end, end);
 }
 function autoGrow(input) {
-  if (!input) return;
   input.style.height = "auto";
   input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
 }
@@ -350,10 +385,20 @@ function userRow(text, note) {
   if (note) row.append(el("div", "sam-foot", note));
   return addRow(row);
 }
-function workingRow() {
-  const row = el("div", "sam-msg-row sam-msg-row-orch"); row.append(who(ORCH));
-  const b = el("div", "sam-msg sam-msg-sam sam-working"); const d = el("span", "sam-dots"); d.append(el("i"), el("i"), el("i"));
-  b.append(el("span", null, "Working… "), d); row.append(b); return addRow(row);
+// The pending bubble: Sent ✓ → Received → Answered, with the seconds elapsed on the current step (a 1 s ticker that
+// runs only while the question waits).
+function pendingRow() {
+  const row = el("div", "sam-msg-row sam-msg-row-orch"); row.append(who(ORCH, "working"));
+  const box = el("div", "sam-pending");
+  const step = (key, label) => { const s = el("div", "sam-step"); s.dataset.step = key; s.append(el("span", "m"), el("span", null, label)); box.append(s); return s; };
+  const sent = step("sent", "Sent"), recv = step("received", "Received"), ans = step("answered", "Answered");
+  const elapsed = el("span", "el", "0 s");
+  const mark = (s, state) => { s.className = `sam-step ${state}`; s.querySelector(".m").textContent = state === "done" ? "✓" : ""; if (state === "now") s.append(elapsed); };
+  mark(sent, "done"); mark(recv, "now"); mark(ans, "");
+  row.append(box); addRow(row);
+  const t0 = Date.now();
+  const timer = setInterval(() => { if (!row.isConnected) return clearInterval(timer); elapsed.textContent = `${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
+  return { received() { mark(recv, "done"); mark(ans, "now"); }, remove() { clearInterval(timer); row.remove(); } };
 }
 function routeCard(specialists) {
   const names = specialists.map((a) => a.display);
@@ -381,21 +426,32 @@ function updateCard(row, specialists, final = false) {
   }
   _ui.thread.scrollTop = _ui.thread.scrollHeight;
 }
-function agentRow(a, text) {
-  const row = el("div", "sam-msg-row sam-msg-row-agent"); row.style.setProperty("--c", a.colour);
-  row.append(who(a, "answered"));
-  const b = el("div", "sam-msg sam-msg-sam"); b.innerHTML = mdLite(text); row.append(b);
-  const f = el("div", "sam-foot"); if (a.source) f.append(el("span", null, `source: ${a.source}`)); f.append(copyBtn(text)); row.append(f);
+// An answer bubble: the Markdown text, then (a brief) its visual inside; a full report card goes under the bubble.
+function bubble(text, brief) {
+  const b = el("div", "sam-msg sam-msg-sam");
+  b.append(renderAnswer(document, text));
+  if (brief) b.append(briefVisual(brief));
+  return b;
+}
+function agentRow(a, text, { brief, steps } = {}) {
+  const row = el("div", `sam-msg-row sam-msg-row-agent${brief ? " full" : ""}`); row.style.setProperty("--c", a.colour);
+  row.append(who(a, "answered"), bubble(text, brief));
+  if (steps?.length) row.append(stepsBlock(steps));
+  const f = el("div", "sam-foot");
+  if (brief?.period) f.append(el("span", null, `period ${periodLabel(brief.period)}`));
+  if (a.source || brief?.source) f.append(el("span", null, `source: ${a.source || brief.source}`));
+  f.append(copyBtn(text)); row.append(f);
   return addRow(row);
 }
-function orchRow(text, { kind = "answer", status, report, specialists = 0 } = {}) {
-  const row = el("div", `sam-msg-row sam-msg-row-orch${kind === "refusal" ? " sam-msg-row-refusal" : ""}`);
-  row.append(who(ORCH, status));
-  const b = el("div", "sam-msg sam-msg-sam"); b.innerHTML = mdLite(text); row.append(b);
+function orchRow(text, { kind = "answer", status, report, brief, steps, specialists = 0 } = {}) {
+  const row = el("div", `sam-msg-row sam-msg-row-orch${kind === "refusal" ? " sam-msg-row-refusal" : ""}${report || brief ? " full" : ""}`);
+  row.append(who(ORCH, status), bubble(text, brief));
   if (report) row.append(reportCard(report, text));
+  if (steps?.length) row.append(stepsBlock(steps));
   const f = el("div", "sam-foot");
-  if (report?.period) f.append(el("span", null, `period ${periodLabel(report.period)}`));
-  if (report?.source) f.append(el("span", null, `source: ${report.source}`));
+  const rp = report || brief;
+  if (rp?.period) f.append(el("span", null, `period ${periodLabel(rp.period)}`));
+  if (rp?.source) f.append(el("span", null, `source: ${rp.source}`));
   else if (specialists) f.append(el("span", null, "source: Redshift, smartbuddy_agent"));
   if (!report) f.append(copyBtn(text));
   row.append(f);
@@ -403,8 +459,7 @@ function orchRow(text, { kind = "answer", status, report, specialists = 0 } = {}
 }
 function setOffline(isOffline) {
   const badge = document.getElementById("sam-offline-badge");
-  if (badge) badge.style.display = isOffline ? "inline-flex" : "none";
-  if (_ui?.input) _ui.input.style.opacity = isOffline ? "0.85" : "1";
+  if (badge) badge.hidden = !isOffline;
 }
 
 // ── one exchange: the question, progress while the agents work, the answer ──────────────────────
@@ -412,16 +467,17 @@ function setOffline(isOffline) {
 // update. Design B (final reply only): the card is built from the final agents[] right before the answer.
 function startExchange(text, { note, ask } = {}) {
   userRow(text, note);
-  let working = workingRow();
+  let pending = pendingRow();
   let card = null;
+  const onReceipt = () => pending?.received();
   const onProgress = (agents) => {
     const specialists = agents.map(agentView).filter(isSpecialist);
     if (!specialists.length) return;
-    if (!card) { working?.remove(); working = null; card = routeCard(specialists); }
+    if (!card) { pending?.remove(); pending = null; card = routeCard(specialists); }
     else updateCard(card, specialists);
   };
   const finish = (res) => {
-    working?.remove(); working = null;
+    pending?.remove(); pending = null;
     if (!res || res.offline) {
       setOffline(true);
       const r = orchRow("No reply in time. SMART Buddy may be offline: the broker or the agents are not answering. Your question was not lost on the dashboard side; try again in a minute.");
@@ -442,92 +498,77 @@ function startExchange(text, { note, ask } = {}) {
       const r = orchRow(`${m.display} did not answer: ${why}.${done.length ? " Here is what the others found." : ""}`);
       chips(r, [`Retry ${m.display}`], () => ask(text, { retryOnly: m.name, note: `retry · ${m.display} only` }));
     }
+    // Attribution (sam-chat): a reply whose report is null or brief, with exactly one specialist done, is that
+    // specialist's bubble; any other reply is the orchestrator's.
+    const brief = res.report?.mode === "brief" ? res.report : null;
+    const full = res.report && !brief ? res.report : null;
     let last;
-    if (res.report) last = orchRow(reply, { status: `report · ${specialists.length || 1} agent${specialists.length > 1 ? "s" : ""}`, report: res.report, specialists: specialists.length });
-    else if (res.kind === "answer" && specialists.length === 1 && done.length === 1) last = agentRow(done[0], reply);
-    else last = orchRow(reply, { kind: res.kind, specialists: specialists.length });
+    if (full) last = orchRow(reply, { status: `report · ${specialists.length || 1} agent${specialists.length > 1 ? "s" : ""}`, report: full, steps: res.steps, specialists: specialists.length });
+    else if (res.kind !== "refusal" && done.length === 1) last = agentRow(done[0], reply, { brief, steps: res.steps });
+    else last = orchRow(reply, { kind: res.kind, brief, steps: res.steps, specialists: specialists.length });
     if (res.suggestions?.length) chips(last, res.suggestions, (l) => ask(l));
+    linkPlaces(last);
   };
-  return { onProgress, finish };
+  return { onReceipt, onProgress, finish };
 }
 
-/** Render a captured exchange without the broker: {question, progress: [raw working messages], reply: raw reply | null}. */
-export function replay({ question = "(replayed question)", progress = [], reply = null, note } = {}) {
+/**
+ * Render a captured exchange without the broker: {question, progress: [raw working messages or the gateway's receipt],
+ * reply: raw reply | null (offline)}. Without `reply` the question is left waiting, to inspect its progress.
+ */
+export function replay({ question = "(replayed question)", progress = [], reply, note } = {}) {
   if (!_ui) throw new Error("samPanel: not initialised");
+  setChatOpen(true);
   const ex = startExchange(question, { note, ask: (t, o) => replay({ question: t, note: o?.note, reply: null }) });
-  for (const p of progress) ex.onProgress(normalizeAgents(p?.agents ?? p));
-  ex.finish(reply ? normalizeReply(reply) : null);
+  for (const p of progress) { if (isReceipt(p)) ex.onReceipt(); else ex.onProgress(normalizeAgents(p?.agents ?? p)); }
+  if (reply !== undefined) ex.finish(reply ? normalizeReply(reply) : null);
 }
 
-// ── the panel ───────────────────────────────────────────────────────────────────────────────────
-function panelWidthPx() { return Math.min(400, Math.max(320, Math.round(window.innerWidth * 0.26))); }
-function mobilePanelHeightPx() { return Math.min(Math.round(window.innerHeight * 0.68), 520); }
-
-function applyPanelState(panel) {
-  const mobile = isMobilePanel();
-  panel.classList.toggle("sam-collapsed", !panelExpanded);
-  panel.classList.toggle("sam-mobile", mobile);
-  const body = document.getElementById("sam-body");
-  if (mobile) {
-    const h = panelExpanded ? mobilePanelHeightPx() : 56;
-    Object.assign(panel.style, { width: "100%", height: `${h}px`, top: "auto", bottom: "0", left: "0", right: "0" });
-    if (body) body.style.width = "";
-  } else {
-    const w = panelExpanded ? panelWidthPx() : 48;
-    Object.assign(panel.style, { width: `${w}px`, height: "auto", top: "44px", bottom: "0", left: "auto", right: "0" });
-    // content keeps its EXPANDED width even while collapsed (it's clipped) → no reflow on toggle
-    if (body) body.style.width = `${panelWidthPx()}px`;
-  }
-  if (panelExpanded && isDesktopPanel()) requestAnimationFrame(() => focusSamInput());
+// ── open / close (Ask in the top bar; Esc and ✕ close; the conversation stays) ──────────────────
+export function setChatOpen(on) {
+  if (!_ui || isOpen === !!on) return;
+  isOpen = !!on;
+  _ui.panel.hidden = !isOpen;
+  _ui.askBtn?.setAttribute("aria-pressed", isOpen);
+  document.dispatchEvent(new CustomEvent("smartbuddy:chat", { detail: { open: isOpen } }));
+  if (isOpen) requestAnimationFrame(focusInput);
+  else if (_ui.panel.contains(document.activeElement) || document.activeElement === document.body) _ui.askBtn?.focus();
 }
+export const isChatOpen = () => isOpen;
+export const toggleChat = () => setChatOpen(!isOpen);
 
-// main.js folds the chat to its rail when the docked drawer opens a view (they share the right edge).
-export function setSamExpanded(on) {
-  const panel = document.getElementById("sam-panel");
-  if (!panel || panelExpanded === on) return;
-  panelExpanded = on;
-  applyPanelState(panel);
-}
-
-export function initSamPanel(getContext) {
+export function initSamPanel(getContext, { askButton, resolvePlace, onPlace } = {}) {
   if (typeof getContext === "function") _getContext = getContext;
-  if (isMobilePanel()) panelExpanded = false;
+  if (typeof resolvePlace === "function") _resolvePlace = resolvePlace;
+  if (typeof onPlace === "function") _onPlace = onPlace;
 
-  const panel = document.createElement("div");
+  const panel = el("section", "chat");
   panel.id = "sam-panel";
+  panel.hidden = true;
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "SMART Buddy, the data assistant");
 
+  // static markup only (no reply text): the header, the empty state and the input
   panel.innerHTML = `
-    <button type="button" class="sam-rail" id="sam-rail" aria-label="Open the data assistant" title="Open the data assistant">
-      <img class="sam-rail-av" src="${AVATAR}" alt="" />
-      <span class="sam-rail-label">CHAT</span>
-      <span class="sam-rail-chev" aria-hidden="true">‹</span>
-    </button>
-    <div class="sam-body" id="sam-body">
-    <div id="sam-header" class="sam-header">
-      <div class="sam-header-left">
-        <img class="sam-brand-av" src="${AVATAR}" alt="" />
-        <div class="sam-header-txt">
-          <span class="sam-title">SMART Buddy</span>
-          <span class="sam-sub">Data assistant</span>
-        </div>
-      </div>
-      <div class="sam-header-right">
-        <span id="sam-offline-badge" class="sam-offline-badge" style="display:none">offline</span>
-        <button type="button" id="sam-new-chat" class="sam-new-chat" title="New chat">New</button>
-        <button type="button" id="sam-toggle" class="sam-toggle" aria-label="Toggle assistant">›</button>
-      </div>
-    </div>
+    <header class="chat-head">
+      <img class="chat-av" src="${AVATAR}" alt="" />
+      <div class="chat-title"><b>SMART Buddy</b><span>Data assistant · aggregates only</span></div>
+      <span id="sam-offline-badge" class="chat-offline" hidden>Offline</span>
+      <button type="button" id="sam-new-chat" class="btn">New</button>
+      <button type="button" id="sam-expand" class="icon-btn sam-expand" aria-pressed="false" aria-label="Widen the chat"></button>
+      <button type="button" id="sam-close" class="icon-btn" aria-label="Close the chat"></button>
+    </header>
     <div id="sam-thread" class="sam-thread" role="log" aria-live="polite" aria-relevant="additions">
       <div class="sam-empty-state">
         <div class="sam-empty-inner">
           <img class="sam-empty-av" src="${AVATAR}" alt="" />
           <div class="sam-empty-title">Ask about the data</div>
-          <div class="sam-empty-copy">SMART Buddy hands your question to the specialist for it — spend &amp; schools, terminals &amp; network, purchases &amp; nutrition, savings &amp; wallet or wearables — and answers with real numbers. Add “as a report” for figures and charts. Every question stands alone: say which month or school you mean.</div>
+          <div class="sam-empty-copy">SMART Buddy hands your question to the specialist for it — spend &amp; schools, terminals &amp; network, purchases &amp; nutrition, savings &amp; wallet or wearables — and answers with real numbers, with a chart or a table where it helps. Add “as a report” for a full report. Say which month or school you mean.</div>
           <div class="sam-empty-prompts">
-            <button type="button" class="sam-empty-chip" data-prompt="Which schools spent the most?">Top-spending schools</button>
+            <button type="button" class="sam-empty-chip" data-prompt="Top 5 schools by spend">Top 5 schools by spend</button>
             <button type="button" class="sam-empty-chip" data-prompt="Which terminals are the slowest?">Slowest terminals</button>
+            <button type="button" class="sam-empty-chip" data-prompt="10 most recent transactions">10 most recent transactions</button>
             <button type="button" class="sam-empty-chip" data-prompt="Spend by school level, as a report">Spend by level, as a report</button>
-            <button type="button" class="sam-empty-chip" data-prompt="How many wearable users were active?">Active wearable users</button>
           </div>
         </div>
       </div>
@@ -535,207 +576,40 @@ export function initSamPanel(getContext) {
     <div id="sam-footer" class="sam-footer">
       <div class="sam-inputwrap">
         <textarea id="sam-input" rows="1" placeholder="Ask about the data…" class="sam-input" aria-label="Message to SMART Buddy"></textarea>
-        <button type="button" id="sam-send" class="sam-send" aria-label="Send" title="Send">↑</button>
+        <button type="button" id="sam-send" class="sam-send" aria-label="Send"></button>
       </div>
-      <div class="sam-hint">Enter to send · Shift+Enter for a new line · “as a report” for figures and charts</div>
-    </div>
+      <div class="sam-hint">Enter to send · Shift+Enter for a new line · Esc closes</div>
     </div>`;
+  (document.getElementById("stage") || document.body).appendChild(panel);
 
-  const style = document.createElement("style");
-  style.id = "sam-panel-styles";
-  style.textContent = `
-    #sam-panel { position: fixed; right: 0; top: 44px; bottom: 0; height: auto; z-index: 1100;
-      background: var(--canvas); border-left: 1px solid var(--hairline); display: flex; flex-direction: column;
-      font-family: var(--font-text); overflow: hidden; box-shadow: -8px 0 30px rgba(0,0,0,.07);
-      transition: width .2s ease, height .2s ease; }
-    #sam-panel * { box-sizing: border-box; }
-    .sam-header { padding: 10px 12px; border-bottom: 1px solid var(--divider-soft); display: flex;
-      justify-content: space-between; align-items: center; gap: 8px; flex: none; background: var(--parchment); }
-    .sam-header-left { display: flex; align-items: center; gap: 9px; min-width: 0; }
-    .sam-brand-av { width: 28px; height: 28px; border-radius: 8px; object-fit: cover; flex: none; }
-    .sam-header-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-    .sam-title { color: var(--ink); font-family: var(--font-display); font-size: 14px; font-weight: 650; letter-spacing: -.01em; white-space: nowrap; }
-    .sam-sub { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; color: var(--ink-muted-48); text-transform: uppercase; }
-    .sam-header-right { display: flex; align-items: center; gap: 6px; flex: none; }
-    .sam-new-chat { border: 1px solid var(--hairline); background: var(--canvas); color: var(--primary);
-      border-radius: var(--r-pill); padding: 4px 11px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; }
-    .sam-new-chat:hover { background: #f0f6ff; border-color: var(--primary); }
-    .sam-offline-badge { background: rgba(255,59,48,.12); color: var(--bad); font-size: 10px; font-weight: 700;
-      letter-spacing: .04em; padding: 3px 8px; border-radius: var(--r-pill); text-transform: uppercase; }
-    .sam-toggle { background: var(--canvas); border: 1px solid var(--hairline); color: var(--ink-muted-48);
-      cursor: pointer; border-radius: var(--r-pill); font-size: 16px; line-height: 1; width: 30px; height: 30px; flex: none; }
-    .sam-toggle:hover { background: #f0f6ff; color: var(--primary); }
+  const thread = panel.querySelector("#sam-thread");
+  const input = panel.querySelector("#sam-input");
+  const sendBtn = panel.querySelector("#sam-send");
+  const expandBtn = panel.querySelector("#sam-expand");
+  sendBtn.append(icon("send"));
+  expandBtn.append(icon("expand"));
+  panel.querySelector("#sam-close").append(icon("close"));
+  _ui = { panel, thread, input, sendBtn, askBtn: askButton, expandBtn };
 
-    .sam-thread { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 14px 12px 16px; display: flex; flex-direction: column; gap: 12px; }
-    .sam-empty-state { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px 4px; }
-    .sam-empty-state[hidden] { display: none; }   /* the explicit display:flex above would otherwise override [hidden] */
-    .sam-empty-inner { max-width: 300px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-    .sam-empty-av { width: 46px; height: 46px; border-radius: 12px; object-fit: cover; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
-    .sam-empty-title { color: var(--ink); font-family: var(--font-display); font-size: 15px; font-weight: 650; }
-    .sam-empty-copy { color: var(--ink-muted-80); font-size: 12.5px; line-height: 1.5; }
-    .sam-empty-prompts { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 4px; }
-    .sam-empty-chip { border: 1px solid #d6e3fb; background: #f5f9ff; color: #1f5fb0; border-radius: var(--r-pill);
-      padding: 7px 12px; font-size: 12px; line-height: 1.2; font-family: inherit; cursor: pointer; transition: .14s; }
-    .sam-empty-chip:hover { background: #e7f0ff; transform: translateY(-1px); }
-
-    /* rows: the viewer's bubble on the right; the agents' on the left with a who-line (swatch + name) */
-    .sam-msg-row { display: flex; flex-direction: column; gap: 4px; max-width: 92%; animation: sam-in .2s ease-out; min-width: 0; }
-    .sam-msg-row-user { align-self: flex-end; align-items: flex-end; }
-    .sam-msg-row:has(.sam-report) { max-width: 100%; width: 100%; }
-    .sam-msg { padding: 9px 13px; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
-    .sam-msg-user { background: var(--primary); color: #fff; border-radius: 14px 14px 4px 14px; white-space: pre-wrap; }
-    .sam-msg-sam { background: var(--parchment); color: var(--ink); border-radius: 14px 14px 14px 4px; }
-    .sam-msg-row-agent .sam-msg-sam { border-left: 3px solid var(--c, var(--agent-0)); border-radius: 4px 14px 14px 4px; }
-    .sam-msg-row-refusal .sam-msg-sam { border-left: 3px solid var(--bad); border-radius: 4px 14px 14px 4px; }
-    .sam-msg-sam .sam-p { margin: 0; }
-    .sam-msg-sam .sam-p + .sam-p { margin-top: 6px; }
-    .sam-msg-sam ul, .sam-msg-sam ol { margin: 6px 0; padding-left: 20px; }
-    .sam-msg-sam li { margin: 2px 0; }
-    .sam-msg-sam code { background: rgba(0,0,0,.06); border-radius: 5px; padding: 1px 5px; font-size: 12px;
-      font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
-    .sam-msg-sam strong { font-weight: 680; }
-    .sam-who { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-muted-80); padding-left: 2px; }
-    .sam-who b { font-weight: 650; } .sam-who .t { color: var(--ink-muted-48); }
-    .sam-sw { width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--agent-0)); flex: none; box-shadow: 0 0 0 2px var(--canvas); display: inline-block; }
-    .sam-foot { display: flex; align-items: center; gap: 10px; font-size: 10.5px; color: var(--ink-muted-48); padding-left: 2px; flex-wrap: wrap; }
-    .sam-copy { border: none; background: none; color: var(--ink-muted-48); font-size: 10.5px; padding: 0 2px; cursor: pointer; font-family: inherit; }
-    .sam-copy:hover { color: var(--primary); }
-    .sam-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
-    .sam-chip { border: 1px solid var(--hairline); background: var(--canvas); color: var(--primary); border-radius: var(--r-pill);
-      padding: 5px 11px; font-size: 12px; line-height: 1.2; font-family: inherit; cursor: pointer; }
-    .sam-chip:hover { background: #f0f6ff; border-color: var(--primary); }
-    .sam-working { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-muted-80); font-weight: 600; }
-    .sam-dots { display: inline-flex; gap: 3px; }
-    .sam-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--c, var(--agent-0)); animation: sam-bounce 1.05s ease-in-out infinite; opacity: .4; }
-    .sam-dots i:nth-child(2) { animation-delay: .14s; } .sam-dots i:nth-child(3) { animation-delay: .28s; }
-
-    /* the hand-off: the orchestrator's routing card, one row per specialist */
-    .sam-route { display: grid; gap: 6px; padding: 9px 12px; background: var(--parchment); border-radius: 4px 14px 14px 4px; border-left: 3px solid var(--agent-0); font-size: 12.5px; color: var(--ink); }
-    .sam-arow { display: flex; align-items: center; gap: 8px; font-size: 12px; min-height: 22px; }
-    .sam-arow .name { font-weight: 650; }
-    .sam-arow .st { color: var(--ink-muted-48); display: inline-flex; align-items: center; gap: 6px; }
-    .sam-arow .ms { margin-left: auto; color: var(--ink-muted-48); font-size: 11px; font-variant-numeric: tabular-nums; }
-    .sam-arow.failed .st, .sam-arow.timeout .st { color: var(--bad); }
-    .sam-arow.done .st { color: var(--ink-muted-80); }
-    .sam-arow .tick { width: 14px; height: 14px; border-radius: 50%; background: var(--c, var(--agent-0)); color: #fff; display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; }
-    .sam-arow .cross { width: 14px; height: 14px; border-radius: 50%; background: var(--bad); color: #fff; display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; }
-
-    /* the report card */
-    .sam-report { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-md); box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.07); overflow: hidden; min-width: 0; }
-    .sam-rp-head { padding: 12px 14px 10px; border-bottom: 1px solid var(--divider-soft); display: grid; gap: 2px; }
-    .sam-rp-head h3 { font-size: 14px; font-weight: 650; letter-spacing: -.1px; font-family: var(--font-display); margin: 0; }
-    .sam-rp-head .meta { font-size: 11px; color: var(--ink-muted-48); display: flex; flex-wrap: wrap; gap: 4px 10px; }
-    .sam-rp-body { padding: 12px 14px 10px; display: grid; gap: 14px; min-width: 0; }
-    .sam-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; }
-    .sam-kpi { background: var(--parchment); border-radius: var(--r-sm); padding: 9px 10px 8px; min-width: 0; }
-    .sam-kpi .l { font-size: 11px; color: var(--ink-muted-80); font-weight: 550; display: flex; align-items: center; gap: 5px; }
-    .sam-kpi .v { font-size: 19px; font-weight: 650; letter-spacing: -.4px; margin-top: 1px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .sam-kpi .d { font-size: 11px; font-weight: 600; margin-top: 1px; }
-    .sam-kpi .d.up { color: var(--good); } .sam-kpi .d.down { color: var(--bad); } .sam-kpi .d.flat { color: var(--ink-muted-48); }
-    .sam-sec { display: grid; gap: 6px; min-width: 0; }
-    .sam-sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .sam-sec-h h4 { font-size: 12.5px; font-weight: 650; margin: 0; font-family: var(--font-display); }
-    .sam-from { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--ink-muted-48); white-space: nowrap; }
-    .sam-chart { position: relative; min-width: 0; }
-    .sam-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
-    .sam-chart text { font-family: var(--font-text); fill: var(--ink-muted-80); font-size: 11px; }
-    .sam-chart .ax text { fill: var(--ink-muted-48); font-size: 10.5px; }
-    .sam-chart .grid line { stroke: #ececec; stroke-width: 1; }
-    .sam-chart .base { stroke: #d0d0d0; stroke-width: 1; }
-    .sam-chart .bar.hl { filter: brightness(1.12); }
-    .sam-chart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-    .sam-chart .ar { fill: var(--c); opacity: .1; }
-    .sam-chart .dot { fill: var(--c); stroke: var(--canvas); stroke-width: 2; }
-    .sam-chart .hit { fill: transparent; cursor: crosshair; outline: none; }
-    .sam-chart .hit:focus-visible { stroke: var(--primary); stroke-width: 1.5; }
-    .sam-chart .xh { stroke: #d0d0d0; stroke-width: 1; pointer-events: none; }
-    .sam-chart .val { fill: var(--ink); font-weight: 600; }
-    .sam-chart .mark { fill: var(--ink-muted-48); font-size: 10px; }
-    .sam-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--ink-muted-80); }
-    .sam-legend span { display: inline-flex; align-items: center; gap: 5px; }
-    .sam-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-    .sam-tip { position: fixed; z-index: 1200; pointer-events: none; background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-sm);
-      box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.1); padding: 6px 9px; font-size: 12px; display: none; max-width: 240px; font-family: var(--font-text); color: var(--ink); }
-    .sam-tip.on { display: block; }
-    .sam-tip b { display: block; font-size: 13px; }
-    .sam-tip .k { display: inline-block; width: 10px; height: 2px; background: var(--c); vertical-align: middle; margin-right: 6px; }
-    .sam-tip .m { color: var(--ink-muted-48); }
-    .sam-numbers summary { font-size: 11.5px; color: var(--primary); cursor: pointer; width: fit-content; margin-top: 2px; }
-    table.sam-mini { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; table-layout: auto; }
-    table.sam-mini th { text-align: left; color: var(--ink-muted-48); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; padding: 5px 6px; border-bottom: 1px solid var(--hairline); }
-    table.sam-mini td { padding: 5px 6px; border-bottom: 1px solid var(--divider-soft); overflow-wrap: anywhere; }
-    table.sam-mini td.num, table.sam-mini th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    table.sam-mini tr:last-child td { border-bottom: 0; }
-    .sam-notes { font-size: 11.5px; color: var(--ink-muted-80); padding-left: 16px; display: grid; gap: 3px; margin: 0; }
-    .sam-rp-foot { padding: 10px 14px 12px; border-top: 1px solid var(--divider-soft); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-    .sam-rp-foot .src { font-size: 11px; color: var(--ink-muted-48); margin-right: auto; }
-    @keyframes sam-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes sam-bounce { 0%,80%,100% { transform: translateY(0) scale(.82); opacity: .35; } 40% { transform: translateY(-4px) scale(1); opacity: 1; } }
-    @media (prefers-reduced-motion: reduce) { .sam-msg-row { animation: none; } .sam-dots i { animation: none; opacity: .8; } }
-
-    .sam-footer { padding: 10px 12px 12px; border-top: 1px solid var(--divider-soft); flex: none; background: var(--parchment); }
-    .sam-inputwrap { display: flex; align-items: flex-end; gap: 8px; background: var(--canvas);
-      border: 1px solid var(--hairline); border-radius: 16px; padding: 6px 6px 6px 12px; transition: border-color .15s, box-shadow .15s; }
-    .sam-inputwrap:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,102,204,.12); }
-    .sam-input { flex: 1; border: none; outline: none; resize: none; background: transparent; color: var(--ink);
-      font-family: inherit; font-size: 13px; line-height: 1.45; max-height: 120px; padding: 4px 0; }
-    .sam-input::placeholder { color: var(--ink-muted-48); }
-    .sam-send { flex: none; width: 32px; height: 32px; border: none; border-radius: 50%; background: var(--primary);
-      color: #fff; font-size: 16px; line-height: 1; cursor: pointer; }
-    .sam-send:hover { background: var(--primary-focus); }
-    .sam-send:disabled { opacity: .45; cursor: not-allowed; }
-    .sam-hint { font-size: 10.5px; color: var(--ink-muted-48); text-align: center; margin-top: 6px; }
-
-    /* content block keeps a FIXED width (set by JS) so nothing reflows when the panel
-       collapses/expands — only the panel's own width animates (content is just clipped). */
-    .sam-body { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
-    #sam-panel.sam-collapsed .sam-body { display: none; }
-    #sam-panel.sam-collapsed .sam-rail { display: flex; }
-
-    /* collapsed rail — the WHOLE strip is the open button */
-    .sam-rail { display: none; flex: 1 1 auto; width: 100%; flex-direction: column; align-items: center;
-      gap: 12px; padding: 14px 0; border: none; background: var(--canvas); cursor: pointer;
-      font-family: inherit; transition: background .14s; }
-    .sam-rail:hover { background: #f0f6ff; }
-    .sam-rail-av { width: 26px; height: 26px; border-radius: 7px; object-fit: cover; flex: none; }
-    .sam-rail-label { writing-mode: vertical-rl; text-orientation: upright; letter-spacing: 2px; flex: 1;
-      display: flex; align-items: center; font-family: var(--font-display); font-weight: 650;
-      font-size: 12px; color: var(--ink-muted-48); }
-    .sam-rail-chev { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
-      background: var(--parchment); color: var(--primary); font-size: 16px; line-height: 1; flex: none; transition: background .14s; }
-    .sam-rail:hover .sam-rail-chev { background: #e2edff; }
-
-    #sam-panel.sam-mobile { border-left: none; border-top: 1px solid var(--hairline); border-radius: 16px 16px 0 0; box-shadow: 0 -12px 34px rgba(0,0,0,.14); }
-    #sam-panel.sam-mobile .sam-input { font-size: 16px; }
-    #sam-panel.sam-mobile .sam-rail { flex-direction: row; justify-content: center; gap: 10px; padding: 0 16px; }
-    #sam-panel.sam-mobile .sam-rail-label { writing-mode: horizontal-tb; text-orientation: mixed; flex: none; }
-    #sam-panel.sam-mobile .sam-rail-chev { transform: rotate(90deg); }
-  `;
-  document.head.appendChild(style);
-  document.body.appendChild(panel);
-
-  const thread = document.getElementById("sam-thread");
-  const input = document.getElementById("sam-input");
-  const sendBtn = document.getElementById("sam-send");
-  const toggleBtn = document.getElementById("sam-toggle");
-  const newChatBtn = document.getElementById("sam-new-chat");
-  _ui = { panel, thread, input, sendBtn };
-
-  applyPanelState(panel);
   updateEmptyState(thread);
-  window.addEventListener("resize", () => applyPanelState(panel));
-  toggleBtn.addEventListener("click", () => { panelExpanded = !panelExpanded; applyPanelState(panel); });
-  document.getElementById("sam-rail")?.addEventListener("click", () => { panelExpanded = true; applyPanelState(panel); });
-  newChatBtn?.addEventListener("click", () => { resetChatThread(thread, input); setOffline(false); focusSamInput(); });
+  askButton?.addEventListener("click", toggleChat);
+  panel.querySelector("#sam-close").addEventListener("click", () => setChatOpen(false));
+  expandBtn.addEventListener("click", () => {
+    const wide = panel.classList.toggle("wide");
+    expandBtn.setAttribute("aria-pressed", wide);
+    expandBtn.setAttribute("aria-label", wide ? "Narrow the chat" : "Widen the chat");
+    expandBtn.replaceChildren(icon(wide ? "narrow" : "expand"));
+  });
+  panel.querySelector("#sam-new-chat").addEventListener("click", () => { resetChatThread(thread, input); setOffline(false); focusInput(); });
+  panel.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setChatOpen(false); } });
   document.addEventListener("smartbuddy:solace-status", (e) => { if (!e.detail?.connected) setOffline(true); });
-  if (panelExpanded && isDesktopPanel()) requestAnimationFrame(() => focusSamInput());
 
   async function handleSend(forcedText = "", { retryOnly, note } = {}) {
     const text = String((typeof forcedText === "string" ? forcedText : "") || input.value).trim();
     if (!text) return;
     document.dispatchEvent(new CustomEvent("smartbuddy:sam-ask"));   // onboarding checklist (main.js)
     setOffline(false);
-    if (!panelExpanded) { panelExpanded = true; applyPanelState(panel); }
+    setChatOpen(true);
     input.value = ""; autoGrow(input);
     sendBtn.disabled = true;
 
@@ -744,10 +618,10 @@ export function initSamPanel(getContext) {
     if (retryOnly) context = { ...context, retryOnly };
 
     const ex = startExchange(text, { note, ask: (t, o) => handleSend(t, o) });
-    const response = await chat(text, context, { onProgress: ex.onProgress });
+    const response = await chat(text, context, { onProgress: ex.onProgress, onReceipt: ex.onReceipt });
     sendBtn.disabled = false;
     ex.finish(response);
-    focusSamInput();
+    focusInput();
   }
 
   sendBtn.addEventListener("click", () => handleSend());

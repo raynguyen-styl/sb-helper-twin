@@ -1,0 +1,188 @@
+/* The chat (central-specs capabilities sam-chat + agent-system; src/sam/samPanel.js): one card anchored to the
+   map's lower right, left of the drawer, that can widen for reports; a full-screen sheet below 720 px. The
+   thread: the viewer's bubbles on the right, the agents' on the left with a who-line (swatch + name), the
+   pending steps, the routing card, answers rendered from a safe Markdown subset, brief visuals inside the
+   bubble, full report cards, and "How it worked". Tokens only. */
+
+/* ── the card ───────────────────────────────────────────────────────────────────────────────── */
+.chat { position: absolute; right: calc(16px + var(--dock-r, 0px)); bottom: 16px; z-index: 40; width: 400px;
+    height: min(640px, calc(100% - 32px)); max-width: calc(100% - 32px - var(--dock-r, 0px)); display: flex; flex-direction: column;
+    background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
+.chat.wide { width: min(760px, calc(100% - 32px - var(--dock-r, 0px))); }
+.chat[hidden] { display: none; }
+.chat-head { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--hair-2); flex: none; }
+.chat-av { width: 30px; height: 30px; border-radius: 9px; object-fit: cover; flex: none; }
+.chat-title { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
+.chat-title b { font-size: 14px; }
+.chat-title span { font-size: 11.5px; color: var(--muted); }
+.chat-offline { background: var(--bad-bg); color: var(--bad); font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: var(--r-pill); }
+.chat-head .icon-btn { width: 36px; height: 36px; }
+.chat-head .btn { min-height: 32px; }
+
+/* ── the thread ─────────────────────────────────────────────────────────────────────────────── */
+.sam-thread { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 14px 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.sam-empty-state { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px 4px; }
+.sam-empty-state[hidden] { display: none; }
+.sam-empty-inner { max-width: 320px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.sam-empty-av { width: 46px; height: 46px; border-radius: 12px; object-fit: cover; box-shadow: var(--shadow); }
+.sam-empty-title { font-size: 16px; font-weight: 650; }
+.sam-empty-copy { color: var(--ink-2); font-size: 13px; line-height: 1.5; }
+.sam-empty-prompts { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 4px; }
+.sam-empty-chip, .sam-chip { border: 1px solid var(--hair); background: var(--surface); color: var(--accent); border-radius: var(--r-pill);
+    min-height: var(--tap); padding: 0 13px; font-size: 12.5px; font-weight: 550; line-height: 1.2; }
+.sam-empty-chip:hover, .sam-chip:hover { background: var(--accent-weak); border-color: var(--accent); }
+
+.sam-msg-row { display: flex; flex-direction: column; gap: 5px; max-width: 92%; min-width: 0; animation: sam-in .2s ease-out; }
+.sam-msg-row-user { align-self: flex-end; align-items: flex-end; }
+.sam-msg-row.full { max-width: 100%; width: 100%; }
+.sam-msg { padding: 10px 13px; font-size: 13.5px; line-height: 1.55; overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
+.sam-msg-user { background: var(--sel); color: var(--on-sel); border-radius: 16px 16px 4px 16px; white-space: pre-wrap; }
+.sam-msg-sam { background: var(--surface-2); color: var(--ink); border-radius: 16px 16px 16px 4px; }
+.sam-msg-row-agent .sam-msg-sam { border-left: 3px solid var(--c, var(--agent-0)); border-radius: 4px 16px 16px 4px; }
+.sam-msg-row-refusal .sam-msg-sam { border-left: 3px solid var(--st-bad); border-radius: 4px 16px 16px 4px; }
+.sam-who { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); padding-left: 2px; }
+.sam-who b { font-weight: 650; } .sam-who .t { color: var(--muted); }
+.sam-sw { width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--agent-0)); flex: none; box-shadow: 0 0 0 2px var(--surface); display: inline-block; }
+.sam-foot { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--muted); padding-left: 2px; flex-wrap: wrap; }
+.sam-copy { color: var(--muted); font-size: 11.5px; padding: 0 2px; min-height: 24px; }
+.sam-copy:hover { color: var(--accent); }
+.sam-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+
+/* the answer's text: the Markdown subset (src/sam/markdown.js), built from elements */
+.sam-msg-sam > * + * { margin-top: 7px; }
+.sam-msg-sam h3 { font-size: 14.5px; font-weight: 650; }
+.sam-msg-sam h4 { font-size: 13.5px; font-weight: 650; }
+.sam-msg-sam ul, .sam-msg-sam ol { padding-left: 20px; }
+.sam-msg-sam li + li { margin-top: 2px; }
+.sam-msg-sam code { background: var(--surface-3); border-radius: 5px; padding: 1px 5px; font-size: 12px; }
+.sam-msg-sam pre { background: var(--surface-3); border-radius: var(--r-sm); padding: 8px 10px; overflow-x: auto; }
+.sam-msg-sam pre code { background: none; padding: 0; }
+.sam-msg-sam strong { font-weight: 680; }
+.sam-table { overflow-x: auto; max-width: 100%; border: 1px solid var(--hair-2); border-radius: var(--r-sm); background: var(--surface); }
+.sam-table table, table.sam-mini { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.sam-table th, .sam-table td { overflow-wrap: normal; word-break: normal; }   /* words stay whole; a wide table scrolls in its wrapper */
+.sam-table th, table.sam-mini th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .3px;
+    padding: 6px 8px; border-bottom: 1px solid var(--hair); white-space: nowrap; }
+.sam-table td, table.sam-mini td { padding: 6px 8px; border-bottom: 1px solid var(--hair-2); }
+.sam-table tr:last-child td, table.sam-mini tr:last-child td { border-bottom: 0; }
+table.sam-mini td.num, table.sam-mini th.num, .sam-table td.num { text-align: right; white-space: nowrap; }
+.sam-place { color: var(--accent); font-weight: inherit; text-align: left; text-decoration: underline; text-underline-offset: 2px; min-height: 24px; }
+.sam-place:hover { color: var(--accent-strong); }
+
+/* waiting: the steps with the seconds elapsed, until the routing card replaces them */
+.sam-pending { display: grid; gap: 5px; padding: 10px 13px; background: var(--surface-2); border-radius: 16px 16px 16px 4px; font-size: 12.5px; }
+.sam-step { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.sam-step .m { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--axis); display: inline-grid; place-items: center;
+    font-size: 10px; font-weight: 700; color: var(--on-mark); flex: none; }
+.sam-step.done { color: var(--ink-2); }
+.sam-step.done .m { background: var(--st-good); border-color: var(--st-good); }
+.sam-step.now { color: var(--ink); font-weight: 600; }
+.sam-step .el { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 500; }
+.sam-dots { display: inline-flex; gap: 3px; }
+.sam-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--c, var(--agent-0)); animation: sam-bounce 1.05s ease-in-out infinite; opacity: .4; }
+.sam-dots i:nth-child(2) { animation-delay: .14s; } .sam-dots i:nth-child(3) { animation-delay: .28s; }
+
+/* the hand-off: the orchestrator's routing card, one row per specialist */
+.sam-route { display: grid; gap: 6px; padding: 10px 13px; background: var(--surface-2); border-radius: 4px 16px 16px 4px; border-left: 3px solid var(--agent-0); font-size: 12.5px; }
+.sam-arow { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.sam-arow .name { font-weight: 650; }
+.sam-arow .st { color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.sam-arow .ms { margin-left: auto; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.sam-arow.failed .st, .sam-arow.timeout .st { color: var(--bad); }
+.sam-arow.done .st { color: var(--ink-2); }
+.sam-arow .tick, .sam-arow .cross { width: 15px; height: 15px; border-radius: 50%; color: var(--on-mark); display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; }
+.sam-arow .tick { background: var(--c, var(--agent-0)); }
+.sam-arow .cross { background: var(--st-bad); }
+
+/* "How it worked · N steps" */
+.sam-steps { font-size: 12px; color: var(--ink-2); padding-left: 2px; }
+.sam-steps > summary { cursor: pointer; color: var(--muted); font-weight: 600; width: fit-content; min-height: 24px; display: flex; align-items: center; }
+.sam-steps ol { list-style: none; display: grid; gap: 5px; margin-top: 6px; padding: 8px 10px; background: var(--surface-2); border-radius: var(--r-sm); }
+.sam-steps li { display: flex; gap: 7px; align-items: baseline; }
+.sam-steps li .sam-sw { position: relative; top: 1px; }
+.sam-steps li b { font-weight: 650; white-space: nowrap; }
+
+/* a brief visual inside the bubble: up to three tiles, then one chart or one table */
+.sam-brief { display: grid; gap: 10px; margin-top: 10px; min-width: 0; }
+
+/* the full report card */
+.sam-report { background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-md); box-shadow: var(--shadow); overflow: hidden; min-width: 0; }
+.sam-rp-head { padding: 12px 14px 10px; border-bottom: 1px solid var(--hair-2); display: grid; gap: 2px; }
+.sam-rp-head h3 { font-size: 14.5px; font-weight: 650; }
+.sam-rp-head .meta { font-size: 11.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.sam-rp-body { padding: 12px 14px 10px; display: grid; gap: 14px; min-width: 0; }
+.sam-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; }
+.sam-kpi { background: var(--surface); border: 1px solid var(--hair-2); border-radius: var(--r-sm); padding: 9px 10px 8px; min-width: 0; }
+.sam-report .sam-kpi { background: var(--surface-2); border: 0; }
+.sam-kpi .l { font-size: 11.5px; color: var(--ink-2); font-weight: 550; display: flex; align-items: center; gap: 5px; }
+.sam-kpi .v { font-size: 19px; font-weight: 650; letter-spacing: -.4px; margin-top: 1px; white-space: nowrap; }
+.sam-kpi .d { font-size: 11.5px; font-weight: 600; margin-top: 1px; }
+.sam-kpi .d.up { color: var(--good); } .sam-kpi .d.down { color: var(--bad); } .sam-kpi .d.flat { color: var(--muted); }
+.sam-sec { display: grid; gap: 6px; min-width: 0; }
+.sam-sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sam-sec-h h4 { font-size: 13px; font-weight: 650; }
+.sam-from { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.sam-chart { position: relative; min-width: 0; }
+.sam-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.sam-chart text { font-family: var(--font); fill: var(--ink-2); font-size: 11px; }
+.sam-chart .ax text { fill: var(--muted); font-size: 10.5px; }
+.sam-chart .grid line { stroke: var(--grid); stroke-width: 1; }
+.sam-chart .base { stroke: var(--axis); stroke-width: 1; }
+.sam-chart .bar.hl { filter: brightness(1.12); }
+.sam-chart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.sam-chart .ar { fill: var(--c); opacity: .1; }
+.sam-chart .dot { fill: var(--c); stroke: var(--surface); stroke-width: 2; }
+.sam-chart .hit { fill: transparent; cursor: crosshair; outline: none; }
+.sam-chart .hit:focus-visible { stroke: var(--accent); stroke-width: 1.5; }
+.sam-chart .xh { stroke: var(--axis); stroke-width: 1; pointer-events: none; }
+.sam-chart .val { fill: var(--ink); font-weight: 600; }
+.sam-chart .mark { fill: var(--muted); font-size: 10px; }
+.sam-chart .shade { fill: var(--shade); }
+.sam-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--ink-2); }
+.sam-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.sam-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.sam-tip { position: fixed; z-index: 4100; pointer-events: none; background: var(--surface); border: 1px solid var(--hair); border-radius: var(--r-sm);
+    box-shadow: var(--shadow); padding: 6px 9px; font-size: 12px; display: none; max-width: 240px; color: var(--ink); }
+.sam-tip.on { display: block; }
+.sam-tip b { display: block; font-size: 13px; }
+.sam-tip .k { display: inline-block; width: 10px; height: 2px; background: var(--c); vertical-align: middle; margin-right: 6px; }
+.sam-tip .m { color: var(--muted); }
+.sam-numbers > summary { font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer; width: fit-content; min-height: 24px; display: flex; align-items: center; }
+.sam-numbers .sam-table { margin-top: 6px; }
+.sam-notes { font-size: 12px; color: var(--ink-2); padding-left: 16px; display: grid; gap: 3px; }
+.sam-rp-foot { padding: 10px 14px 12px; border-top: 1px solid var(--hair-2); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sam-rp-foot .src { font-size: 11.5px; color: var(--muted); margin-right: auto; }
+
+/* ── the input ──────────────────────────────────────────────────────────────────────────────── */
+.sam-footer { padding: 10px 12px 12px; border-top: 1px solid var(--hair-2); flex: none; }
+.sam-inputwrap { display: flex; align-items: flex-end; gap: 8px; background: var(--surface); border: 1px solid var(--hair);
+    border-radius: 18px; padding: 6px 6px 6px 14px; transition: border-color .15s, box-shadow .15s; }
+.sam-inputwrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+.sam-input { flex: 1; border: none; outline: none; resize: none; background: transparent; color: var(--ink); font-size: 14px; line-height: 1.45;
+    max-height: 120px; padding: 5px 0; min-width: 0; }
+.sam-input::placeholder { color: var(--muted); }
+.sam-send { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; }
+.sam-send:hover { background: var(--accent-strong); }
+.sam-send:disabled { opacity: .45; cursor: not-allowed; }
+.sam-hint { font-size: 11px; color: var(--muted); text-align: center; margin-top: 6px; }
+
+@keyframes sam-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sam-bounce { 0%, 80%, 100% { transform: translateY(0) scale(.82); opacity: .35; } 40% { transform: translateY(-4px) scale(1); opacity: 1; } }
+
+/* compact: the chat replaces the drawer (they never sit side by side below 1100 px) */
+@media (min-width: 720px) and (max-width: 1099px) {
+    .chat { right: 12px; bottom: 12px; height: calc(100% - 24px); max-width: calc(100% - 24px); }
+}
+/* phone: a full-screen sheet with its own close button, over the tab bar */
+@media (max-width: 719px) {
+    .chat, .chat.wide { position: fixed; inset: 0; width: auto; height: auto; max-width: none; border: 0; border-radius: 0; z-index: 2800;
+        padding-bottom: env(safe-area-inset-bottom); }
+    .chat-head { padding: 8px 6px 8px 14px; }
+    .chat-head .icon-btn { width: 44px; height: 44px; }
+    .chat-head .btn { min-height: 44px; }
+    .sam-expand { display: none !important; }
+    .sam-input { font-size: 16px; }
+    .sam-send { width: 44px; height: 44px; }
+    .sam-copy, .sam-place, .sam-steps > summary, .sam-numbers > summary { min-height: 44px; }
+    .sam-hint { display: none; }
+}

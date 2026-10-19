@@ -9,11 +9,12 @@
  *     id-less reply falls back to the sole in-flight request.
  *  2) HTTP: VITE_SAM_ENDPOINT → POST {base}/chat with optional Bearer VITE_SAM_API_KEY.
  *
- * The reply (central-specs capability agent-system, docs/sb_helper_agent_system.md §5) is
- * {correlationId, reply, actions, kind?, agents?, report?, suggestions?}; a message with the same id,
- * status "working" and no reply is progress — it re-arms the question's timeout and reaches the
- * panel through onProgress without resolving. Everything is normalised here; the panel never reads
- * the raw payload.
+ * The reply (central-specs capability agent-system, docs/sb_helper_agent_system.md §5, decision 0006) is
+ * {correlationId, reply (Markdown subset), actions, kind?, agents?, report? (mode "brief" | "report"),
+ * suggestions?, steps? [{agent, text}]}; a message with the same id, status "working" and no reply is
+ * progress — it re-arms the question's timeout and reaches the panel through onProgress without
+ * resolving. The gateway's "Request received by gateway…" is a receipt (onReceipt), never the answer.
+ * Everything is normalised here; the panel never reads the raw payload.
  */
 
 import { publish, subscribe } from "../solace/solace.js";
@@ -174,6 +175,20 @@ function _looksLikeFragment(obj) {
   let depth = 0;
   for (const ch of s) { if (ch === "{") depth++; else if (ch === "}") depth--; }
   return depth !== 0;
+}
+// The Event Gateway's own acknowledgement ("Request received by gateway…") is a receipt, never the answer: it marks
+// the question "Received" and the question keeps waiting (central-specs capability sam-chat, design D9). Without
+// this an id-less receipt would be taken as the reply.
+const RECEIPT = /^\s*Request received by gateway/i;
+function _isReceipt(obj) {
+  if (typeof obj === "string") return RECEIPT.test(obj);
+  const t = _pickReplyText(obj);
+  return typeof t === "string" && RECEIPT.test(t) && !obj?.report;
+}
+/** Whether a raw message (a captured one, for replay) is the gateway's receipt. */
+export function isReceipt(raw) {
+  const { obj, plainText } = _normalizeInboundPayload(raw);
+  return _isReceipt(plainText ?? obj);
 }
 // {correlationId, status: "working", agents: [...]} and no answer text → progress, not a reply.
 function _isProgress(obj) {
@@ -390,8 +405,32 @@ export function normalizeReport(r) {
   }
   const notes = (Array.isArray(r.notes) ? r.notes : []).slice(0, REPORT_LIMITS.notes).map((n) => _str(n, 400)).filter(Boolean);
   if (!kpis.length && !charts.length && !tables.length) return null;
-  return { title: _str(r.title, 120) || "Report", period: _str(r.period, 40), source: _str(r.source, 160),
+  // decision 0006: "brief" = at most 3 tiles and ONE chart or table, drawn inside the answer; "report" = the full card.
+  // A report without a mode is an older reply and renders as the full card.
+  const modeRaw = _str(r.mode, 12).toLowerCase();
+  const mode = modeRaw === "brief" || modeRaw === "report" ? modeRaw : undefined;
+  if (mode === "brief") {
+    if (kpis.length > 3) { kpis.length = 3; dropped.push("figures beyond three"); }
+    if (charts.length) {
+      if (charts.length > 1 || tables.length) dropped.push("visuals beyond the first");
+      charts.length = 1; tables.length = 0;
+    } else if (tables.length > 1) { tables.length = 1; dropped.push("tables beyond the first"); }
+  }
+  return { mode, title: _str(r.title, 120) || "Report", period: _str(r.period, 40), source: _str(r.source, 160),
     kpis, charts, tables, notes, dropped: [...new Set(dropped)] };
+}
+
+// steps: [{agent, text}] — one line per step the agents took ("How it worked"). Plain strings are accepted.
+export function normalizeSteps(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const s of list.slice(0, 12)) {
+    if (typeof s === "string") { const text = _str(s, 300); if (text) out.push({ agent: undefined, text }); continue; }
+    if (!s || typeof s !== "object") continue;
+    const text = _str(s.text ?? s.step ?? s.summary, 300);
+    if (text) out.push({ agent: _sanitizeAgentName(s.agent ?? s.name) || undefined, text });
+  }
+  return out;
 }
 
 function _extendedFields(...objs) {
@@ -402,12 +441,13 @@ function _extendedFields(...objs) {
     agents: normalizeAgents(pick("agents")),
     report: normalizeReport(pick("report")),
     suggestions: (Array.isArray(pick("suggestions")) ? pick("suggestions") : []).slice(0, 8).map((s) => _str(s, 160)).filter(Boolean),
+    steps: normalizeSteps(pick("steps")),
   };
 }
 
 function _normalizePayload(rawPayload) {
   const { obj: payload, plainText } = _normalizeInboundPayload(rawPayload);
-  const base = { kind: "answer", agents: [], report: null, suggestions: [] };
+  const base = { kind: "answer", agents: [], report: null, suggestions: [], steps: [] };
   if (plainText && (!payload || Object.keys(payload).length === 0)) {
     const salvaged = _salvageProseShapedJson(plainText);
     if (salvaged) { console.warn("[sam] agent returned prose — salvaged via regex."); return { ...base, ...salvaged }; }
@@ -456,6 +496,13 @@ function _registerSolaceHandlers() {
     const { obj } = _normalizeInboundPayload(payload);
     const parsed = obj && typeof obj === "object" ? obj : (typeof payload === "object" && payload !== null ? payload : { text: String(payload ?? "") });
     if (_looksLikeFragment(payload)) { console.warn("[sam] streamed fragment ignored (not a whole reply)."); return; }
+    if (_isReceipt(parsed)) {
+      const pp = _peekPendingForPayload(parsed);
+      if (!pp) { console.warn("[sam] gateway receipt for no in-flight request — ignored."); return; }
+      pp.arm();                                   // the gateway has it: restart the wait
+      try { pp.onReceipt?.(); } catch (e) { console.warn("[sam] onReceipt failed:", e); }
+      return;
+    }
     if (_isProgress(parsed)) {
       const pp = _peekPendingForPayload(parsed);
       if (!pp) { console.warn("[sam] progress for no in-flight request — ignored."); return; }
@@ -501,7 +548,7 @@ function _registerSolaceHandlers() {
     clearTimeout(p.timer);
     const normalized = _normalizePayload(payload);
     const err = normalized.reply ?? payload?.message ?? payload?.error ?? payload?.text ?? JSON.stringify(payload);
-    p.resolve({ kind: "answer", agents: [], report: null, suggestions: [], reply: `SAM error: ${err}`, actions: [] });
+    p.resolve({ kind: "answer", agents: [], report: null, suggestions: [], steps: [], reply: `SAM error: ${err}`, actions: [] });
   };
 
   subscribe(SAM_TOPICS.response, onResponse);
@@ -523,8 +570,8 @@ export function initSam() {
  * Send a chat message to SAM.
  * @param {string} text  Natural-language question
  * @param {object} context  Dashboard state snapshot (+ retryOnly: an agent name to re-ask alone)
- * @param {{onProgress?: (agents: object[]) => void}} [opts]  progress rows while the agents work
- * @returns {Promise<{reply?: string; actions?: object[]; kind?: string; agents?: object[]; report?: object|null; suggestions?: string[]; offline?: boolean}>}
+ * @param {{onProgress?: (agents: object[]) => void, onReceipt?: () => void}} [opts]  progress rows while the agents work; the gateway's receipt
+ * @returns {Promise<{reply?: string; actions?: object[]; kind?: string; agents?: object[]; report?: object|null; suggestions?: string[]; steps?: object[]; offline?: boolean}>}
  */
 export async function chat(text, context = {}, opts = {}) {
   if (useSolaceSam()) {
@@ -534,7 +581,7 @@ export async function chat(text, context = {}, opts = {}) {
     // progress message restarts it — a dead mesh still times out, a busy one does not.
     const wait = isReportLike(text) ? SAM_TIMEOUT_SOLACE_MS * 2 : SAM_TIMEOUT_SOLACE_MS;
     return new Promise((resolve) => {
-      const entry = { resolve, timer: null, onProgress: opts.onProgress, arm: null };
+      const entry = { resolve, timer: null, onProgress: opts.onProgress, onReceipt: opts.onReceipt, arm: null };
       entry.arm = () => {
         clearTimeout(entry.timer);
         entry.timer = setTimeout(() => {

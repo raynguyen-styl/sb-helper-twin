@@ -13,16 +13,16 @@ retained offline tooling); design, decisions and the handover live in **central-
 
 ## What it shows
 
-One mode (decision `0002`): the months present in the Postgres serving store — **February + March
-2026** once seeded — switched by a top-bar month picker, read per month through api-service (nothing is
-bundled). A role hub (F&B / Engineering / Management) picks the views: an OneMap map of the 332 schools
-(dots sized by spend, coloured by level / error rate / speed; PBS bookstore and stamp-point layers),
-school details with stalls and terminals tabs, Network Overview, Terminal Health with a service route
-planner, Wearables (Feb + Mar), Purchases and Saving (Mar), Playback, and a chat panel ("SMART Buddy",
-the orchestrator of the specialist agents on the mesh, over Solace) that shows which agent answers,
-renders report answers as figures and charts, and answers from Redshift (so the chat and the dashboard
-can disagree: `central-specs/decisions/0002`). Compare up to four schools, stalls or terminals side by side; opt-in
-tours; keyboard-usable; deep links (`#role=`, `#school=`, `#terminal=`, `#layers=`, `#pins=`).
+One mode (decision `0002`): the months present in the Postgres serving store, switched in the top
+bar and read per month through api-service (nothing is bundled). An OneMap map of the 332 schools
+(dots sized by spend, coloured by level / error rate / speed; PBS bookstore and stamp-point layers) and
+eight views — Overview, Schools, Terminals (with a service route planner), Subsidies, Purchases,
+Savings, Wearables and Playback — plus each school, stall and terminal. The chat ("SMART Buddy", the
+orchestrator of the specialist agents on the mesh, over Solace) answers from Redshift with Markdown,
+brief visuals or full reports, and shows which agent answered (so the chat and the dashboard can
+disagree: `central-specs/decisions/0002`). Compare up to four schools, stalls or terminals; workspaces
+(F&B / Engineering / Management) in the menu; opt-in tours; keyboard-usable; deep links; one frame
+from a 360 px phone to a wide screen (central-specs change `overhaul-dashboard-and-agent-replies`).
 There is no upload and no sync: the store is seeded by an operator (`backend/postgres/SEEDING.md`);
 until it is, the dashboard says "No data yet". Details: "The dashboard" below.
 
@@ -57,7 +57,8 @@ stack, seeding and the one-time VM cutover: **`backend/DEPLOY.md`**.
 
 | Path | What |
 |---|---|
-| `src/`, `index.html`, `public/` | the app: one module per window (map, school, terminals, network, wearables, items, savings, playback, compare, tour, shortcuts), `sam/` (the chat client) and `solace/` (the broker session) |
+| `src/`, `index.html`, `public/` | the app: `main.js` (the frame, the map, search, deep links), `windowing.js` (the drawer and the phone sheet), `ui.js` (the views' shared pieces), one module per view (`overview-`, `schools-`, `eng-`, `school-`, `stall-`, `subsidy-`, `items-`, `savings-`, `feb-`, `playback-window.js`), `compare.js`, `tour.js`, `shortcuts.js`, `roles.js`, `sam/` (the chat: client, panel, Markdown) and `solace/` (the broker session) |
+| `src/styles/` | `tokens.css` (every colour, size and radius — the one place they are defined), `base.css`, `shell.css` (the frame), `views.css` (the views), `chat.css` |
 | `nginx.conf` | same-origin routing to the read API (`/smartbuddy-api/`, not token-checked: decision 0003), the login's token proxy (`/auth/token`) and the SPA |
 | `docker/40-keycloak-token-proxy.sh` | writes the `/auth/token` include from the container's runtime environment (the client secret) |
 | `Dockerfile`, `.dockerignore` | Vite build → nginx; the `VITE_*` build args. The build context is this root, so `.dockerignore` keeps every `.env*` out |
@@ -67,59 +68,89 @@ stack, seeding and the one-time VM cutover: **`backend/DEPLOY.md`**.
 
 ## The dashboard
 
-An interactive Singapore-map dashboard in the style of the tree-digital-twin frontend:
-school markers on a MapLibre map, click a school to open its details in a drawer docked beside the map
-(one view at a time; Back + breadcrumbs return to the previous view at the same tab and scroll).
-**Compare:** "＋ Compare" on a school, stall or terminal (or Shift-click a school dot) pins it to a slim tray at the top
-of the map (up to 4, one type at a time, lettered A–D with a matching badge on the map; hover a chip to peek its
-numbers). The map zooms to fit the pinned items. "Compare ▸" opens one topic at a time (Spend / Errors / Speed /
-Network / Food & menu) as graphs — a bar chart per measure, lines over time, 100% bars for shares — with the exact
-numbers behind "Show numbers". The topic and the map key's "Colour by" follow each other.
-**Top bar:** the month picker, the views of the workspace, search; the workspace menu (role ▾) holds Switch
-workspace, Tours, Keyboard & mouse, Sign out. A "Not this month: …" chip appears only when a dataset is missing.
-There is one mode and no upload: the data is whatever an operator seeded into the Postgres serving store
-(`backend/postgres/SEEDING.md`); before the seed the drawer says "No data yet". **New viewers:** role picker (with Skip), then a
-3-step getting-started checklist that ticks itself off; one-time tip on the drawer's Back. **Tour:** an opt-in
-6-step spotlight tour (`src/tour.js`) — offered in the role picker, the checklist and the ▾ menu, never auto-started.
-**Controls:** ▾ menu → "Keyboard & mouse" (or press `?`) lists them all (`src/shortcuts.js`). Highlights: Shift-click a
-dot = add to Compare · Esc = Back in the drawer · search ↑ ↓ Enter · compare topics ← → · the map is 2D only (no
-rotate / tilt).
+**The frame** (central-specs capability `dashboard-shell`), three frames from one grid:
 
-### What's in it
+- **Wide (1100 px and more):** the top bar, a rail of the eight views on the left, the map, and the details
+  drawer on the right (440 px; 600 px for a dense view). The map pads itself for the drawer, so a place it flies
+  to lands in the visible part.
+- **Compact (720–1099 px):** the rail shows icons (the name on hover and focus); the drawer is a card over the
+  map's right part, at most 420 px wide.
+- **Phone (under 720 px):** a short top bar, the map, and a tab bar — Map, Overview, Schools, Terminals and More
+  (Subsidies, Purchases, Savings, Wearables, Playback). Views open in a bottom sheet with a handle and three
+  heights (peek, half, full): drag it, or ↑ ↓ on the handle; dragging down past peek closes it. The Map key is a
+  sheet behind the Map key button; the chat opens full screen. Nothing scrolls sideways from 360 px; touch
+  targets are 44 px.
 
-- **Map** — 332 schools with markers (MOE-directory-matched + OneMap-geocoded; incl. 12 special-education
-  schools). Dot **size** = spend per student-day; dot **colour** switches between School Level / Error rate /
-  Transaction speed (legend, bottom-left). Status colours are colour-blind-safe (Okabe-Ito: teal / amber /
-  vermillion) and the worst dots also get a dark ring. Engineering opens on Error rate; the other roles on Level.
-  **Map key** (bottom-left, collapsible) is also the layer filter: colour by Level / Errors / Speed, then a show/hide row with a count for Primary · Secondary · Junior College · Other · **PBS Bookstores** (squares) · **Stamp points** (diamonds) — any combination, "Reset view" when filtered, kept in the URL
-  (`#layers=…`). PBS and Self Serve Stamps are vendors, not schools: their shops/points sit beside the host school
-  only when the placement is evidenced (`backend/ingestion-service/pbs_hosts.csv`, `stamp_hosts.csv`); "Lists: PBS
-  bookstores" in the legend shows every shop, unplaced ones first. The basemap is OneMap Grey, washed to grey;
-  OneMap's "South China Sea / Pedra Branca" inset box in the sea off the East Coast (drawn in its z11 and z12 tiles;
-  the dashboard shows the z12 tiles at its opening zoom) is covered with the sea colour — a territorial-claim mark,
-  not geography (`central-specs` capability `basemap`). `SB.map` in the console is the MapLibre instance.
-- **Search** (top bar) — by school ID or name; works for unmapped schools too. Picking a school flies the map there.
-- **School window** (click a marker) — spend/ticket/cards/error/speed stats, MOE badges
-  (Independent · IP · GEP · SAP), and two tabs:
-  - *Stalls & Spending* — weekly canteen revenue, revenue by stall (click a bar to open the stall)
-  - *Terminals* — every machine tagged to its stall, with its machine-vs-site verdict
-- **Terminals window** (Engineering) — every machine at the site where it **last** transacted that month, with
-  problem tags (machine fault · site issue · no peers · slow · stopped · offline · retrieved). Tick machines →
-  **Plan route** → **Service route** window: one stop per school, nearest-next from the STYL Service Center
-  (3015A Ubi Road 1), straight-line km. PBS/stamp machines are listed as "Not routed" (no confirmed service
-  location yet). Same rows SAM reads from `terminal_health`.
-- **On load:** the role hub (F&B / Engineering / Management), or the saved role's primary view. A top-bar
-  **month picker** switches every view; per-month views appear only when that month has the data
-  (Wearables: Feb + Mar · Purchases & Saving: Mar).
-- **Network Overview window** — four tabs: Network Health, Speed Trends,
-  Food Trends, School Spending (the "atas" comparison). Clickable: a "Terminals needing attention" row opens the
-  terminal; a top-spender row flies the map to the school and opens it; a school-type bar filters the table.
-  Holiday days/weeks are shaded (CNY, March break — taken from the month's wearable bundle, not hard-coded).
-- **Linked hover:** hovering a table row that names a school outlines its dot on the map, and the reverse.
-- **Keyboard:** Tab reaches map dots and clickable rows; Enter/Space opens them.
-- Deep link: `http://localhost:5188/#school=TKGS` opens that school on load; `#pins=school:MGSP,TKGS` opens that comparison
-  (copy the URL after pinning). `#layers=…` keeps the Map key's shown layers.
-- Tours: ▾ menu → Tours… (chapters for the current workspace) or "▶ Tour" in a view's header; content in `src/tour.js`.
+**The top bar:** the brand; the month (a segmented control for up to four months, a select otherwise and on
+phones); search (Ctrl/⌘ K or "/": schools, stalls and machines, grouped; ↑ ↓ Enter Esc; full screen on phones);
+**Ask** (the chat); and the menu: the workspace (All, F&B / Operations, Engineering, Management), Tours,
+Keyboard & mouse, who is signed in, Sign out. A view whose bundle the month lacks stays in the list, dimmed,
+"Not in ‹Month Year›". A first visit opens the map and Overview with no dialog; the workspace is kept on the
+device, and `#role=` still picks one (Engineering colours the map by error rate).
+
+**The views** (capability `dashboard-views`) share one anatomy, built from `src/ui.js`: the month, the title,
+the source chip and the actions (Compare, Tour); up to four KPI cards; then sections, each a title, a one-line
+takeaway and a chart or a table. Every chart has "Numbers" (its table, from the chart's own data); tables scroll
+inside their card with the first column kept in view.
+
+- **Overview** opens on the month in one paragraph built only from the bundles (a figure they lack drops its
+  clause), then Network health, Speed, Food and School spending.
+- **Schools** ranks the month's schools — spend per card per day, revenue, taps, errors, median speed — sorted
+  by any column (a school without the figure last, "–"), filtered by level, zone and type, searched by name or
+  code; 50 rows, then "Show more". A row opens the school and flies the map to it.
+- **Terminals** opens on health cards (Healthy, Needs attention, Machine fault, Site issue with its schools) that
+  filter the list. Ticked machines gather in a sticky bar: **Plan route (n)** opens the service route — one stop
+  per school, nearest-next from the STYL Service Center (3015A Ubi Road 1), straight-line km; PBS and stamp
+  machines are listed as "Not routed". The same rows SAM reads from `terminal_health`.
+- **A school** leads with its level and MOE chips (Independent · IP · GEP · SAP), four cards (spend per card per
+  day, taps, error rate, median speed) and Compare; "More numbers" holds the rest; then the topics Spending and
+  Terminals (every machine with its machine-vs-site verdict).
+- **Subsidies**, **Purchases**, **Savings**, **Wearables** and **Playback** in the same anatomy. Purchases shows
+  the menu's healthier flag only as "Marked healthier on the menu (unverified)" — the menu sets it on most items,
+  books and sweet drinks included — and states how few items carry a calorie value.
+
+**Compare:** "＋ Compare" on a school, stall or terminal (or Shift-click a school dot) pins it to a tray over the
+map (on phones a bar above the tab bar, or above the sheet): up to 4, one kind at a time, lettered A–D with a
+matching badge on the map. "Compare n" opens one topic at a time (Spend / Errors / Speed / Network / Food &
+menu) as graphs, the exact numbers behind "Show numbers"; the topic and the map's "Colour by" follow each other.
+
+**The map:** 332 schools (MOE-directory-matched + OneMap-geocoded; incl. 12 special-education schools). Dot size
+= spend per student-day; colour = level, error rate or speed. Status colours are colour-blind-safe (Okabe-Ito)
+and the worst dots also get a dark ring. The Map key is also the layer filter: Primary · Secondary · Junior
+College · Other · PBS Bookstores (squares) · Stamp points (diamonds), with counts, kept in the URL
+(`#layers=…`). PBS and Self Serve Stamps are vendors, placed beside their host school only when the placement is
+evidenced (`backend/ingestion-service/pbs_hosts.csv`, `stamp_hosts.csv`); "list" shows every bookshop. Hovering
+or focusing a row that names a school outlines its dot, and the reverse.
+
+**The basemap** (capability `basemap`) is OneMap Grey, washed to grey, over the washed sea's grey. From 720 px it
+is limited to zoom 11–19 and OneMap's tiled area; below 720 px to zoom 9.5–19 and wider bounds (lon
+103.40–104.35, lat 0.95–1.70), with the first view fitted to the schools — re-applied when the width crosses
+720 px. OneMap draws a "South China Sea / Pedra Branca" inset box — a territorial-claim mark, not geography — in
+its z12 tiles (map zoom 10.5–11.5) and, further south-east, in its z11 tiles (map zoom 9.5–10.5, phones only). A
+sea-coloured cover per tile zoom (`inset-z12` and `inset-z11` in `src/main.js`) hides each exactly while its own
+tiles are on screen. On phones the attribution starts folded to its ⓘ. `SB.map` in the console is the MapLibre
+instance.
+
+**Deep links:** `#school=TKGS` opens that school and flies to it; `#schools`, `#stall=`, `#terminal=`, `#feb`,
+`#items`, `#savings`, `#subsidy` and `#playback` open their view; `#role=eng` picks a workspace; `#layers=…`
+keeps the Map key's layers; `#pins=school:MGSP,TKGS` restores a comparison (copy the URL after pinning).
+
+**Help:** tours never start by themselves — menu → Tours (the chapters for the workspace) or "Tour" on a view
+(`src/tour.js`); a getting-started checklist on screens 720 px and wider; menu → Keyboard & mouse (or `?`) lists
+every key (`src/shortcuts.js`): Esc goes Back, Shift-click compares, Ctrl/⌘ K or "/" searches, ↑ ↓ on the
+sheet's handle. The map is 2D only (no rotate or tilt). Under reduced motion nothing slides or fades.
+
+### The chat
+
+**Ask** opens one card over the map's lower right, left of the drawer (Expand widens it for reports); below
+1100 px the chat and the drawer replace each other, each keeping its state; on phones it fills the screen. Esc
+or ✕ closes it; the conversation stays until **New** or a reload. While a question waits it shows Sent →
+Received → Answered with the seconds, until the routing card names the agents. An answer renders a safe
+Markdown subset as elements (never HTML), a brief visual (up to three tiles and one chart or table) inside the
+bubble or the full report card, "How it worked · N steps", and the agent that answered; a school named exactly in
+a table cell, a tile label or bold opens on the map. The wire and the reply contract: `DEPLOY.md` "The chat".
+To render a captured exchange without the broker, in the browser console:
+`SB.chatReplay({ question, progress, reply })` (examples in `DEPLOY.md`).
 
 ### Data
 

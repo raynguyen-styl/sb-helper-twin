@@ -76,20 +76,32 @@ key → that file's pre-October `VITE_SAM_LIVE_TOPIC_*` → the default, so a bo
 and its checklist names the source. There is no Demo | Live toggle and no `#mode=` any more
 (`central-specs/decisions/0002`).
 
-The reply (central-specs capability `agent-system`) is `{correlationId, reply, actions, kind?,
-agents?, report?, suggestions?}`: the panel shows the orchestrator's routing card with one row per
-specialist in `agents[]`, attributes a single-specialist answer to that specialist, renders a
-`report` as KPI tiles, inline-SVG charts (a "Numbers" table under each), tables and notes with Copy
-and CSV, styles `kind: "refusal"` as a refusal and offers `suggestions[]` as chips. A message with
-the same `correlationId`, `status: "working"` and no `reply` is progress: it updates the rows and
-restarts the wait. The wait is `VITE_SAM_TIMEOUT_MS` (default 60 s), doubled for a question that
-asks for a report; with no reply or progress in that time the panel shows "offline" and the rest of
-the dashboard is unaffected. A specialist marked `failed` or `timeout` gets a Retry chip that
-re-sends the question with `retry: ask only <agent_name>` in the context hint. A reply with only
-`reply` still renders as one text bubble. Registering the agents: `central-specs/docs/
-sb_helper_agent_mesh_setup.md`. To render a captured reply without the broker (debugging), in the
-browser console of a dev build: `import('/src/sam/samPanel.js').then(m => m.replay({ question,
-progress: [...], reply }))`.
+The reply (central-specs capability `agent-system`, decision `0006`) is `{correlationId, reply,
+actions, kind?, agents?, report?, suggestions?, steps?}`:
+- `reply` is short Markdown — paragraphs, headings, bold, italics, code, lists and pipe tables —
+  rendered as elements (`src/sam/markdown.js`), never as HTML: a link or an `<img>` shows as text.
+- `report.mode: "brief"` (at most 3 tiles and one chart or table) draws inside the answer bubble;
+  `"report"`, or a report without a mode, draws the full report card (tiles, inline-SVG charts with a
+  "Numbers" table, tables, notes, Copy and CSV).
+- `steps: [{agent, text}]` fold under the answer as "How it worked · N steps".
+- A school named exactly (in a table cell, a tile label or bold) becomes a button that opens it on the map.
+- An answer with `report` null or brief and exactly one specialist `done` is that specialist's bubble;
+  any other is the orchestrator's. `kind: "refusal"` is styled as a refusal; `suggestions[]` are chips.
+
+While a question waits the chat shows Sent → Received → Answered with the seconds; a message with the
+same `correlationId`, `status: "working"` and no `reply` is progress: the routing card (one row per
+specialist in `agents[]`) replaces the steps and the wait restarts. The gateway's own "Request received
+by gateway…" frame is a receipt: it marks Received and the question keeps waiting. The wait is
+`VITE_SAM_TIMEOUT_MS` (default 60 s), doubled for a question that asks for a report; with no reply or
+progress in that time the chat shows "offline" and the rest of the dashboard is unaffected. A
+specialist marked `failed` or `timeout` gets a Retry chip that re-sends the question with
+`retry: ask only <agent_name>` in the context hint. Registering the agents:
+`central-specs/docs/sb_helper_agent_mesh_setup.md`.
+
+To render a captured exchange without the broker (debugging), in the browser console:
+`SB.chatReplay({ question, progress: [...], reply })` — `progress` holds working messages or the
+gateway's receipt; without `reply` the question is left waiting. For example:
+`SB.chatReplay({ question: 'Top 5 schools by spend', reply: { reply: '**MGSP** led.', agents: [{ name: 'sb_spend', status: 'done' }], report: { mode: 'brief', kpis: [{ label: 'Top school', value: 74602, unit: 'SGD' }], charts: [{ kind: 'bar', title: 'Spend by school', unit: 'SGD', series: [{ name: 'Spend', points: [['MGSP', 74602], ['RGPS', 26281]] }] }] }, steps: [{ agent: 'sb_spend', text: 'Ranked schools by spend.' }] } })`.
 
 ## 3 · Routing (`nginx.conf`)
 

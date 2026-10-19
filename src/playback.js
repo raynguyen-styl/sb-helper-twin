@@ -4,6 +4,8 @@
 // (tree-twin hard-coded 120 ms; here it's selectable). Renders a compact playbar into `bar` and
 // calls onFrame(index, frame) on every step.
 const SPEEDS = [['0.5×', 480], ['1×', 240], ['2×', 120], ['4×', 60]]; // ms per frame
+const PLAY = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5.5 11 6.5-11 6.5Z"/></svg>';
+const PAUSE = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5.5v13M15.5 5.5v13"/></svg>';
 
 export function createPlaybar(bar, { frames, onFrame, labelOf, startSpeedIdx = 1 }) {
   let series = frames || [];
@@ -11,11 +13,11 @@ export function createPlaybar(bar, { frames, onFrame, labelOf, startSpeedIdx = 1
   let speedMs = SPEEDS[startSpeedIdx][1];
 
   bar.innerHTML = `
-    <button class="pb-play" title="Play" style="cursor:pointer">▶</button>
+    <button type="button" class="pb-play" aria-label="Play">${PLAY}</button>
     <input class="pb-scrub" type="range" min="0" max="${Math.max(0, series.length - 1)}"
-           value="${Math.max(0, series.length - 1)}" style="flex:1" />
-    <span class="pb-date" style="min-width:118px;text-align:right;font-variant-numeric:tabular-nums"></span>
-    <select class="pb-speed" title="Speed">
+           value="${Math.max(0, series.length - 1)}" aria-label="Day" />
+    <span class="pb-date"></span>
+    <select class="sel pb-speed" aria-label="Speed">
       ${SPEEDS.map(([l], i) => `<option value="${i}"${i === startSpeedIdx ? ' selected' : ''}>${l}</option>`).join('')}
     </select>`;
 
@@ -30,11 +32,12 @@ export function createPlaybar(bar, { frames, onFrame, labelOf, startSpeedIdx = 1
     if (labelOf) dateEl.textContent = labelOf(f, i);
     onFrame(i, f);
   }
-  function stop() { if (timer) clearInterval(timer); timer = null; play.textContent = '▶'; play.title = 'Play'; }
+  function stop() { if (timer) clearInterval(timer); timer = null; play.innerHTML = PLAY; play.setAttribute('aria-label', 'Play'); }
   function start() {
     if (timer) return stop();
-    play.textContent = '⏸'; play.title = 'Pause';
+    play.innerHTML = PAUSE; play.setAttribute('aria-label', 'Pause');
     timer = setInterval(() => {
+      if (!bar.isConnected) return stop();              // the view was closed
       let v = Number(scrub.value) + 1;
       if (v > Number(scrub.max)) v = Number(scrub.min) || 0; // wrap
       scrub.value = String(v);

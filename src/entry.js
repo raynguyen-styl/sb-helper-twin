@@ -19,7 +19,7 @@ function showSignInFailed(err) {
     again.addEventListener('click', () => window.location.reload());
     box.append(title, msg, again);
     document.querySelector('.stage')?.replaceChildren(box);
-    document.querySelector('.nav-right')?.replaceChildren();
+    document.querySelectorAll('.top > :not(.brand), #rail, #tabbar').forEach((el) => el.remove());   // nothing to act on
 }
 
 initAuth().then(() => import('./main.js'), showSignInFailed);

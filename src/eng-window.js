@@ -1,25 +1,26 @@
-// Engineering — terminal (machine) fleet health. Filter by problem tag / network /
-// school; click a machine for the machine-vs-location diagnostic; tick machines → "Plan route" gives
-// service staff an ordered visit list. Month-aware (uses the selected month).
-// Verdicts were precomputed against school peers: bad unit + healthy peers = the
-// machine; bad unit + struggling peers = the site (location/network).
+// Terminals — the machine fleet's health (central-specs capability dashboard-views). Health cards (Healthy, Needs
+// attention, Machine fault, Site issue) filter the list; search, problem, network and sort narrow it; ticked
+// machines collect in a sticky bar whose "Plan route (n)" gives service staff an ordered visit list. A machine opens
+// its machine-vs-location diagnostic. Month-aware. Verdicts were precomputed against school peers: bad unit +
+// healthy peers = the machine; bad unit + struggling peers = the site (location/network).
 import { openWindow, closeView, info, esc } from './windowing.js';
 import { mk, opts, ax, bar, line, C } from './charts.js';
 import { vchip } from './stall-window.js';
 import { monthLabel } from './sbData.js';
 import { pinButton } from './compare.js';
+import { kpis, moreKpis, section, chart, tableCard, emptyNote, icon, fmt, pct, secs } from './ui.js';
 
-const fmt = (n) => Number(n).toLocaleString('en-SG');
 const mach = (t) => t.length > 12 ? '…' + t.slice(-12) : t;
 const dayLabels = (arr) => (arr || []).map((_, i) => i + 1);   // 1..N days, matches the month's data length
-const secs = (ms) => ms == null ? '–' : (ms / 1000).toFixed(1) + 's';
 // problem tags (bundles built before tags existed fall back to the verdict)
 const probs = (t) => t.problems || (t.verdict && t.verdict !== 'ok' ? [t.verdict] : []);
-const TAG = { machine: ['bad', 'MACHINE FAULT'], site: ['warn', 'SITE ISSUE'], check: ['other', 'NO PEERS'],
-    slow: ['warn', 'SLOW'], stopped: ['bad', 'STOPPED'], offline: ['other', 'OFFLINE'], retrieved: ['flag', 'RETRIEVED'] };
+const TAG = { machine: ['bad', 'Machine fault'], site: ['warn', 'Site issue'], check: ['other', 'No peers'],
+    slow: ['warn', 'Slow'], stopped: ['bad', 'Stopped'], offline: ['other', 'High offline'], retrieved: ['flag', 'Retrieved'] };
 const pchips = (t) => probs(t).length
-    ? probs(t).map((p) => `<span class="chip chip-${(TAG[p] || ['other'])[0]}">${(TAG[p] || [0, esc(p)])[1]}</span>`).join(' ')
+    ? probs(t).map((p) => `<span class="chip chip-${(TAG[p] || ['other'])[0]}">${TAG[p]?.[1] || esc(p)}</span>`).join(' ')
     : '<span class="chip chip-good">OK</span>';
+const PROBLEMS = [['bad', 'Needs attention'], ['machine', 'Machine fault'], ['site', 'Site issue'], ['slow', 'Slow'],
+    ['stopped', 'Stopped'], ['offline', 'High offline'], ['retrieved', 'Retrieved'], ['ok', 'Healthy'], ['all', 'All machines']];
 
 // Service routes start here (OneMap coords for postal 408705). Keep in sync with mcp-service SERVICE_START.
 const START = { name: 'STYL Service Center', address: '3015A Ubi Road 1, #06-02, Singapore 408705', lat: 1.328343, lng: 103.893102 };
@@ -46,63 +47,71 @@ function orderStops(start, stops) {
 
 export function openEng(DATA, preset = {}) {
     if (!DATA || !DATA.meta || !(DATA.terminals && DATA.terminals.length)) {
-        const b = openWindow({ id: 'eng', title: 'Terminal Health', sub: 'no data', chips: ['<span class="chip chip-flag">ENGINEERING</span>'] });
-        if (b) b.innerHTML = `<div class="cap">No terminal / transaction data loaded for this month yet.</div>`;
+        const b = openWindow({ id: 'eng', title: 'Terminal Health', chips: [] });
+        if (b) b.innerHTML = emptyNote('No terminal data loaded for this month yet.');
         return;
     }
-    const body = openWindow({ id: 'eng', title: 'Terminal Health', sub: `machine-vs-location diagnostics · ${monthLabel(DATA.meta.month)}`, chips: ['<span class="chip chip-flag">ENGINEERING</span>'], wide: true });
+    const body = openWindow({ id: 'eng', title: 'Terminal Health', chips: [], wide: true });
     if (!body) return;
 
     const T = DATA.terminals;
-    const nMach = T.filter((t) => t.verdict === 'machine').length;
-    const nSite = T.filter((t) => t.verdict === 'site').length;
-    const siteSchools = [...new Set(T.filter((t) => t.verdict === 'site').map((t) => t.school))];
-    let verdict = preset.verdict || 'bad', net = 'All', qtext = preset.school || '', sort = 'err_pct';
+    const count = (v) => T.filter((t) => v === 'bad' ? probs(t).length : v === 'ok' ? !probs(t).length : probs(t).includes(v)).length;
+    const siteSchools = new Set(T.filter((t) => probs(t).includes('site')).map((t) => t.school)).size;
+    let verdict = preset.verdict || 'bad', net = 'All', qtext = (preset.school || '').toLowerCase(), sort = 'err_pct';
     const picked = new Set();      // machines chosen for a service route
     let matching = [];
+    const CARDS = [
+        ['ok', 'Healthy', 'healthy', `of ${fmt(T.length)} machines`],
+        ['bad', 'Needs attention', 'attention', 'any problem tag'],
+        ['machine', 'Machine fault', 'fault', 'service the unit'],
+        ['site', 'Site issue', 'site', `${fmt(siteSchools)} school${siteSchools === 1 ? '' : 's'}`],
+    ];
 
     body.innerHTML = `
-      <div class="stats">
-        <div class="stat"><div class="v">${fmt(T.length)}</div><div class="l">machines</div></div>
-        <div class="stat"><div class="v" style="color:var(--bad)">${nMach}</div><div class="l">machine faults</div></div>
-        <div class="stat"><div class="v" style="color:var(--warn)">${nSite}</div><div class="l">site issues (${siteSchools.length} schools)</div></div>
-        <div class="stat"><div class="v">${fmt(T.filter((t) => t.verdict === 'ok').length)}</div><div class="l">healthy</div></div>
-      </div>
-      <div class="fbar"><span class="fl">Search</span>
-        <input id="en-q" class="finput" placeholder="school ID, machine number or stall…" value="${qtext}"></div>
-      <div class="fbar" id="en-verd"><span class="fl">Problem</span>
-        <button data-v="bad" class="on">Needs attention</button><button data-v="machine">Machine fault</button>
-        <button data-v="site">Site issue</button><button data-v="slow">Slow</button><button data-v="stopped">Stopped</button>
-        <button data-v="offline">High offline</button><button data-v="retrieved">Retrieved</button>
-        <button data-v="ok">Healthy</button><button data-v="all">All</button></div>
-      <div class="fbar" id="en-net"><span class="fl">Network</span>
-        <button data-v="All" class="on">All</button><button data-v="4G">4G</button>
-        <button data-v="WIFI">WiFi</button><button data-v="ETHERNET">Ethernet</button></div>
-      <div class="fbar"><span class="fl">Sort by</span>
-        <button data-s="err_pct" class="on">Error rate</button><button data-s="med_ms">Slowest</button>
-        <button data-s="n">Volume</button></div>
-      <div class="fbar"><span class="fl">Route</span>
-        <button id="en-all">Select all matching</button><button id="en-none">Clear</button>
-        <button id="en-route" class="on">Plan route (0)</button></div>
-      <div class="cap" id="en-count" style="margin:6px 0 4px"></div>
-      <div id="en-list"></div>`;
+      <div class="health" id="en-verd" role="group" aria-label="Filter by health">${CARDS.map(([v, l, ic, s]) => `
+        <button type="button" class="hc" data-v="${v}" aria-pressed="${v === verdict}">
+          <span class="l">${icon(ic)}${l}</span><span class="v">${fmt(count(v))}</span><span class="s">${s}</span></button>`).join('')}</div>
+      ${section({ title: 'Machines', id: 'machines',
+          take: `<span id="en-take"></span>`,
+          tip: 'Diagnosis compares each machine with the other machines at its school: machine fault = service the unit; site issue = the location (signal, network) is the problem. Tick machines to plan a service route.',
+          body: `<div class="fgrid">
+              <input id="en-q" class="finput" type="search" placeholder="School, machine number or stall…" aria-label="Search machines" value="${esc(qtext)}">
+              <select class="sel" id="en-prob" aria-label="Problem">${PROBLEMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
+              <select class="sel" id="en-net" aria-label="Network"><option value="All">All networks</option><option value="4G">4G</option><option value="WIFI">Wi-Fi</option><option value="ETHERNET">Ethernet</option></select>
+              <select class="sel" id="en-sort" aria-label="Sort by"><option value="err_pct">Error rate</option><option value="med_ms">Slowest</option><option value="n">Most taps</option></select>
+            </div>
+            <p class="count-line" id="en-count" role="status"></p>
+            <div id="en-list"></div>` })}
+      <div class="route-bar" id="en-routebar">
+        <span class="grow" id="en-picked">No machines ticked</span>
+        <button type="button" class="btn" id="en-all" title="Tick every machine that matches the filters">Tick all</button>
+        <button type="button" class="btn" id="en-none">Clear</button>
+        <button type="button" class="btn primary" id="en-route" disabled>${icon('route')}Plan route (0)</button>
+      </div>`;
 
+    const probSel = body.querySelector('#en-prob'), netSel = body.querySelector('#en-net'), sortSel = body.querySelector('#en-sort');
+    probSel.value = verdict;
+    const setVerdict = (v) => {
+        verdict = v; probSel.value = v;
+        body.querySelectorAll('#en-verd .hc').forEach((b) => b.setAttribute('aria-pressed', b.dataset.v === v));
+        paint();
+    };
+    body.querySelector('#en-verd').addEventListener('click', (e) => { const b = e.target.closest('.hc'); if (b) setVerdict(b.dataset.v); });
+    probSel.addEventListener('change', () => setVerdict(probSel.value));
+    netSel.addEventListener('change', () => { net = netSel.value; paint(); });
+    sortSel.addEventListener('change', () => { sort = sortSel.value; paint(); });
     body.querySelector('#en-q').addEventListener('input', (e) => { qtext = e.target.value.trim().toLowerCase(); paint(); });
-    body.querySelectorAll('#en-verd button').forEach((b) =>
-        b.addEventListener('click', () => { verdict = b.dataset.v; onPill(b); paint(); }));
-    body.querySelectorAll('#en-net button').forEach((b) =>
-        b.addEventListener('click', () => { net = b.dataset.v; onPill(b); paint(); }));
-    body.querySelectorAll('[data-s]').forEach((b) =>
-        b.addEventListener('click', () => { sort = b.dataset.s; onPill(b); paint(); }));
-    function onPill(b) { b.parentElement.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); }
-    const routeBtn = body.querySelector('#en-route');
-    const repick = () => { routeBtn.textContent = `Plan route (${picked.size})`; };
+    const routeBtn = body.querySelector('#en-route'), pickedEl = body.querySelector('#en-picked');
+    const repick = () => {
+        routeBtn.lastChild.textContent = `Plan route (${picked.size})`;
+        routeBtn.disabled = !picked.size;
+        pickedEl.textContent = picked.size ? `${picked.size} machine${picked.size > 1 ? 's' : ''} ticked` : 'No machines ticked';
+    };
     body.querySelector('#en-all').addEventListener('click', () => { matching.forEach((t) => picked.add(t.id)); repick(); paint(); });
     body.querySelector('#en-none').addEventListener('click', () => { picked.clear(); repick(); paint(); });
     routeBtn.addEventListener('click', () => { if (picked.size) openRoute(DATA, [...picked]); });
 
-    const list = body.querySelector('#en-list');
-    const count = body.querySelector('#en-count');
+    const list = body.querySelector('#en-list'), countEl = body.querySelector('#en-count'), take = body.querySelector('#en-take');
     function paint() {
         let rows = T;
         if (verdict === 'bad') rows = rows.filter((t) => probs(t).length);
@@ -110,23 +119,25 @@ export function openEng(DATA, preset = {}) {
         else if (verdict !== 'all') rows = rows.filter((t) => probs(t).includes(verdict));
         if (net !== 'All') rows = rows.filter((t) => t.net === net);
         if (qtext) rows = rows.filter((t) =>
-            t.school.toLowerCase().includes(qtext) || t.id.toLowerCase().includes(qtext) ||
-            (t.storeName || '').toLowerCase().includes(qtext));
+            t.school.toLowerCase().includes(qtext) || t.id.toLowerCase().includes(qtext) || (t.storeName || '').toLowerCase().includes(qtext));
         rows = [...rows].sort((a, b) => (b[sort] ?? -1) - (a[sort] ?? -1));
         matching = rows;
-        count.textContent = `${fmt(rows.length)} machines match — showing top ${Math.min(40, rows.length)} · tick machines to plan a route`;
-        list.innerHTML = `<table class="mini"><tr><th></th><th>Machine</th><th>School</th><th>Stall</th><th>Net</th>
-          <th style="text-align:right">Txns</th><th style="text-align:right">Err %</th>
-          <th style="text-align:right">Median</th><th>Problems</th></tr>
-          ${rows.slice(0, 40).map((t) => `<tr class="click" role="button" tabindex="0" data-tid="${t.id}" data-sid="${t.school}">
-            <td><input type="checkbox" data-pick="${t.id}" aria-label="Add ${t.id} to route" ${picked.has(t.id) ? 'checked' : ''}></td>
-            <td style="font-size:10.5px"><b>${mach(t.id)}</b></td><td title="${esc(t.school_name)}">${t.school}</td>
-            <td style="font-size:11px">${esc(t.storeName) || '–'}</td><td>${t.net || '–'}</td>
-            <td class="num">${fmt(t.n)}</td>
-            <td class="num" style="${t.err_pct >= 10 ? 'color:var(--bad);font-weight:600' : ''}">${t.err_pct}%</td>
-            <td class="num">${secs(t.med_ms)}</td><td>${pchips(t)}</td></tr>`).join('')}</table>`;
+        const label = PROBLEMS.find(([v]) => v === verdict)[1];
+        take.innerHTML = `<b>${fmt(count('bad'))}</b> of ${fmt(T.length)} machines need attention in ${monthLabel(DATA.meta.month)}. Tick machines to plan a visit.`;
+        countEl.textContent = `${fmt(rows.length)} machine${rows.length === 1 ? '' : 's'} · ${label}${rows.length > 40 ? ' — showing the first 40' : ''}`;
+        list.innerHTML = rows.length ? tableCard(`<tr><th>Machine</th><th>School</th><th>Stall</th><th>Net</th>
+              <th class="num">Taps</th><th class="num">Errors</th><th class="num">Median</th><th>Problems</th></tr>`,
+            rows.slice(0, 40).map((t) => `<tr class="click" role="button" tabindex="0" data-tid="${esc(t.id)}" data-sid="${esc(t.school)}">
+              <td><label class="pick" title="Add to the route"><input type="checkbox" class="cb" data-pick="${esc(t.id)}" aria-label="Add ${esc(t.id)} to the route" ${picked.has(t.id) ? 'checked' : ''}>
+                <b class="mono">${esc(mach(t.id))}</b></label></td>
+              <td title="${esc(t.school_name)}">${esc(t.school)}</td>
+              <td><span class="trunc">${esc(t.storeName) || '–'}</span></td><td>${esc(t.net) || '–'}</td>
+              <td class="num">${fmt(t.n)}</td>
+              <td class="num"><span class="${t.err_pct >= 10 ? 'pill-bad' : ''}">${pct(t.err_pct)}</span></td>
+              <td class="num">${secs(t.med_ms)}</td><td>${pchips(t)}</td></tr>`).join(''))
+            : emptyNote('No machine matches these filters.');
         list.querySelectorAll('tr[data-tid]').forEach((tr) =>
-            tr.addEventListener('click', (e) => { if (!e.target.closest('input')) openTerminal(DATA, tr.dataset.tid); }));
+            tr.addEventListener('click', (e) => { if (!e.target.closest('.pick')) openTerminal(DATA, tr.dataset.tid); }));
         list.querySelectorAll('input[data-pick]').forEach((cb) => cb.addEventListener('change', () => {
             if (cb.checked) picked.add(cb.dataset.pick); else picked.delete(cb.dataset.pick);
             repick();
@@ -147,54 +158,53 @@ export function openTerminal(DATA, tid) {
     pinButton(body, 'terminal', t);
 
     const diag = t.verdict === 'machine'
-        ? `<b>This unit is the problem.</b> It runs ${t.err_pct}% errors while the other machines at
-           ${esc(t.school)} average ${t.peer_err}% — the location is fine. Recommend servicing/replacing this reader.`
+        ? `<b>This unit is the problem.</b> It runs ${pct(t.err_pct)} errors while the other machines at
+           ${esc(t.school)} average ${pct(t.peer_err)} — the location is fine. Service or replace this reader.`
         : t.verdict === 'site'
-        ? `<b>The location is the problem.</b> This unit runs ${t.err_pct}% errors, but its school peers also
-           average ${t.peer_err}% — the whole site struggles (signal/network/environment), swapping the machine
-           won't fix it. Investigate ${esc(t.school)}'s connectivity.`
+        ? `<b>The location is the problem.</b> This unit runs ${pct(t.err_pct)} errors, but its school peers also
+           average ${pct(t.peer_err)} — the whole site struggles (signal, network, environment); swapping the machine
+           won't fix it. Check ${esc(t.school)}'s connectivity.`
         : t.verdict === 'check'
-        ? `Elevated readings, but there are too few peer machines at ${esc(t.school)} to separate machine from
+        ? `Elevated readings, but there are too few other machines at ${esc(t.school)} to separate machine from
            location. Needs a field check.`
-        : `Operating normally — ${t.err_pct}% errors vs ${t.peer_err ?? '–'}% school average, median ${secs(t.med_ms)}.`;
+        : `Operating normally — ${pct(t.err_pct)} errors against a school average of ${pct(t.peer_err)}, median ${secs(t.med_ms)}.`;
 
     body.innerHTML = `
       <div class="callout-${t.verdict === 'machine' ? 'bad' : t.verdict === 'site' ? 'warn' : 'ok'}">${diag}</div>
-      <div class="cap" style="margin:6px 0">${pchips(t)}${t.last_day ? ` &nbsp;Last transaction ${t.last_day}${t.silent ? ` (${t.silent} school day${t.silent > 1 ? 's' : ''} silent)` : ''}${t.sites > 1 ? ` · moved this month (${t.sites} sites; shown at the latest)` : ''}` : ''}${t.postal ? ` · ${esc(t.school_name)}, S${t.postal}` : ''}</div>
-      <div class="stats">
-        <div class="stat"><div class="v">${fmt(t.n)}</div><div class="l">txns</div></div>
-        <div class="stat"><div class="v" style="${t.err_pct >= 10 ? 'color:var(--bad)' : ''}">${t.err_pct}%</div><div class="l">errors (school ${t.peer_err ?? '–'}%)</div></div>
-        <div class="stat"><div class="v">${secs(t.med_ms)}</div><div class="l">median (school ${secs(t.peer_ms)})</div></div>
-        <div class="stat"><div class="v">${secs(t.p95_ms)}</div><div class="l">p95</div></div>
-        <div class="stat"><div class="v">${t.off_pct}%</div><div class="l">offline</div></div>
-        <div class="stat"><div class="v">${t.net || '–'}${t.sig != null ? ' · ' + t.sig : ''}${t.rssi != null ? ' · ' + t.rssi + 'dBm' : ''}</div><div class="l">network · signal</div></div>
-      </div>
-      <h5>Daily error rate vs school peers</h5>
-      <div class="cwrap"><canvas></canvas></div>
-      <h5>Daily median speed</h5>
-      <div class="cwrap"><canvas></canvas></div>
-      <h5>Where the time goes (median ms per phase)</h5>
-      <div class="cwrap" style="height:120px"><canvas></canvas></div>
-      <div class="cap" style="margin-top:8px">
-        ${st ? '<a href="#" data-stall>Open stall window →</a>' : ''}${homes.map((h, i) => `${st || i ? ' &nbsp;·&nbsp; ' : ''}<a href="#" data-school="${h}">Open ${h} →</a>`).join('')}</div>`;
+      <div class="fbar">${pchips(t)}<span class="count-line">${t.last_day ? `Last payment ${esc(t.last_day)}${t.silent ? ` (${t.silent} school day${t.silent > 1 ? 's' : ''} silent)` : ''}${t.sites > 1 ? ` · moved this month (${t.sites} sites; shown at the latest)` : ''}` : ''}${t.postal ? ` · ${esc(t.school_name)}, S${esc(t.postal)}` : ''}</span></div>
+      ${kpis([
+          { l: 'Taps', v: fmt(t.n) },
+          { l: 'Errors', v: pct(t.err_pct), s: `school ${pct(t.peer_err)}`, tone: t.err_pct >= 10 ? 'bad' : '' },
+          { l: 'Median', v: secs(t.med_ms), s: `school ${secs(t.peer_ms)}` },
+          { l: 'Offline', v: pct(t.off_pct) },
+      ])}
+      ${moreKpis([
+          { l: 'Slowest 5% (p95)', v: secs(t.p95_ms) },
+          { l: 'Network · signal', v: `${esc(t.net) || '–'}${t.sig != null ? ' · ' + t.sig : ''}${t.rssi != null ? ' · ' + t.rssi + ' dBm' : ''}` },
+      ])}
+      ${section({ title: 'Daily errors against the school', take: `The dashed line is the school's average (${pct(t.peer_err)}).`, body: chart() })}
+      ${section({ title: 'Daily median speed', take: `The dashed line is the school's median (${secs(t.peer_ms)}).`, body: chart() })}
+      ${section({ title: 'Where the time goes', take: 'Median milliseconds per phase of a payment.', body: chart({ h: 150 }) })}
+      <div class="fbar">${st ? '<button type="button" class="btn" data-stall>Open the stall</button>' : ''}${homes.map((h) => `<button type="button" class="btn" data-school="${esc(h)}">Open ${esc(h)}</button>`).join('')}</div>`;
 
     const [c1, c2, c3] = body.querySelectorAll('canvas');
-    const DL = dayLabels(t.daily_err.length ? t.daily_err : t.daily_ms);
-    mk(c1, { type: 'line', data: { labels: DL, datasets: [
-        { label: 'this machine', data: t.daily_err, ...line(C.red), spanGaps: true },
-        { label: `school avg (${t.peer_err ?? '–'}%)`, data: DL.map(() => t.peer_err), ...line(C.muted, { borderDash: [4, 4], borderWidth: 1.5 }) },
-    ] }, options: opts({ legend: true, indexMode: true, scales: { x: ax(), y: ax({ ticks: { callback: (v) => v + '%' } }) } }) });
-    mk(c2, { type: 'line', data: { labels: DL, datasets: [
-        { label: 'median ms', data: t.daily_ms, ...line(C.blue), spanGaps: true },
-        { label: `school (${secs(t.peer_ms)})`, data: DL.map(() => t.peer_ms), ...line(C.muted, { borderDash: [4, 4], borderWidth: 1.5 }) },
-    ] }, options: opts({ legend: true, indexMode: true, scales: { x: ax(), y: ax({ ticks: { callback: (v) => (v / 1000) + 's' } }) } }) });
+    const DL = dayLabels(t.daily_err?.length ? t.daily_err : t.daily_ms);
+    mk(c1, { type: 'line', numbers: { label: 'Day', fmt: (v) => pct(v) }, data: { labels: DL, datasets: [
+        { label: 'This machine', data: t.daily_err, ...line(C.red), spanGaps: true },
+        { label: 'School average', data: DL.map(() => t.peer_err), ...line(C.muted, { borderDash: [4, 4], borderWidth: 1.5 }), numbersHide: true },
+    ] }, options: opts({ legend: true, indexMode: true, scales: { x: ax(), y: ax({ beginAtZero: true, ticks: { callback: (v) => v + '%' } }) } }) });
+    mk(c2, { type: 'line', numbers: { label: 'Day', fmt: (v) => secs(v) }, data: { labels: DL, datasets: [
+        { label: 'This machine', data: t.daily_ms, ...line(C.blue), spanGaps: true },
+        { label: 'School median', data: DL.map(() => t.peer_ms), ...line(C.muted, { borderDash: [4, 4], borderWidth: 1.5 }), numbersHide: true },
+    ] }, options: opts({ legend: true, indexMode: true, scales: { x: ax(), y: ax({ ticks: { callback: (v) => (v / 1000) + ' s' } }) } }) });
     const comp = t.comp || {};
-    mk(c3, { type: 'bar', data: { labels: ['check signal', 'open socket', 'handshake', 'transfer', 'tap→finish'],
-        datasets: [{ label: 'ms', data: [comp.sigck, comp.sock, comp.hshake, comp.xfer, comp.tap], ...bar(C.violet) }] },
-        options: { ...opts({ scales: { x: ax(), y: ax({ ticks: { font: { size: 9 } } }) } }), indexAxis: 'y' } });
+    mk(c3, { type: 'bar', numbers: { label: 'Phase', fmt: (v) => (v == null ? '–' : `${fmt(v)} ms`) },
+        data: { labels: ['Check signal', 'Open socket', 'Handshake', 'Transfer', 'Tap to finish'],
+            datasets: [{ label: 'Median ms', data: [comp.sigck, comp.sock, comp.hshake, comp.xfer, comp.tap], ...bar(C.violet) }] },
+        options: opts({ indexAxis: 'y', scales: { x: ax({ beginAtZero: true }), y: ax({ grid: { display: false } }) } }) });
 
-    body.querySelector('[data-stall]')?.addEventListener('click', (e) => { e.preventDefault(); window.SB?.openStall(t.store); });
-    body.querySelectorAll('[data-school]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); window.SB?.openSchool(a.dataset.school); }));
+    body.querySelector('[data-stall]')?.addEventListener('click', () => window.SB?.openStall(t.store));
+    body.querySelectorAll('[data-school]').forEach((a) => a.addEventListener('click', () => window.SB?.focusSchool(a.dataset.school)));
 }
 
 // Ordered visit list for the machines a service staff member ticked: one stop per school, nearest-next
@@ -212,23 +222,22 @@ export function openRoute(DATA, ids) {
     const stops = orderStops(START, [...bySchool.values()]);
     const total = stops.length ? stops[stops.length - 1].cum_km : 0;
     closeView('route');      // re-plan replaces the old route
-    const body = openWindow({ id: 'route', title: 'Service route',
-        sub: `${stops.length} stops · ${sel.length} machines · ${monthLabel(DATA.meta.month)}`,
-        chips: ['<span class="chip chip-flag">ENGINEERING</span>'], wide: true });
+    const body = openWindow({ id: 'route', title: 'Service route', sub: `${stops.length} stops · ${sel.length} machines`, chips: [], wide: true });
     if (!body) return;
     body.innerHTML = `
-      <div class="cap" style="margin-bottom:6px">Start: <b>${START.name}</b>, ${START.address} → nearest next school each time.
-        <b>${total} km</b> straight-line ${info(`Distances are straight-line, not driving routes. Problems describe ${monthLabel(DATA.meta.month)}'s data, not today.`)}</div>
-      <table class="mini"><tr><th>#</th><th>School</th><th>Postal</th><th style="text-align:right">Leg</th><th>Machines to fix</th></tr>
-        ${stops.map((s, i) => `<tr><td class="num">${i + 1}</td>
-          <td><a href="#" data-school="${s.school}">${esc(s.name || s.school)}</a>
-            <div style="font-size:10.5px;color:var(--ink-muted-48)">${s.school}${s.zone ? ' · ' + esc(s.zone) : ''}</div></td>
-          <td>${s.postal ? 'S' + esc(s.postal) : '–'}</td><td class="num">${s.leg_km} km</td>
-          <td>${s.machines.map((m) => `<div style="font-size:11px;margin:2px 0"><a href="#" data-tid="${m.id}">${m.id}</a>
-            · ${esc(m.storeName || m.store)} ${pchips(m)}</div>`).join('')}</td></tr>`).join('')}
-      </table>
-      ${off.length ? `<div class="note-box" style="margin-top:8px"><b>Not routed (${off.length})</b> — no confirmed service
-        location yet (PBS bookshop / stamp machines): ${off.map((m) => `${m.id} (${esc(m.storeName || m.store)})`).join(', ')}</div>` : ''}`;
-    body.querySelectorAll('[data-school]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); window.SB?.openSchool(a.dataset.school); }));
-    body.querySelectorAll('[data-tid]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); openTerminal(DATA, a.dataset.tid); }));
+      ${kpis([{ l: 'Stops', v: fmt(stops.length) }, { l: 'Machines', v: fmt(sel.length) }, { l: 'Distance', v: `${total} km`, s: 'straight line' }])}
+      ${section({ title: 'Visit order',
+          take: `From <b>${START.name}</b>, ${START.address}, to the nearest next school each time.`,
+          tip: `Distances are straight-line, not driving routes. Problems describe ${monthLabel(DATA.meta.month)}'s data, not today.`,
+          body: stops.length ? tableCard(`<tr><th>Stop</th><th>Postal</th><th class="num">Leg</th><th>Machines to fix</th></tr>`,
+            stops.map((s, i) => `<tr data-sid="${esc(s.school)}"><td><b>${i + 1}.</b> <button type="button" class="linkish" data-school="${esc(s.school)}">${esc(s.name || s.school)}</button>
+                <div class="sub-id">${esc(s.school)}${s.zone ? ' · ' + esc(s.zone) : ''}</div></td>
+              <td>${s.postal ? 'S' + esc(s.postal) : '–'}</td><td class="num">${s.leg_km} km</td>
+              <td>${s.machines.map((m) => `<div class="route-m"><button type="button" class="linkish mono" data-tid="${esc(m.id)}">${esc(m.id)}</button>
+                · ${esc(m.storeName || m.store)} ${pchips(m)}</div>`).join('')}</td></tr>`).join(''))
+            : emptyNote('None of the ticked machines has a service location.') })}
+      ${off.length ? `<div class="note-box"><b>Not routed (${off.length})</b> — no confirmed service location yet (PBS bookshop and
+        stamp machines): ${off.map((m) => `${esc(m.id)} (${esc(m.storeName || m.store)})`).join(', ')}</div>` : ''}`;
+    body.querySelectorAll('[data-school]').forEach((a) => a.addEventListener('click', () => window.SB?.focusSchool(a.dataset.school)));
+    body.querySelectorAll('[data-tid]').forEach((a) => a.addEventListener('click', () => openTerminal(DATA, a.dataset.tid)));
 }
