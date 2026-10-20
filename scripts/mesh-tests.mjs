@@ -1,10 +1,14 @@
-// The five mesh tests (central-specs/docs/sb_helper_agent_mesh_setup.md §10.1): publishes each question on the
-// dashboard's chat topic, exactly as the dashboard does (src/sam/samClient.js: one JSON envelope, DIRECT, matched by
-// correlationId), waits for the orchestrator's reply and checks it against scripts/mesh-tests.json.
+// The eight mesh tests (central-specs/docs/sb_helper_agent_mesh_setup.md §10.1): one per specialist (1–5, each
+// reached alone through the entry point by the retry hint in the context) and three for the orchestrator (6–8: one,
+// two and three specialists). Publishes each question on the dashboard's chat topic, exactly as the dashboard does
+// (src/sam/samClient.js: one JSON envelope, DIRECT, matched by correlationId), waits for the orchestrator's reply and
+// checks it against scripts/mesh-tests.json.
 //
 //   node --env-file=.env scripts/mesh-tests.mjs                 the live entry point
 //   node --env-file=.env scripts/mesh-tests.mjs --test          the test entry point
 //   node --env-file=.env scripts/mesh-tests.mjs --only 1,3 --out replies.jsonl
+//   node scripts/mesh-tests.mjs --direct [--only 2]             print the message to paste when asking a
+//                                                               specialist directly in the mesh (no broker)
 //
 // The broker comes from the dashboard's own values (VITE_SOLACE_URL, _VPN, _USER, _PASSWORD; SOLACE_* also work)
 // and is never printed beyond its host. Exit code 0 when every test passes.
@@ -18,6 +22,15 @@ const cfg = JSON.parse(readFileSync(new URL('./mesh-tests.json', import.meta.url
 const env = (...names) => names.map((n) => process.env[n]).find((v) => v != null && v !== '') || '';
 const only = opt('--only') ? new Set(opt('--only').split(',').map(Number)) : null;
 const tests = cfg.tests.filter((t) => !only || only.has(t.id));
+
+if (flag('--direct')) {
+    // The specialist tests, as the orchestrator would send them: paste into the mesh (Agent Management → the
+    // specialist's row → Chat with Agent) and expect the specialist's own object {answer, source, report, steps}.
+    for (const t of tests.filter((x) => x.direct)) {
+        console.log(`Test ${t.id} · ask ${t.agent} directly · ${t.name}\n${'-'.repeat(72)}\n${t.direct}\n\nexpect: one raw JSON object {answer, source, report, steps}; source names the views; confirm: ${t.confirm}\n`);
+    }
+    process.exit(0);
+}
 
 const base = flag('--test') ? cfg.topics.test : cfg.topics.live;
 const TOPIC = flag('--test') || !env('VITE_SAM_TOPIC_REQUEST')
@@ -119,6 +132,10 @@ function check(t, reply, elapsed) {
         const extra = sp.filter((a) => a.status !== 'skipped' && !e.onlySpecialists.includes(a.name)).map((a) => a.name);
         ok(e.onlySpecialists.length ? `no specialist besides ${e.onlySpecialists.join(', ')}` : 'no specialist ran', !extra.length, extra.join(', '));
     }
+    for (const s of e.agentSource || []) {
+        const a = sp.find((x) => x.name === s.agent);
+        ok(`${s.agent} names its source /${s.matches}/`, new RegExp(s.matches, 'i').test(String(a?.source ?? '')), a ? `source ${a.source ?? 'missing'}` : 'not listed');
+    }
     const r = obj.report ?? null;
     if (e.report === null) ok('report is null (one figure, or none)', r === null, r ? `mode ${r.mode}` : '');
     else ok(`report.mode "${e.report}"`, r?.mode === e.report, r ? `mode ${r.mode}` : 'report null');
@@ -132,6 +149,10 @@ function check(t, reply, elapsed) {
         if (e.maxKpis != null) ok(`at most ${e.maxKpis} kpis`, k <= e.maxKpis, `${k}`);
         if (e.period) ok(`period ${e.period}`, r.period === e.period, `got ${r.period}`);
         if (e.visualsFrom) for (const a of e.visualsFrom) ok(`a chart or table from ${a}`, visuals(r).some((v) => v.agent === a));
+        if (e.figuresFrom) {
+            const owners = new Set([...(r.kpis || []), ...visuals(r)].map((v) => v?.agent));
+            for (const a of e.figuresFrom) ok(`a kpi, chart or table from ${a}`, owners.has(a), [...owners].join(', '));
+        }
         if (e.table) {
             const tbl = (r.tables || [])[0];
             ok(`a table with ${e.table.columns.join(', ')}`, tbl && e.table.columns.every((col, i) => String(tbl.columns?.[i] || '').toLowerCase() === col.toLowerCase()),
@@ -150,7 +171,7 @@ function check(t, reply, elapsed) {
             const [name, value] = rows[0] || [];
             ok(`${e.top.rows} rows from ${e.top.agent}`, rows.length === e.top.rows && v.agent === e.top.agent, `${rows.length} rows, agent ${v?.agent}`);
             ok(`first: ${e.top.name}`, String(name || '').trim().toLowerCase() === e.top.name.toLowerCase(), String(name));
-            ok(`its figure within ${e.top.tolerancePct}% of ${e.top.value}${e.top.from === 'extract' ? ' (extract)' : ''}`, typeof value === 'number' && near(value, e.top.value, e.top.tolerancePct), String(value));
+            ok(`its figure within ${e.top.tolerancePct}% of ${e.top.value}${e.top.from ? ` (${e.top.from})` : ''}`, typeof value === 'number' && near(value, e.top.value, e.top.tolerancePct), String(value));
             ok('largest first', rows.every((x, i) => i === 0 || !(typeof x[1] === 'number' && typeof rows[i - 1][1] === 'number') || x[1] <= rows[i - 1][1]));
         }
     }
@@ -159,7 +180,7 @@ function check(t, reply, elapsed) {
     for (const f of e.figures || []) {
         const nums = [...numbersIn(text), ...(r?.kpis || []).map((x) => x.value)];
         const hit = nums.find((v) => near(v, f.value, f.tolerancePct));
-        ok(`${f.label} within ${f.tolerancePct}% of ${f.value}${f.from === 'extract' ? ' (extract)' : ''}`, hit != null, hit != null ? String(hit) : `numbers seen: ${nums.slice(0, 6).join(', ')}`);
+        ok(`${f.label} within ${f.tolerancePct}% of ${f.value}${f.from ? ` (${f.from})` : ''}`, hit != null, hit != null ? String(hit) : `numbers seen: ${nums.slice(0, 6).join(', ')}`);
     }
     if (e.stepsFrom) for (const a of e.stepsFrom) ok(`steps from ${a}`, (obj.steps || []).some((s) => s && s.agent === a));
     if (e.minSuggestions) ok(`at least ${e.minSuggestions} suggestion(s)`, (obj.suggestions || []).length >= e.minSuggestions, `${(obj.suggestions || []).length}`);
@@ -175,7 +196,7 @@ for (const t of tests) {
     const start = Date.now();
     inbox.length = 0;
     publish(JSON.stringify({ correlationId: id, text: t.text, context: t.context || '', ts: start }));
-    process.stdout.write(`Test ${t.id} · ${t.name}\n  asks: "${t.text}"\n  waiting… `);
+    process.stdout.write(`Test ${t.id} · ${t.agent}${t.involves ? ` with ${t.involves} specialist${t.involves > 1 ? 's' : ''}` : ' alone'} · ${t.name}\n  asks: "${t.text}"${t.context ? `  ${t.context}` : ''}\n  waiting… `);
     let reply = null, receipts = 0, progress = 0;
     while (!reply && Date.now() - start < wait) {
         for (const m of inbox.splice(0)) {

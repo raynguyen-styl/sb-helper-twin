@@ -59,7 +59,7 @@ stack, seeding and the one-time VM cutover: **`backend/DEPLOY.md`**.
 |---|---|
 | `src/`, `index.html`, `public/` | the app: `main.js` (the frame, the map, search, deep links), `windowing.js` (the drawer and the phone sheet), `ui.js` (the views' shared pieces), one module per view (`overview-`, `schools-`, `eng-`, `school-`, `stall-`, `subsidy-`, `items-`, `savings-`, `feb-`, `playback-window.js`), `compare.js`, `tour.js`, `shortcuts.js`, `roles.js`, `sam/` (the chat: client, panel, Markdown) and `solace/` (the broker session) |
 | `src/styles/` | `tokens.css` (every colour, size and radius — the one place they are defined), `base.css`, `shell.css` (the frame), `views.css` (the views), `chat.css` |
-| `scripts/` | `mesh-tests.mjs` + `mesh-tests.json`: the five tests that check the agent mesh answers the chat by its contract (`DEPLOY.md` "The chat"); not part of the build |
+| `scripts/` | `mesh-tests.mjs` + `mesh-tests.json`: the eight tests that check the agent mesh answers the chat by its contract, one per specialist and three for the orchestrator (`DEPLOY.md` "The chat"); not part of the build |
 | `nginx.conf` | same-origin routing to the read API (`/smartbuddy-api/`, not token-checked: decision 0003), the login's token proxy (`/auth/token`) and the SPA |
 | `docker/40-keycloak-token-proxy.sh` | writes the `/auth/token` include from the container's runtime environment (the client secret) |
 | `Dockerfile`, `.dockerignore` | Vite build → nginx; the `VITE_*` build args. The build context is this root, so `.dockerignore` keeps every `.env*` out |

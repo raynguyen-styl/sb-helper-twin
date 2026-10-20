@@ -98,12 +98,14 @@ specialist marked `failed` or `timeout` gets a Retry chip that re-sends the ques
 `retry: ask only <agent_name>` in the context hint. Registering the agents:
 `central-specs/docs/sb_helper_agent_mesh_setup.md`.
 
-**Is the mesh working?** Five tests publish on the chat's topics exactly as the dashboard does and
-check each reply against the contract (the runbook's §10.1): from this root,
-`node --env-file=.env scripts/mesh-tests.mjs` (the live entry point), `--test` for the test entry
-point, `--only 1,3` for some, `--out replies.jsonl` to keep the raw replies. It uses the dashboard's
-own `VITE_SOLACE_*` values and prints only the broker's host; exit code 0 when all five pass.
-The tests and their expected figures are in `scripts/mesh-tests.json`.
+**Is the mesh working?** Eight tests publish on the chat's topics exactly as the dashboard does and
+check each reply against the contract (the runbook's §10.1): one per specialist, each reached alone
+through the retry hint in the context, and three for the orchestrator (one, two and three
+specialists). From this root, `node --env-file=.env scripts/mesh-tests.mjs` (the live entry point),
+`--test` for the test entry point, `--only 1,3` for some, `--out replies.jsonl` to keep the raw
+replies, `--direct` to print the messages for asking a specialist directly in the mesh. It uses the
+dashboard's own `VITE_SOLACE_*` values and prints only the broker's host; exit code 0 when all eight
+pass. The tests and their expected figures are in `scripts/mesh-tests.json`.
 
 To render a captured exchange without the broker (debugging), in the browser console:
 `SB.chatReplay({ question, progress: [...], reply })` — `progress` holds working messages or the
