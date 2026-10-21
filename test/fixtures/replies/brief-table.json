@@ -1,0 +1,102 @@
+{
+  "question": "list 10 most recent transactions",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "answer",
+    "report": {
+      "mode": "brief",
+      "title": "Latest activity · 30 Jan 2099",
+      "period": "2099-01",
+      "source": "iSchool · ischool.transaction",
+      "kpis": [
+        {
+          "label": "Taps",
+          "value": 1240,
+          "unit": "count",
+          "agent": "sb_spend"
+        },
+        {
+          "label": "Spend",
+          "value": 3410,
+          "unit": "SGD",
+          "agent": "sb_spend"
+        },
+        {
+          "label": "Schools",
+          "value": 3,
+          "unit": "count",
+          "agent": "sb_spend"
+        }
+      ],
+      "tables": [
+        {
+          "title": "Most recently active stalls",
+          "columns": [
+            "Stall",
+            "School",
+            "Last tap",
+            "Taps",
+            "Spend"
+          ],
+          "units": [
+            null,
+            null,
+            null,
+            "count",
+            "SGD"
+          ],
+          "agent": "sb_spend",
+          "rows": [
+            [
+              "Fixture Drinks Stall",
+              "Fixture Primary School",
+              "17:42",
+              64,
+              112.5
+            ],
+            [
+              "Fixture Noodle House",
+              "Fixture Secondary School",
+              "17:31",
+              88,
+              301.2
+            ],
+            [
+              "Fixture Bookshop & Supplies",
+              "Fixture Junior College",
+              "16:05",
+              12,
+              48
+            ]
+          ]
+        }
+      ]
+    },
+    "steps": [
+      {
+        "agent": "sb_spend",
+        "text": "Took the newest day with taps in 2099-01 and grouped it by stall: 3 stalls with 10 taps or more."
+      }
+    ],
+    "suggestions": [
+      "Spend by hour on 30 January 2099"
+    ],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      },
+      {
+        "name": "sb_spend",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction, ischool.store, ischool.school",
+        "ms": 2100
+      }
+    ],
+    "reply": "Single transactions are not shown: the data is anonymised and answered in groups. The newest day with taps in January 2099 is **30 January**: **1,240 taps**, **S$3,410** across **3 schools**. (source: iSchool, live tables)"
+  }
+}

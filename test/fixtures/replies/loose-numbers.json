@@ -1,0 +1,43 @@
+{
+  "question": "loose-numbers",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "answer",
+    "report": {
+      "mode": "brief",
+      "title": "Formatted numbers",
+      "period": "2099-01",
+      "kpis": [
+        {
+          "label": "Spend",
+          "value": "S$7,571,234.50",
+          "agent": "sb_spend"
+        },
+        {
+          "label": "SSS share",
+          "value": "33.4%",
+          "agent": "sb_spend"
+        }
+      ]
+    },
+    "steps": [],
+    "suggestions": [],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      },
+      {
+        "name": "sb_spend",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction, ischool.store, ischool.school",
+        "ms": 2100
+      }
+    ],
+    "reply": "Two formatted figures."
+  }
+}

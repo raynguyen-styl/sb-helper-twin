@@ -1,0 +1,62 @@
+{
+  "question": "pie",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "answer",
+    "report": {
+      "mode": "brief",
+      "title": "Payment types",
+      "period": "2099-01",
+      "charts": [
+        {
+          "kind": "pie",
+          "title": "Payment types",
+          "unit": "%",
+          "agent": "sb_spend",
+          "series": [
+            {
+              "name": "Share",
+              "points": [
+                [
+                  "SSS",
+                  33.4
+                ],
+                [
+                  "EZ-Link",
+                  41.2
+                ],
+                [
+                  "Wallet",
+                  20.1
+                ],
+                [
+                  "Other",
+                  5.3
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "steps": [],
+    "suggestions": [],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      },
+      {
+        "name": "sb_spend",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction, ischool.store, ischool.school",
+        "ms": 2100
+      }
+    ],
+    "reply": "A pie chart of payment types."
+  }
+}

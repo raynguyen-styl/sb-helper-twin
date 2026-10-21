@@ -1,0 +1,35 @@
+{
+  "question": "How did January 2099 go?",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "answer",
+    "report": null,
+    "steps": [
+      {
+        "agent": "sb_spend",
+        "text": "Read ischool.transaction for 2099-01 (student traffic), grouped by school: 3 rows."
+      }
+    ],
+    "suggestions": [
+      "Spend by school level in January 2099",
+      "The busiest hour of the day"
+    ],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      },
+      {
+        "name": "sb_spend",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction, ischool.store, ischool.school",
+        "ms": 2100
+      }
+    ],
+    "reply": "## Spend in January 2099\n**Fixture Primary School** led with **S$12,400**, ahead of *Fixture Secondary School*.\n\n- Taps: **3,100**\n- Schools: **3**\n\n1. Fixture Primary School\n2. Fixture Secondary School\n\n| School | Spend |\n|---|---:|\n| Fixture Primary School | S$12,400 |\n| FXSS | S$8,100 |\n\nFiltered with `month = 2099-01`. (source: iSchool, live tables)"
+  }
+}

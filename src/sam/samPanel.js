@@ -22,6 +22,7 @@
 
 import { chat, normalizeReply, normalizeAgents, isReceipt, FAILURES } from "./samClient.js";
 import { renderAnswer } from "./markdown.js";
+import { fmtInt, compact, fmtValue, tickFmt, nice, numericColumns } from "./format.js";
 
 const AVATAR = "/icon.png";                 // branded avatar (public/icon.png) — header and empty state
 const PHONE = matchMedia("(max-width: 719px)");
@@ -66,31 +67,6 @@ const ICON = {
   send: "M12 19V5.5M6.5 11 12 5.5l5.5 5.5",
 };
 const icon = (name) => { const s = svgEl("svg", { class: "ic", viewBox: "0 0 24 24", "aria-hidden": "true" }); s.append(svgEl("path", { d: ICON[name] })); return s; };
-const fmtInt = (v) => Math.round(v).toLocaleString("en-SG");
-const compact = (v) => { const a = Math.abs(v); return a >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : a >= 1e4 ? `${(v / 1e3).toFixed(1)}k` : fmtInt(v); };
-// Numbers come as numbers (SGD in dollars, percentages 0–100); the unit decides how they read.
-function fmtValue(v, unit) {
-  if (v == null || !Number.isFinite(v)) return "–";
-  const u = (unit || "").toUpperCase();
-  const a = Math.abs(v);
-  if (u === "SGD" || u === "S$" || u === "$") return `S$${a >= 1e4 ? compact(v) : v.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  if (u === "%" || u === "PCT" || u === "PERCENT") return `${v.toFixed(1)}%`;
-  if (u === "PT") return `${v.toFixed(1)} pt`;
-  if (u === "MS") return a >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${Math.round(v)} ms`;
-  if (u === "S") return `${v.toFixed(1)} s`;
-  if (u === "KM") return `${v.toFixed(1)} km`;
-  if (u === "BPM") return `${Math.round(v)} bpm`;
-  if (!u || u === "COUNT" || u === "N") return Number.isInteger(v) || a >= 100 ? compact(v) : v.toFixed(2);
-  return `${a >= 1e4 || Number.isInteger(v) ? compact(v) : v.toFixed(1)} ${unit}`;
-}
-const r1 = (x) => Math.round(x * 10) / 10;
-function tickFmt(v, unit) {
-  const u = (unit || "").toUpperCase();
-  if (u === "SGD" || u === "S$" || u === "$") return v >= 1e6 ? `${r1(v / 1e6)}M` : v >= 1e3 ? `${r1(v / 1e3)}K` : `${Math.round(v)}`;
-  if (u === "%" || u === "PCT" || u === "PERCENT") return `${r1(v)}%`;
-  return v >= 1e6 ? `${r1(v / 1e6)}M` : v >= 1e3 ? `${r1(v / 1e3)}K` : `${r1(v)}`;
-}
-const nice = (max) => { if (!(max > 0)) return 1; const p = Math.pow(10, Math.floor(Math.log10(max))); const m = max / p; const step = m <= 2 ? 0.5 : m <= 5 ? 1 : 2; return Math.ceil(m / step) * step * p; };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function xLabel(x, max = 16) {
   const s = String(x);
@@ -205,10 +181,11 @@ function lineChart(ch, colour) {
 function numbersTable(columns, rows, units = []) {
   const wrap = el("div", "sam-table");
   const t = el("table", "sam-mini"); const tr = el("tr");
-  columns.forEach((c, i) => tr.append(el("th", i ? "num" : "", c))); t.append(tr);
+  const num = numericColumns(rows, columns.length);
+  columns.forEach((c, i) => tr.append(el("th", num[i] ? "num" : "", c))); t.append(tr);
   for (const r of rows) {
     const tr2 = el("tr");
-    r.forEach((v, i) => tr2.append(el("td", typeof v === "number" || i ? "num" : "", typeof v === "number" ? fmtValue(v, units[i]) : String(v ?? ""))));
+    r.forEach((v, i) => tr2.append(el("td", num[i] ? "num" : "", typeof v === "number" ? fmtValue(v, units[i]) : String(v ?? ""))));
     t.append(tr2);
   }
   wrap.append(t);
@@ -257,7 +234,7 @@ function briefVisual(rp) {
   if (rp.kpis.length) box.append(kpiTiles(rp.kpis));
   for (const ch of rp.charts) box.append(chartSection(ch, false));
   for (const tb of rp.tables) box.append(tableSection(tb, false));
-  if (rp.dropped.length) box.append(el("div", "sam-foot", `Not shown (beyond the chat's limits): ${rp.dropped.join(", ")}.`));
+  if (rp.dropped.length) box.append(el("div", "sam-foot", `Not shown: ${rp.dropped.join(", ")}.`));
   return box;
 }
 
@@ -306,7 +283,7 @@ function reportCard(rp, reply) {
   for (const ch of rp.charts) body.append(chartSection(ch));
   for (const tb of rp.tables) body.append(tableSection(tb));
   const notes = [...rp.notes];
-  if (rp.dropped.length) notes.push(`Not shown (beyond the chat's limits): ${rp.dropped.join(", ")}.`);
+  if (rp.dropped.length) notes.push(`Not shown: ${rp.dropped.join(", ")}.`);
   if (notes.length) { const ul = el("ul", "sam-notes"); for (const n of notes) ul.append(el("li", null, n)); body.append(ul); }
   card.append(body);
   const foot = el("div", "sam-rp-foot"); foot.append(el("span", "src", "Figures from the agents named above · aggregates only"));

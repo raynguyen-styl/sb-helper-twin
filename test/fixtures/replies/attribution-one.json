@@ -1,0 +1,32 @@
+{
+  "question": "What was the error rate at Fixture Primary School in January 2099?",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "answer",
+    "report": null,
+    "steps": [
+      {
+        "agent": "sb_terminals",
+        "text": "Error share of ischool.transaction at FXPS for 2099-01."
+      }
+    ],
+    "suggestions": [],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      },
+      {
+        "name": "sb_terminals",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction",
+        "ms": 2100
+      }
+    ],
+    "reply": "**Fixture Primary School**'s terminals failed **1.2%** of taps in January 2099. (source: iSchool, live tables)"
+  }
+}

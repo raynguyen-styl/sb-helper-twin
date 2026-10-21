@@ -1,0 +1,22 @@
+{
+  "question": "How many wearable users were active in January 2099?",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "scope",
+    "report": null,
+    "steps": [],
+    "suggestions": [
+      "Which five schools spent the most in September 2026?"
+    ],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      }
+    ],
+    "reply": "Wearable activity is **not loaded yet**. Canteen spend, terminals and purchases are covered for **August and September 2026**."
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "question": "loose-points",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "answer",
+    "report": {
+      "mode": "brief",
+      "title": "Points as objects",
+      "period": "2099-01",
+      "charts": [
+        {
+          "kind": "bar",
+          "title": "Spend by school",
+          "unit": "SGD",
+          "agent": "sb_spend",
+          "series": [
+            {
+              "name": "Spend",
+              "points": [
+                {
+                  "label": "Fixture Primary School",
+                  "value": 12400
+                },
+                {
+                  "label": "Fixture Secondary School",
+                  "value": 8100
+                },
+                {
+                  "label": "Fixture Junior College",
+                  "value": 3900
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "steps": [],
+    "suggestions": [],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      },
+      {
+        "name": "sb_spend",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction, ischool.store, ischool.school",
+        "ms": 2100
+      }
+    ],
+    "reply": "A chart with object points."
+  }
+}

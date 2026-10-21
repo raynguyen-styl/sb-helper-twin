@@ -1,0 +1,81 @@
+{
+  "question": "Which schools spent the most in January 2099?",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "answer",
+    "report": {
+      "mode": "brief",
+      "title": "Top schools by spend · January 2099",
+      "period": "2099-01",
+      "source": "iSchool · ischool.transaction",
+      "kpis": [
+        {
+          "label": "Top school spend",
+          "value": 12400,
+          "unit": "SGD",
+          "agent": "sb_spend"
+        },
+        {
+          "label": "Schools",
+          "value": 3,
+          "unit": "count",
+          "agent": "sb_spend"
+        }
+      ],
+      "charts": [
+        {
+          "kind": "bar",
+          "title": "Spend by school",
+          "unit": "SGD",
+          "x": "school",
+          "agent": "sb_spend",
+          "series": [
+            {
+              "name": "Spend",
+              "points": [
+                [
+                  "Fixture Primary School",
+                  12400
+                ],
+                [
+                  "Fixture Secondary School",
+                  8100
+                ],
+                [
+                  "Fixture Junior College",
+                  3900
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "steps": [
+      {
+        "agent": "sb_spend",
+        "text": "Ranked schools by spend in ischool.transaction for 2099-01: 3 rows."
+      }
+    ],
+    "suggestions": [
+      "Spend by school level in January 2099"
+    ],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      },
+      {
+        "name": "sb_spend",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction, ischool.store, ischool.school",
+        "ms": 2100
+      }
+    ],
+    "reply": "**Fixture Primary School** spent the most in January 2099, at **S$12,400**. (source: iSchool, live tables)"
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "question": "loose-rows",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "answer",
+    "report": {
+      "mode": "brief",
+      "title": "Rows as objects",
+      "period": "2099-01",
+      "tables": [
+        {
+          "title": "Stalls",
+          "columns": [
+            "Stall",
+            "School",
+            "Taps"
+          ],
+          "agent": "sb_spend",
+          "rows": [
+            {
+              "Stall": "Fixture Drinks Stall",
+              "School": "Fixture Primary School",
+              "Taps": 42
+            },
+            {
+              "Stall": "Fixture Noodle House",
+              "School": "Fixture Secondary School",
+              "Taps": 17
+            }
+          ]
+        }
+      ]
+    },
+    "steps": [],
+    "suggestions": [],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      },
+      {
+        "name": "sb_spend",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction, ischool.store, ischool.school",
+        "ms": 2100
+      }
+    ],
+    "reply": "Two stalls, rows as objects."
+  }
+}

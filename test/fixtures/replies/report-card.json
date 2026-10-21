@@ -1,0 +1,250 @@
+{
+  "question": "Spend and error rate by school level for January 2099, as a report",
+  "progress": [
+    {
+      "correlationId": "fixture",
+      "status": "working",
+      "agents": [
+        {
+          "name": "sb_spend",
+          "status": "querying"
+        },
+        {
+          "name": "sb_terminals",
+          "status": "routing"
+        }
+      ]
+    }
+  ],
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "answer",
+    "report": {
+      "mode": "report",
+      "title": "Spend and errors by level · January 2099",
+      "period": "2099-01",
+      "source": "iSchool · ischool.transaction, ischool.terminal",
+      "kpis": [
+        {
+          "label": "Spend",
+          "value": 24400,
+          "unit": "SGD",
+          "delta": {
+            "pct": 4.2,
+            "vs": "December"
+          },
+          "agent": "sb_spend"
+        },
+        {
+          "label": "Taps",
+          "value": 6100,
+          "unit": "count",
+          "agent": "sb_spend"
+        },
+        {
+          "label": "Error rate",
+          "value": 1.8,
+          "unit": "%",
+          "delta": {
+            "pct": -0.3,
+            "vs": "December"
+          },
+          "agent": "sb_terminals"
+        },
+        {
+          "label": "Median payment",
+          "value": 1240,
+          "unit": "ms",
+          "agent": "sb_terminals"
+        }
+      ],
+      "charts": [
+        {
+          "kind": "bar",
+          "title": "Spend by level",
+          "unit": "SGD",
+          "x": "level",
+          "agent": "sb_spend",
+          "series": [
+            {
+              "name": "Spend",
+              "points": [
+                [
+                  "Primary",
+                  12400
+                ],
+                [
+                  "Secondary",
+                  8100
+                ],
+                [
+                  "Junior College",
+                  3900
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "title": "Taps per day",
+          "unit": "count",
+          "x": "day",
+          "agent": "sb_spend",
+          "series": [
+            {
+              "name": "Taps",
+              "points": [
+                [
+                  "2099-01-05",
+                  300
+                ],
+                [
+                  "2099-01-06",
+                  320
+                ],
+                [
+                  "2099-01-07",
+                  280
+                ],
+                [
+                  "2099-01-08",
+                  310
+                ]
+              ]
+            }
+          ],
+          "marks": [
+            {
+              "from": "2099-01-06",
+              "to": "2099-01-07",
+              "label": "Holiday"
+            }
+          ]
+        },
+        {
+          "kind": "stacked",
+          "title": "Error rate by level and stack",
+          "unit": "%",
+          "x": "level",
+          "agent": "sb_terminals",
+          "series": [
+            {
+              "name": "2.0 stack",
+              "points": [
+                [
+                  "Primary",
+                  1.1
+                ],
+                [
+                  "Secondary",
+                  1.4
+                ],
+                [
+                  "Junior College",
+                  1.9
+                ]
+              ]
+            },
+            {
+              "name": "3.0 stack",
+              "points": [
+                [
+                  "Primary",
+                  0.5
+                ],
+                [
+                  "Secondary",
+                  0.6
+                ],
+                [
+                  "Junior College",
+                  0.9
+                ]
+              ]
+            }
+          ]
+        }
+      ],
+      "tables": [
+        {
+          "title": "Levels",
+          "columns": [
+            "Level",
+            "Schools",
+            "Spend",
+            "Error %"
+          ],
+          "units": [
+            null,
+            "count",
+            "SGD",
+            "%"
+          ],
+          "agent": "sb_spend",
+          "rows": [
+            [
+              "Primary",
+              1,
+              12400,
+              1.6
+            ],
+            [
+              "Secondary",
+              1,
+              8100,
+              2
+            ],
+            [
+              "Junior College",
+              1,
+              3900,
+              2.8
+            ]
+          ]
+        }
+      ],
+      "notes": [
+        "Student traffic only: STYL test terminals, PBS, SSSTM, \"Retrieve…\" stalls and amounts over S$200 excluded.",
+        "Invented figures (fixture)."
+      ]
+    },
+    "steps": [
+      {
+        "agent": "sb_spend",
+        "text": "Grouped ischool.transaction for 2099-01 by school level."
+      },
+      {
+        "agent": "sb_terminals",
+        "text": "Error and offline rates by level from ischool.transaction."
+      }
+    ],
+    "suggestions": [
+      "Which terminals had the highest error rate?"
+    ],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      },
+      {
+        "name": "sb_spend",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction, ischool.store, ischool.school",
+        "ms": 4200
+      },
+      {
+        "name": "sb_terminals",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction, ischool.terminal",
+        "ms": 3900
+      }
+    ],
+    "reply": "Primary schools carried most of January 2099's spend; error rates were highest at junior colleges. (source: iSchool, live tables)"
+  }
+}

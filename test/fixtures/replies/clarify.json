@@ -1,0 +1,20 @@
+{
+  "question": "and that one?",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "clarify",
+    "report": null,
+    "steps": [],
+    "suggestions": [],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      }
+    ],
+    "reply": "Which school or month do you mean?"
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "question": "Spend and errors at Fixture Primary School in January 2099",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "answer",
+    "report": {
+      "mode": "brief",
+      "title": "Fixture Primary School · January 2099",
+      "period": "2099-01",
+      "charts": [
+        {
+          "kind": "line",
+          "title": "Spend per week",
+          "unit": "SGD",
+          "agent": "sb_spend",
+          "series": [
+            {
+              "name": "Spend",
+              "points": [
+                [
+                  "W1",
+                  2900
+                ],
+                [
+                  "W2",
+                  3100
+                ],
+                [
+                  "W3",
+                  3300
+                ],
+                [
+                  "W4",
+                  3100
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "steps": [
+      {
+        "agent": "sb_spend",
+        "text": "Weekly spend at FXPS from ischool.transaction."
+      }
+    ],
+    "suggestions": [],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      },
+      {
+        "name": "sb_spend",
+        "role": "specialist",
+        "status": "done",
+        "source": "ischool.transaction, ischool.store, ischool.school",
+        "ms": 2100
+      },
+      {
+        "name": "sb_terminals",
+        "role": "specialist",
+        "status": "failed",
+        "source": "ischool.transaction",
+        "ms": 30000
+      }
+    ],
+    "reply": "**Fixture Primary School** spent **S$12,400** in January 2099. Terminals & Network did not answer. (source: iSchool, live tables)"
+  }
+}

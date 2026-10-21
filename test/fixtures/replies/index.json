@@ -1,0 +1,144 @@
+[
+  {
+    "name": "answer-markdown",
+    "about": "The answer text in every Markdown form the chat renders, with school names that link to the map; one specialist, so the bubble is Spend & Schools'",
+    "expect": {
+      "kind": "answer",
+      "report": null,
+      "bubble": "Spend & Schools",
+      "links": [
+        "Fixture Primary School",
+        "FXSS"
+      ]
+    }
+  },
+  {
+    "name": "brief-chart",
+    "about": "A brief visual inside the bubble: two tiles and one bar chart, with Numbers on demand and the steps fold",
+    "expect": {
+      "kind": "answer",
+      "report": "brief",
+      "kpis": 2,
+      "charts": 1,
+      "tables": 0,
+      "bubble": "Spend & Schools"
+    }
+  },
+  {
+    "name": "brief-table",
+    "about": "The latest-activity answer: three tiles and the most recently active stalls table inside the bubble (scrolls sideways on a phone)",
+    "expect": {
+      "kind": "answer",
+      "report": "brief",
+      "kpis": 3,
+      "charts": 0,
+      "tables": 1,
+      "bubble": "Spend & Schools"
+    }
+  },
+  {
+    "name": "report-card",
+    "about": "A full report card from two specialists: tiles with deltas, a bar, a line and a stacked chart each with Numbers, a table, notes, Copy and CSV; progress first shows the routing card",
+    "expect": {
+      "kind": "answer",
+      "report": "report",
+      "kpis": 4,
+      "charts": 3,
+      "tables": 1,
+      "bubble": "SMART Buddy"
+    }
+  },
+  {
+    "name": "partial-retry",
+    "about": "A partial answer: one specialist failed; the routing card marks it, a line names it with a Retry chip, the other's brief chart still shows",
+    "expect": {
+      "kind": "answer",
+      "report": "brief",
+      "charts": 1,
+      "retry": "Terminals & Network"
+    }
+  },
+  {
+    "name": "attribution-one",
+    "about": "One figure from one specialist: no visual, the bubble is that specialist's with its source in the footer",
+    "expect": {
+      "kind": "answer",
+      "report": null,
+      "bubble": "Terminals & Network"
+    }
+  },
+  {
+    "name": "refusal",
+    "about": "A refusal: the refusal style, no routing card, two suggestion chips",
+    "expect": {
+      "kind": "refusal",
+      "report": null,
+      "suggestions": 2
+    }
+  },
+  {
+    "name": "scope",
+    "about": "A scope answer: a source not loaded yet, with a suggestion chip",
+    "expect": {
+      "kind": "scope",
+      "report": null,
+      "suggestions": 1
+    }
+  },
+  {
+    "name": "clarify",
+    "about": "A clarifying question back to the viewer",
+    "expect": {
+      "kind": "clarify",
+      "report": null
+    }
+  },
+  {
+    "name": "loose-rows",
+    "about": "A table whose rows are objects keyed by the column names",
+    "expect": {
+      "report": "brief",
+      "tables": 1,
+      "rows": 2
+    }
+  },
+  {
+    "name": "loose-points",
+    "about": "A bar chart whose points are {label, value} objects",
+    "expect": {
+      "report": "brief",
+      "charts": 1,
+      "points": 3
+    }
+  },
+  {
+    "name": "loose-numbers",
+    "about": "Tiles whose values are formatted strings with no unit: they read S$7.57M and 33.4%",
+    "expect": {
+      "report": "brief",
+      "kpis": 2
+    }
+  },
+  {
+    "name": "pie",
+    "about": "A pie chart, drawn as a bar chart of the same values",
+    "expect": {
+      "report": "brief",
+      "charts": 1
+    }
+  },
+  {
+    "name": "md-table",
+    "about": "A Markdown table without outer pipes in the reply text",
+    "expect": {
+      "report": null
+    }
+  },
+  {
+    "name": "escaped-newlines",
+    "about": "A reply whose line breaks arrive as the two characters \\n: a bold line and a two-item list",
+    "expect": {
+      "report": null
+    }
+  }
+]

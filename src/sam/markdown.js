@@ -55,8 +55,10 @@ export function renderAnswer(doc, markdown) {
     }
 
     if (isTableStart(lines, i)) {
-      const rows = [];
-      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) {
+      // the header, the separator, then every following line that still holds a pipe
+      const rows = [lines[i], lines[i + 1]];
+      i += 2;
+      while (i < lines.length && lines[i].trim() !== '' && lines[i].includes('|')) {
         rows.push(lines[i]);
         i += 1;
       }
@@ -104,10 +106,16 @@ function startsBlock(lines, i) {
     || isTableStart(lines, i);
 }
 
-/** Whether a pipe table starts here: a row, then a separator row. */
+/**
+ * Whether a pipe table starts here: a header row holding a pipe, then a separator row of the same number of cells,
+ * each made of dashes (at least one) with optional colons — with or without pipes at the ends of the rows
+ * (sam-chat, "Markdown tables render in their common forms"). A lone "---" is not a separator: it has no pipe.
+ */
 function isTableStart(lines, i) {
-  return /^\s*\|.*\|\s*$/.test(lines[i] ?? '')
-    && /^\s*\|(\s*:?-{3,}:?\s*\|)+\s*$/.test(lines[i + 1] ?? '');
+  const head = lines[i] ?? '', sep = lines[i + 1] ?? '';
+  if (!head.includes('|') || !sep.includes('|')) return false;
+  const sepCells = cells(sep);
+  return sepCells.length > 0 && sepCells.every((c) => /^:?-+:?$/.test(c)) && cells(head).length === sepCells.length;
 }
 
 /** Splits a pipe-table row into its cells. */

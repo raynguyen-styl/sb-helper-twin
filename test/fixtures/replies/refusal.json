@@ -1,0 +1,23 @@
+{
+  "question": "Which student spent the most?",
+  "reply": {
+    "correlationId": "fixture",
+    "actions": [],
+    "kind": "refusal",
+    "report": null,
+    "steps": [],
+    "suggestions": [
+      "Average spend per student by school level",
+      "Which five schools spent the most?"
+    ],
+    "agents": [
+      {
+        "name": "sb_orchestrator",
+        "display": "SMART Buddy",
+        "role": "orchestrator",
+        "status": "done"
+      }
+    ],
+    "reply": "I can't identify individual students: the data is anonymised and answered in groups of 10 or more."
+  }
+}

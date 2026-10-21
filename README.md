@@ -60,7 +60,7 @@ stack, seeding and the one-time VM cutover: **`backend/DEPLOY.md`**.
 |---|---|
 | `src/`, `index.html`, `public/` | the app: `main.js` (the frame, the map, search, deep links), `windowing.js` (the drawer and the phone sheet), `ui.js` (the views' shared pieces), one module per view (`overview-`, `schools-`, `eng-`, `school-`, `stall-`, `subsidy-`, `items-`, `savings-`, `feb-`, `playback-window.js`), `compare.js`, `tour.js`, `shortcuts.js`, `roles.js` and `sam/` (the chat: the client of the backend's chat route, its event-stream parser, the panel, Markdown) |
 | `src/styles/` | `tokens.css` (every colour, size and radius — the one place they are defined), `base.css`, `shell.css` (the frame), `views.css` (the views), `chat.css` |
-| `test/` | `npm test` (`node --test`): the chat's event-stream parser. The eight mesh tests moved to `backend/api-service/scripts/` with the broker login (decision 0007) |
+| `test/` | `npm test` (`node --test`): the chat's event-stream parser, reply normalisers, Markdown, number formats, and one fixture reply per display type (`test/fixtures/replies/`). The eight mesh tests moved to `backend/api-service/scripts/` with the broker login (decision 0007) |
 | `nginx.conf` | same-origin routing to the read API (`/smartbuddy-api/`, not token-checked: decision 0003), the chat route as an unbuffered stream (`/smartbuddy-api/api/sam/ask`; the API checks the token), the login's token proxy (`/auth/token`) and the SPA |
 | `docker/40-keycloak-token-proxy.sh` | writes the `/auth/token` include from the container's runtime environment (the client secret) |
 | `Dockerfile`, `.dockerignore` | Vite build → nginx; the `VITE_*` build args. The build context is this root, so `.dockerignore` keeps every `.env*` out |
@@ -152,8 +152,22 @@ Markdown subset as elements (never HTML), a brief visual (up to three tiles and 
 bubble or the full report card, "How it worked · N steps", and the agent that answered; a school named exactly in
 a table cell, a tile label or bold opens on the map. A failed question says why (no answer in time, the agents
 answered another question, offline, sign in again…). The route and the reply contract: `DEPLOY.md` "The chat".
+
+The chat draws a visual in the documented shapes and in the variants models often send. It is lenient on
+purpose, so a usable visual is not lost to its shape (central-specs change `agents-on-live-ischool-data`):
+- **tables:** rows as objects keyed by the column names;
+- **charts:** points as `{x, y}`, `{label, value}` or `{name, value}`; the kinds `column`, `hbar`, `horizontal_bar`,
+  `pie` and `donut` drawn as bars, and `area` as a line;
+- **numbers:** figures written as text with separators, `S$` or `%`;
+- **the reply's text:** Markdown tables with or without pipes at the row ends, and line breaks sent escaped as `\n`.
+
+Anything still unusable is dropped with a "Not shown: …" note. The normalisers live in `src/sam/normalize.js`
+and the number formats in `src/sam/format.js`, both tested under Node. One reply per display type is in
+`test/fixtures/replies/` (`index.json` says what each must show).
+
 To render a captured exchange without the backend, in the browser console:
-`SB.chatReplay({ question, progress, reply })` (examples in `DEPLOY.md`).
+`SB.chatReplay({ question, progress, reply })` (examples in `DEPLOY.md`), or a fixture:
+`fetch('/test/fixtures/replies/report-card.json').then((r) => r.json()).then(SB.chatReplay)` under `npm run dev`.
 
 ### Data
 
