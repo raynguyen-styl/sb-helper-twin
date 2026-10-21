@@ -18,7 +18,7 @@ bar and read per month through api-service (nothing is bundled). An OneMap map o
 (dots sized by spend, coloured by level / error rate / speed; PBS bookstore and stamp-point layers) and
 eight views — Overview, Schools, Terminals (with a service route planner), Subsidies, Purchases,
 Savings, Wearables and Playback — plus each school, stall and terminal. The chat ("SMART Buddy", the
-orchestrator of the specialist agents on the mesh, over Solace) answers from Redshift with Markdown,
+orchestrator of the specialist agents on the mesh, asked through the backend's chat route) answers from Redshift with Markdown,
 brief visuals or full reports, and shows which agent answered (so the chat and the dashboard can
 disagree: `central-specs/decisions/0002`). Compare up to four schools, stalls or terminals; workspaces
 (F&B / Engineering / Management) in the menu; opt-in tours; keyboard-usable; deep links; one frame
@@ -39,9 +39,10 @@ runs with no login and no API base.
 
 It needs a reachable api-service to show data (without one the basemap renders and the drawer says
 "No data yet"): run the backend stack against the common Postgres, seeded with real rows or the
-synthetic fixture (`backend/postgres/SEEDING.md` §5). The SAM chat needs a Solace broker and the agent:
-with nothing configured it targets the shared local broker from `atlantic-platform/common` and shows
-"offline" until the agent answers.
+synthetic fixture (`backend/postgres/SEEDING.md` §5). The chat asks `smartbuddy-api`'s chat route
+(`VITE_SB_API_URL` + `/api/sam/ask`; central-specs decision `0007`), which holds the broker login. The
+page holds none. Without the route the chat shows "offline". To try it without the mesh, run
+`backend/api-service`'s `scripts/fake-mesh.mjs` beside it (`backend/README.md`).
 
 ## Build and deploy
 
@@ -50,17 +51,17 @@ with nothing configured it targets the shared local broker from `atlantic-platfo
 docker compose up -d --build    # smartbuddy-frontend → host :8097
 ```
 
-Frontend runbook: **DEPLOY.md** (env, the Solace defaults, the chat topics, routing, the STYL CIAM login). Whole
+Frontend runbook: **DEPLOY.md** (env, the chat, routing, the STYL CIAM login). Whole
 stack, seeding and the one-time VM cutover: **`backend/DEPLOY.md`**.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `src/`, `index.html`, `public/` | the app: `main.js` (the frame, the map, search, deep links), `windowing.js` (the drawer and the phone sheet), `ui.js` (the views' shared pieces), one module per view (`overview-`, `schools-`, `eng-`, `school-`, `stall-`, `subsidy-`, `items-`, `savings-`, `feb-`, `playback-window.js`), `compare.js`, `tour.js`, `shortcuts.js`, `roles.js`, `sam/` (the chat: client, panel, Markdown) and `solace/` (the broker session) |
+| `src/`, `index.html`, `public/` | the app: `main.js` (the frame, the map, search, deep links), `windowing.js` (the drawer and the phone sheet), `ui.js` (the views' shared pieces), one module per view (`overview-`, `schools-`, `eng-`, `school-`, `stall-`, `subsidy-`, `items-`, `savings-`, `feb-`, `playback-window.js`), `compare.js`, `tour.js`, `shortcuts.js`, `roles.js` and `sam/` (the chat: the client of the backend's chat route, its event-stream parser, the panel, Markdown) |
 | `src/styles/` | `tokens.css` (every colour, size and radius — the one place they are defined), `base.css`, `shell.css` (the frame), `views.css` (the views), `chat.css` |
-| `scripts/` | `mesh-tests.mjs` + `mesh-tests.json`: the eight tests that check the agent mesh answers the chat by its contract, one per specialist and three for the orchestrator (`DEPLOY.md` "The chat"); not part of the build |
-| `nginx.conf` | same-origin routing to the read API (`/smartbuddy-api/`, not token-checked: decision 0003), the login's token proxy (`/auth/token`) and the SPA |
+| `test/` | `npm test` (`node --test`): the chat's event-stream parser. The eight mesh tests moved to `backend/api-service/scripts/` with the broker login (decision 0007) |
+| `nginx.conf` | same-origin routing to the read API (`/smartbuddy-api/`, not token-checked: decision 0003), the chat route as an unbuffered stream (`/smartbuddy-api/api/sam/ask`; the API checks the token), the login's token proxy (`/auth/token`) and the SPA |
 | `docker/40-keycloak-token-proxy.sh` | writes the `/auth/token` include from the container's runtime environment (the client secret) |
 | `Dockerfile`, `.dockerignore` | Vite build → nginx; the `VITE_*` build args. The build context is this root, so `.dockerignore` keeps every `.env*` out |
 | `vite.config.js`, `package.json` | the dev server (port 5188) and the dependencies |
@@ -149,8 +150,9 @@ or ✕ closes it; the conversation stays until **New** or a reload. While a ques
 Received → Answered with the seconds, until the routing card names the agents. An answer renders a safe
 Markdown subset as elements (never HTML), a brief visual (up to three tiles and one chart or table) inside the
 bubble or the full report card, "How it worked · N steps", and the agent that answered; a school named exactly in
-a table cell, a tile label or bold opens on the map. The wire and the reply contract: `DEPLOY.md` "The chat".
-To render a captured exchange without the broker, in the browser console:
+a table cell, a tile label or bold opens on the map. A failed question says why (no answer in time, the agents
+answered another question, offline, sign in again…). The route and the reply contract: `DEPLOY.md` "The chat".
+To render a captured exchange without the backend, in the browser console:
 `SB.chatReplay({ question, progress, reply })` (examples in `DEPLOY.md`).
 
 ### Data

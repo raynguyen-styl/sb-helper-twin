@@ -20,7 +20,7 @@
  * A progress entry that is the gateway's receipt ("Request received by gateway…") marks "Received".
  */
 
-import { chat, normalizeReply, normalizeAgents, isReceipt } from "./samClient.js";
+import { chat, normalizeReply, normalizeAgents, isReceipt, FAILURES } from "./samClient.js";
 import { renderAnswer } from "./markdown.js";
 
 const AVATAR = "/icon.png";                 // branded avatar (public/icon.png) — header and empty state
@@ -485,10 +485,14 @@ function startExchange(text, { note, ask } = {}) {
   };
   const finish = (res) => {
     pending?.remove(); pending = null;
-    if (!res || res.offline) {
-      setOffline(true);
-      const r = orchRow("No reply in time. SMART Buddy may be offline: the broker or the agents are not answering. Your question was not lost on the dashboard side; try again in a minute.");
-      chips(r, ["Retry"], () => ask(text));
+    // A failed question says why, as the chat route reported it (sam-chat "The viewer sees when no agent
+    // answers"); the offline badge only when the broker or the route itself is down.
+    if (!res || res.failure) {
+      const f = res?.failure ?? { code: "unreachable" };
+      const info = FAILURES[f.code] ?? FAILURES.unreachable;
+      setOffline(info.offline);
+      const r = orchRow(f.code === "mesh_error" && f.message ? `${info.text}: ${f.message}` : info.text, { status: "not answered" });
+      if (info.retry) chips(r, ["Retry"], () => ask(text));
       return;
     }
     setOffline(false);
@@ -609,7 +613,6 @@ export function initSamPanel(getContext, { askButton, resolvePlace, onPlace } = 
   });
   panel.querySelector("#sam-new-chat").addEventListener("click", () => { resetChatThread(thread, input); setOffline(false); focusInput(); });
   panel.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setChatOpen(false); } });
-  document.addEventListener("smartbuddy:solace-status", (e) => { if (!e.detail?.connected) setOffline(true); });
 
   async function handleSend(forcedText = "", { retryOnly, note } = {}) {
     const text = String((typeof forcedText === "string" ? forcedText : "") || input.value).trim();

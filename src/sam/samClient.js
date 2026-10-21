@@ -1,184 +1,47 @@
 /**
- * samClient.js — SAM (Solace Agent Mesh) client for the SMART Buddy frontend.
- * Adapted from htx-pilot/front-end/src/sam/samClient.js — topic base and ids
- * rebased htx → smartbuddy; transport/normalizer logic unchanged.
+ * samClient.js — the SMART Buddy chat's client for the backend's chat route (central-specs decision 0007,
+ * capabilities chat-bridge and sam-chat). The browser holds no broker login and opens no broker connection:
+ * each question is one `POST {VITE_SB_API_URL}/api/sam/ask` with the viewer's CIAM token and the body
+ * {text, context}, answered as an event stream —
+ *   `received`  the mesh has the question (marks "Received");
+ *   `progress`  {agents} while the agents work (the routing card);
+ *   `answer`    the reply object, then the stream ends;
+ *   `error`     {code, message}, then the stream ends.
+ * The route owns the wait (150 s, 300 s for a report question) and the matching; the chat keeps no wait of its
+ * own beyond ending a stream that carries nothing — not even a keep-alive — for 30 s.
  *
- * Two transports (first match wins):
- *  1) Solace Event Gateway (default): ONE set of shared request/response/error topics (SAM_TOPICS,
- *     central-specs capability sam-chat). The payload carries a correlationId the agent echoes; an
- *     id-less reply falls back to the sole in-flight request.
- *  2) HTTP: VITE_SAM_ENDPOINT → POST {base}/chat with optional Bearer VITE_SAM_API_KEY.
- *
- * The reply (central-specs capability agent-system, docs/sb_helper_agent_system.md §5, decision 0006) is
- * {correlationId, reply (Markdown subset), actions, kind?, agents?, report? (mode "brief" | "report"),
- * suggestions?, steps? [{agent, text}]}; a message with the same id, status "working" and no reply is
- * progress — it re-arms the question's timeout and reaches the panel through onProgress without
- * resolving. The gateway's "Request received by gateway…" is a receipt (onReceipt), never the answer.
- * Everything is normalised here; the panel never reads the raw payload.
+ * The reply (capability agent-system, decision 0006) is {correlationId, reply (Markdown subset), actions, kind?,
+ * agents?, report? (mode "brief" | "report"), suggestions?, steps? [{agent, text}]}. The route checks its shape;
+ * everything is still normalised here into bounded plain values, and the panel never reads the raw payload.
  */
 
-import { publish, subscribe } from "../solace/solace.js";
+import { validToken } from "../auth.js";
+import { createSseParser } from "./sse.js";
 
-const SAM_ENDPOINT = (import.meta.env.VITE_SAM_ENDPOINT || "").replace(/\/$/, "");
-const SAM_API_KEY = import.meta.env.VITE_SAM_API_KEY || "";
-const SAM_SINGLE_PENDING_FALLBACK = import.meta.env.VITE_SAM_SINGLE_PENDING_FALLBACK !== "false";
+const API_BASE = (import.meta.env.VITE_SB_API_URL || "").replace(/\/$/, "");
+const SILENCE_MS = 30000;                      // twice the route's 15 s keep-alive
 
-const EXPLICIT_SAM_QUERY = (import.meta.env.VITE_SAM_QUERY_TOPIC || "").trim();
-const EXPLICIT_SAM_RESPONSE = (import.meta.env.VITE_SAM_RESPONSE_TOPIC || "").trim();
-const EXPLICIT_SAM_ERROR = (import.meta.env.VITE_SAM_ERROR_TOPIC || "").trim();
-
-function _sanitizeTopicSegment(raw) {
-  const s = String(raw ?? "").trim();
-  if (!s || s.length > 128) return "";
-  if (!/^[a-zA-Z0-9._-]+$/.test(s)) return "";
-  return s;
-}
-
-const SESSION_TOPIC_KEY = "smartbuddy_sam_topic_segment";
-
-function _newSamTopicSegment() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return `sb-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-}
-
-let _samTopicSegmentMemory = "";
-
-function _getSamTopicSegment() {
-  const forced = _sanitizeTopicSegment(
-    (import.meta.env.VITE_SAM_FIXED_TOPIC_SEGMENT || "").trim() ||
-      (import.meta.env.VITE_SAM_SYSTEM_ID || "").trim(),
-  );
-  if (forced) return forced;
-  try {
-    if (typeof sessionStorage !== "undefined") {
-      let id = sessionStorage.getItem(SESSION_TOPIC_KEY);
-      if (!id || !_sanitizeTopicSegment(id)) {
-        id = _newSamTopicSegment();
-        sessionStorage.setItem(SESSION_TOPIC_KEY, id);
-      }
-      return id;
-    }
-  } catch { /* private / blocked */ }
-  if (!_samTopicSegmentMemory) _samTopicSegmentMemory = _newSamTopicSegment();
-  return _samTopicSegmentMemory;
-}
-
-const SAM_TOPIC_SEGMENT = _getSamTopicSegment();
-
-// ONE set of SHARED request/response/error topics (central-specs change single-mode-over-postgres,
-// capability sam-chat) — the styl-office-uwb convention and exactly what the SAM gateway rule
-// subscribes to. Replies are correlated by the `correlationId` in the JSON payload. Precedence: the
-// older VITE_SAM_QUERY_TOPIC / VITE_SAM_RESPONSE_TOPIC / VITE_SAM_ERROR_TOPIC (and the
-// VITE_SAM_SOLACE_TOPIC_* aliases) → VITE_SAM_TOPIC_REQUEST / _RESPONSE / _ERROR → the default, which
-// is the topic set the Redshift agent's gateway rule answers on today (decision 0002).
-const _trim = (v) => (v || "").trim();
-const TOPIC_BASE = "STYL/iot/smartbuddy-live/system/shared/v1/sam/chat";
-export const SAM_TOPICS = Object.freeze({
-  request:  EXPLICIT_SAM_QUERY    || _trim(import.meta.env.VITE_SAM_SOLACE_TOPIC_REQUEST)  || _trim(import.meta.env.VITE_SAM_TOPIC_REQUEST)  || `${TOPIC_BASE}/request`,
-  response: EXPLICIT_SAM_RESPONSE || _trim(import.meta.env.VITE_SAM_SOLACE_TOPIC_RESPONSE) || _trim(import.meta.env.VITE_SAM_TOPIC_RESPONSE) || `${TOPIC_BASE}/response`,
-  error:    EXPLICIT_SAM_ERROR    || _trim(import.meta.env.VITE_SAM_SOLACE_TOPIC_ERROR)    || _trim(import.meta.env.VITE_SAM_TOPIC_ERROR)    || `${TOPIC_BASE}/error`,
+// What the panel says for each way a question can fail (sam-chat, "The viewer sees when no agent answers").
+// `offline` drives the offline badge; `retry` whether a Retry chip is offered.
+export const FAILURES = Object.freeze({
+  timeout:          { offline: false, retry: true,  text: "No answer came within the wait. The agents may be busy; try again, or ask a narrower question." },
+  broker_down:      { offline: true,  retry: true,  text: "SMART Buddy is offline: the message broker is not reachable. The rest of the dashboard still works; try again in a minute." },
+  unreachable:      { offline: true,  retry: true,  text: "SMART Buddy is offline: the chat service did not answer. The rest of the dashboard still works; try again in a minute." },
+  reply_unmatched:  { offline: false, retry: true,  text: "The agents answered, but not this question: they did not see it. This is a setup fault on the agents' side, not your question; it has been logged." },
+  wrong_question:   { offline: false, retry: true,  text: "The agents answered without seeing this question. This is a setup fault on the agents' side, not your question; it has been logged." },
+  invalid_reply:    { offline: false, retry: true,  text: "The agents replied, but their answer could not be read. Try again." },
+  mesh_error:       { offline: false, retry: true,  text: "The agents reported an error" },
+  unauthorized:     { offline: false, retry: false, text: "Your sign-in has expired. Reload the page to sign in again." },
+  auth_unavailable: { offline: false, retry: true,  text: "The sign-in service could not be reached to check your session. Try again in a minute." },
+  one_at_a_time:    { offline: false, retry: true,  text: "One question at a time: wait for the current answer, then ask again." },
+  too_many:         { offline: false, retry: true,  text: "That is a lot of questions in a minute. Wait a moment, then ask again." },
+  busy:             { offline: false, retry: true,  text: "SMART Buddy is busy answering other people. Try again in a minute." },
+  bad_request:      { offline: false, retry: false, text: "That question could not be sent: it is empty or longer than 1,000 characters." },
 });
-export function samTopics() { return { ...SAM_TOPICS }; }
-const SAM_SOLACE_MODE = "solace";   // transport always attempted (times out → offline if Solace unconfigured)
-const SAM_USE_SOLACE_FIFO = false;  // replies carry correlationId, matched in _takePendingForPayload
+const failure = (code, message) => ({ failure: { code: FAILURES[code] ? code : "invalid_reply", message: String(message ?? "").slice(0, 300) } });
 
-function _parseTimeoutMs(fallback) {
-  const raw = import.meta.env.VITE_SAM_TIMEOUT_MS;
-  if (raw === undefined || raw === "") return fallback;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-const SAM_TIMEOUT_HTTP_MS = _parseTimeoutMs(8000);
-const SAM_TIMEOUT_SOLACE_MS = _parseTimeoutMs(60000); // SAM + LLM often exceeds 8s
-const SAM_LOG_MAX_CHARS = 20000;
-
-function _logSam(label, value) {
-  try {
-    const str = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-    console.log(label, str.length > SAM_LOG_MAX_CHARS ? str.slice(0, SAM_LOG_MAX_CHARS) + `\n... [truncated, total ${str.length} chars]` : str);
-  } catch { console.log(label, value); }
-}
-
-// ── text-only wire ────────────────────────────────────────────────────────────
-// The SAM agent is text-in / text-out, so we publish a plain string (not a JSON
-// envelope). Dashboard context is folded into the text as a short preamble so the
-// agent still knows what the user is looking at.
-function _contextPreamble(context) {
-  if (!context || typeof context !== "object") return "";
-  const bits = [];
-  if (context.scope) bits.push(context.scope);   // e.g. "month 2026-03" — tells the agent which month
-  if (context.role && context.role !== "all") bits.push(`role ${context.role}`);
-  const v = context.viewing || {};
-  if (v.school) bits.push(`viewing school ${v.school}`);
-  if (v.stall) bits.push(`viewing stall ${v.stall}`);
-  if (v.terminal) bits.push(`viewing terminal ${v.terminal}`);
-  // Retry of one specialist (sam-chat spec): the hint ends in "retry: ask only <agent_name>" and the
-  // orchestrator delegates to that agent only. A hint, not a new envelope field — the gateway rule
-  // maps payload.context and nothing else would reach the agent.
-  if (context.retryOnly) bits.push(`retry: ask only ${_sanitizeAgentName(context.retryOnly)}`);
-  return bits.length ? `(Context: ${bits.join("; ")}.)` : "";
-}
-const _sanitizeAgentName = (s) => String(s ?? "").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64);
-
-// A question that asks for a report waits twice as long (the specialists build several queries).
-const REPORT_LIKE = /\b(report|summar(y|ise|ize)|statistic|breakdown|break down|compar(e|ison)|trend|overview)\b/i;
-export function isReportLike(text) { return REPORT_LIKE.test(String(text ?? "")); }
-function _composeTextMessage(text, context) {
-  const pre = _contextPreamble(context);
-  return pre ? `${pre}\n\n${String(text ?? "")}` : String(text ?? "");
-}
-
-const _pending = new Map();
-const _pendingFifo = [];
-let _solaceHandlersRegistered = false;
-
-function useSolaceSam() { return SAM_SOLACE_MODE !== "none"; }
-function useHttpSam() { return Boolean(SAM_ENDPOINT); }
-
-function _extractCorrelationId(payload) {
-  if (!payload || typeof payload !== "object") return undefined;
-  const direct = payload.correlationId ?? payload.correlation_id ?? payload.requestId ?? payload.request_id;
-  if (typeof direct === "string" && direct.length > 0) return direct;
-  return [payload.data, payload.payload, payload.event, payload.body]
-    .filter((x) => x && typeof x === "object")
-    .map((x) => x.correlationId ?? x.correlation_id)
-    .find((id) => typeof id === "string" && id.length > 0);
-}
-
-function _takePendingForPayload(payload) {
-  const id = _extractCorrelationId(payload);
-  if (id) {
-    if (_pending.has(id)) { const p = _pending.get(id); _pending.delete(id); return p; }
-    return null;
-  }
-  if (_pending.size === 0) return null;
-  const oldestId = _pending.keys().next().value;
-  console.warn("[sam] response had no usable correlationId — matching oldest in-flight request (FIFO).");
-  const p = _pending.get(oldestId);
-  _pending.delete(oldestId);
-  return p;
-}
-// Progress keeps the question in flight: look the request up without taking it. An id-less working
-// message is only trusted when exactly one question is pending (same rule as replies).
-function _peekPendingForPayload(payload) {
-  const id = _extractCorrelationId(payload);
-  if (id) return _pending.get(id) ?? null;
-  return SAM_SINGLE_PENDING_FALLBACK && _pending.size === 1 ? _pending.values().next().value : null;
-}
-// A streamed chunk of the agent's JSON (an agent with streaming on): starts with "{" but its braces do
-// not balance. Never a reply — the agents emit exactly one whole object — so it is dropped, not shown.
-function _looksLikeFragment(obj) {
-  if (!obj || typeof obj !== "object" || typeof obj.text !== "string" || Object.keys(obj).length !== 1) return false;
-  const s = obj.text.trim();
-  if (!s.startsWith("{")) return false;
-  let depth = 0;
-  for (const ch of s) { if (ch === "{") depth++; else if (ch === "}") depth--; }
-  return depth !== 0;
-}
-// The Event Gateway's own acknowledgement ("Request received by gateway…") is a receipt, never the answer: it marks
-// the question "Received" and the question keeps waiting (central-specs capability sam-chat, design D9). Without
-// this an id-less receipt would be taken as the reply.
+// The Event Gateway's own acknowledgement ("Request received by gateway…") is a receipt, never the answer. The
+// route turns it into `received`; this check stays for replay() of captured raw exchanges.
 const RECEIPT = /^\s*Request received by gateway/i;
 function _isReceipt(obj) {
   if (typeof obj === "string") return RECEIPT.test(obj);
@@ -190,19 +53,7 @@ export function isReceipt(raw) {
   const { obj, plainText } = _normalizeInboundPayload(raw);
   return _isReceipt(plainText ?? obj);
 }
-// {correlationId, status: "working", agents: [...]} and no answer text → progress, not a reply.
-function _isProgress(obj) {
-  if (!obj || typeof obj !== "object") return false;
-  const st = typeof obj.status === "string" ? obj.status.toLowerCase() : "";
-  if (!/^(working|progress|routing|running|querying)$/.test(st)) return false;
-  return !_pickReplyText(obj) && obj.report == null;
-}
-
-function _removePendingFifoEntry(entry) {
-  const i = _pendingFifo.indexOf(entry);
-  if (i !== -1) _pendingFifo.splice(i, 1);
-}
-function _takePendingFifo() { return _pendingFifo.length === 0 ? null : (_pendingFifo.shift() ?? null); }
+const _sanitizeAgentName = (s) => String(s ?? "").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64);
 
 function _pickReplyText(obj) {
   if (!obj || typeof obj !== "object") return undefined;
@@ -284,28 +135,6 @@ function _deepLongestString(obj, depth = 0) {
     else if (v && typeof v === "object") { const s = _deepLongestString(v, depth + 1); if (s.length > best.length) best = s; }
   }
   return best;
-}
-
-function _salvageProseShapedJson(text) {
-  if (typeof text !== "string") return null;
-  if (!/\bcorrelationId\b/i.test(text)) return null;
-  const m = text.match(/correlationId[^A-Za-z0-9_-]+([A-Za-z0-9_-]+)[\s\S]*?\breply\s*[:=][\s\S]*?(?:["']?([\s\S]*?)["']?)\s+(?:\.|\s)*\bactions\s*[:=]\s*([\s\S]*)$/i);
-  if (!m) {
-    const replyIdx = text.search(/\breply\s*[:=]/i);
-    const actionsIdx = text.search(/\bactions\s*[:=]/i);
-    if (replyIdx < 0) return null;
-    const after = text.slice(replyIdx).replace(/^\s*reply\s*[:=]\s*/i, "");
-    const cutAt = actionsIdx > replyIdx ? text.search(/\bactions\s*[:=]/i) - replyIdx : after.length;
-    const reply = after.slice(0, cutAt).trim().replace(/^["']|["']$/g, "");
-    const actionsRaw = actionsIdx > replyIdx ? text.slice(actionsIdx).replace(/^\s*actions\s*[:=]\s*/i, "") : "[]";
-    let actions = [];
-    try { const parsed = JSON.parse(actionsRaw.trim()); if (Array.isArray(parsed)) actions = parsed; } catch { /* keep [] */ }
-    return reply ? { reply, actions } : null;
-  }
-  const reply = (m[2] || "").trim().replace(/[.,;]\s*$/, "");
-  let actions = [];
-  try { const parsed = JSON.parse((m[3] || "[]").trim()); if (Array.isArray(parsed)) actions = parsed; } catch { /* keep [] */ }
-  return reply ? { reply, actions } : null;
 }
 
 // ── the extended envelope (agents, report, kind, suggestions) ─────────────────
@@ -448,11 +277,7 @@ function _extendedFields(...objs) {
 function _normalizePayload(rawPayload) {
   const { obj: payload, plainText } = _normalizeInboundPayload(rawPayload);
   const base = { kind: "answer", agents: [], report: null, suggestions: [], steps: [] };
-  if (plainText && (!payload || Object.keys(payload).length === 0)) {
-    const salvaged = _salvageProseShapedJson(plainText);
-    if (salvaged) { console.warn("[sam] agent returned prose — salvaged via regex."); return { ...base, ...salvaged }; }
-    return { ...base, reply: plainText.trim(), actions: [] };
-  }
+  if (plainText && (!payload || Object.keys(payload).length === 0)) return { ...base, reply: plainText.trim(), actions: [] };
   if (!payload || typeof payload !== "object") return { ...base, reply: plainText?.trim() || "SAM response received.", actions: [] };
 
   const inner = payload.data && typeof payload.data === "object" ? payload.data : payload;
@@ -467,152 +292,84 @@ function _normalizePayload(rawPayload) {
   if (!reply && typeof plainText === "string" && plainText.trim()) reply = plainText;
   if (!reply) { const deep = _deepLongestString(payload); if (deep) reply = deep; }
 
-  let actions = Array.isArray(inner2.actions) ? inner2.actions
+  // The route forwards only a parsed object with a `reply` (chat-bridge "A reply is checked…"), so the old
+  // prose-shaped-JSON salvage is gone (change chat-through-backend, design D5).
+  const actions = Array.isArray(inner2.actions) ? inner2.actions
     : Array.isArray(inner.actions) ? inner.actions
     : Array.isArray(payload.actions) ? payload.actions : [];
-
-  if (typeof reply === "string" && /\bcorrelationId\b/i.test(reply) && /\breply\s*[:=]/i.test(reply)) {
-    const salvaged = _salvageProseShapedJson(reply);
-    if (salvaged) { console.warn("[sam] agent returned prose — salvaged via regex."); reply = salvaged.reply; if (!actions.length) actions = salvaged.actions; }
-  }
   return { ...ext, reply: reply ? String(reply).trim() : "SAM response received.", actions };
 }
 /** Normalise a raw reply payload (a captured message, for replay / debugging) exactly as a live one. */
 export function normalizeReply(rawPayload) { return _normalizePayload(rawPayload); }
 
-function _registerSolaceHandlers() {
-  if (_solaceHandlersRegistered || !useSolaceSam()) return;
-  _solaceHandlersRegistered = true;
-
-  const onResponse = (topicName, payload) => {
-    _logSam(`[sam] received ← ${topicName}`, payload);
-    if (SAM_USE_SOLACE_FIFO) {
-      const p = _takePendingFifo();
-      if (!p) { console.warn("[sam] unexpected response (no in-flight request). Per-tab mode uses FIFO."); return; }
-      clearTimeout(p.timer);
-      p.resolve(_normalizePayload(payload));
-      return;
-    }
-    const { obj } = _normalizeInboundPayload(payload);
-    const parsed = obj && typeof obj === "object" ? obj : (typeof payload === "object" && payload !== null ? payload : { text: String(payload ?? "") });
-    if (_looksLikeFragment(payload)) { console.warn("[sam] streamed fragment ignored (not a whole reply)."); return; }
-    if (_isReceipt(parsed)) {
-      const pp = _peekPendingForPayload(parsed);
-      if (!pp) { console.warn("[sam] gateway receipt for no in-flight request — ignored."); return; }
-      pp.arm();                                   // the gateway has it: restart the wait
-      try { pp.onReceipt?.(); } catch (e) { console.warn("[sam] onReceipt failed:", e); }
-      return;
-    }
-    if (_isProgress(parsed)) {
-      const pp = _peekPendingForPayload(parsed);
-      if (!pp) { console.warn("[sam] progress for no in-flight request — ignored."); return; }
-      pp.arm();                                   // the agents are alive: restart the wait
-      try { pp.onProgress?.(normalizeAgents(parsed.agents)); } catch (e) { console.warn("[sam] onProgress failed:", e); }
-      return;
-    }
-    const p = _takePendingForPayload(parsed);
-    if (!p) {
-      const id = _extractCorrelationId(parsed);
-      // Fallback ONLY for a reply with no correlationId (an agent that doesn't echo it). A reply carrying
-      // someone else's id — another tab, another client on the shared topic — is never ours.
-      if (SAM_SINGLE_PENDING_FALLBACK && !id && _pending.size === 1) {
-        const fallbackId = _pending.keys().next().value;
-        const fp = _pending.get(fallbackId);
-        _pending.delete(fallbackId);
-        clearTimeout(fp.timer);
-        console.warn("[sam] correlationId mismatch — delivering to sole in-flight request.");
-        fp.resolve(_normalizePayload(payload));
-        return;
-      }
-      console.warn("[sam] could not match response to a request.", id ? `id=${id}` : "no correlationId");
-      return;
-    }
-    clearTimeout(p.timer);
-    p.resolve(_normalizePayload(payload));
-  };
-
-  const onError = (topicName, payload) => {
-    _logSam(`[sam] received ← ${topicName} (error)`, payload);
-    let p = null;
-    if (SAM_USE_SOLACE_FIFO) p = _takePendingFifo();
-    else {
-      const errObj = _normalizeInboundPayload(payload).obj ?? payload;
-      p = _takePendingForPayload(errObj);
-      if (!p && SAM_SINGLE_PENDING_FALLBACK && !_extractCorrelationId(errObj) && _pending.size === 1) {   // id-less only
-        const fallbackId = _pending.keys().next().value;
-        p = _pending.get(fallbackId) ?? null;
-        if (p) _pending.delete(fallbackId);
-      }
-    }
-    if (!p) return;
-    clearTimeout(p.timer);
-    const normalized = _normalizePayload(payload);
-    const err = normalized.reply ?? payload?.message ?? payload?.error ?? payload?.text ?? JSON.stringify(payload);
-    p.resolve({ kind: "answer", agents: [], report: null, suggestions: [], steps: [], reply: `SAM error: ${err}`, actions: [] });
-  };
-
-  subscribe(SAM_TOPICS.response, onResponse);
-  if (SAM_TOPICS.error) subscribe(SAM_TOPICS.error, onError);
+export function initSam() {
+  if (!API_BASE) console.warn("[sam] VITE_SB_API_URL not set — the chat has no route to ask (offline)");
 }
 
-export function initSam() {
-  if (useSolaceSam()) {
-    _registerSolaceHandlers();
-    const segInfo = SAM_SOLACE_MODE === "per-tab" ? ` topicSegment=${SAM_TOPIC_SEGMENT}` : "";
-    console.log(`[sam] Solace (${SAM_SOLACE_MODE})${segInfo} query=${SAM_TOPICS.request} response=${SAM_TOPICS.response}` + (SAM_TOPICS.error ? ` error=${SAM_TOPICS.error}` : ""));
-    return;
-  }
-  if (useHttpSam()) { console.log(`[sam] HTTP endpoint: ${SAM_ENDPOINT}`); return; }
-  console.warn("[sam] Not configured — set VITE_SOLACE_* (per-tab topics) or VITE_SAM_QUERY_TOPIC/RESPONSE, or VITE_SAM_ENDPOINT");
+// The structured context the route rebuilds its hint from (chat-bridge, "The question is checked and its context
+// rebuilt"): only these fields are sent; the route drops any that fail its patterns.
+function _contextFields(context) {
+  const c = context && typeof context === "object" ? context : {};
+  const v = c.viewing || {};
+  const month = typeof c.month === "string" ? c.month : String(c.scope ?? "").match(/\d{4}-\d{2}/)?.[0];
+  const out = { month, role: c.role, school: v.school ?? c.school, stall: v.stall ?? c.stall, terminal: v.terminal ?? c.terminal,
+    retryOnly: c.retryOnly ? _sanitizeAgentName(c.retryOnly) : undefined };
+  for (const k of Object.keys(out)) if (out[k] == null || out[k] === "") delete out[k];
+  return out;
 }
 
 /**
- * Send a chat message to SAM.
+ * Ask the chat route.
  * @param {string} text  Natural-language question
  * @param {object} context  Dashboard state snapshot (+ retryOnly: an agent name to re-ask alone)
- * @param {{onProgress?: (agents: object[]) => void, onReceipt?: () => void}} [opts]  progress rows while the agents work; the gateway's receipt
- * @returns {Promise<{reply?: string; actions?: object[]; kind?: string; agents?: object[]; report?: object|null; suggestions?: string[]; steps?: object[]; offline?: boolean}>}
+ * @param {{onProgress?: (agents: object[]) => void, onReceipt?: () => void}} [opts]
+ * @returns {Promise<{reply?: string; actions?: object[]; kind?: string; agents?: object[]; report?: object|null; suggestions?: string[]; steps?: object[]; failure?: {code: string, message: string}}>}
  */
 export async function chat(text, context = {}, opts = {}) {
-  if (useSolaceSam()) {
-    _registerSolaceHandlers();
-    const correlationId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `sb-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    // One build-time wait (VITE_SAM_TIMEOUT_MS); a report question starts with twice it, and every
-    // progress message restarts it — a dead mesh still times out, a busy one does not.
-    const wait = isReportLike(text) ? SAM_TIMEOUT_SOLACE_MS * 2 : SAM_TIMEOUT_SOLACE_MS;
-    return new Promise((resolve) => {
-      const entry = { resolve, timer: null, onProgress: opts.onProgress, onReceipt: opts.onReceipt, arm: null };
-      entry.arm = () => {
-        clearTimeout(entry.timer);
-        entry.timer = setTimeout(() => {
-          if (_pending.has(correlationId)) { _pending.delete(correlationId); console.warn("[sam] Solace reply timeout"); resolve({ offline: true }); }
-        }, wait);
-      };
-      entry.arm();
-      _pending.set(correlationId, entry);
-      // JSON envelope {correlationId, text, context, ts} — matches the styl-office-uwb wire + the SAM
-      // gateway rule ({payload.text}/{payload.correlationId}/{payload.context}/{payload.ts}).
-      const body = JSON.stringify({ correlationId, text: String(text ?? ""), context: _contextPreamble(context), ts: Date.now() });
-      const topic = SAM_TOPICS.request;
-      console.log(`[sam] publish → ${topic} (corr ${correlationId}, wait ${wait} ms)`);
-      publish(topic, body);
-    });
-  }
-
-  if (!useHttpSam()) { console.warn("[sam] offline — no Solace topics or HTTP endpoint"); return { offline: true }; }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SAM_TIMEOUT_HTTP_MS);
+  if (!API_BASE) return failure("unreachable");
+  const ctl = new AbortController();
+  let silence = null;
+  const quiet = () => { clearTimeout(silence); silence = setTimeout(() => ctl.abort(), SILENCE_MS); };
   try {
-    const headers = { "Content-Type": "application/json" };
-    if (SAM_API_KEY) headers["Authorization"] = `Bearer ${SAM_API_KEY}`;
-    const res = await fetch(`${SAM_ENDPOINT}/chat`, { method: "POST", headers, body: JSON.stringify({ text, context }), signal: controller.signal });
-    if (!res.ok) { console.warn(`[sam] non-OK response: ${res.status}`); return { offline: true }; }
-    const data = await res.json().catch(() => null);
-    if (!data) return { offline: true };
-    return _normalizePayload(data);
+    const headers = { "Content-Type": "application/json", Accept: "text/event-stream" };
+    const t = await validToken();
+    if (t) headers.Authorization = `Bearer ${t}`;
+    quiet();
+    const res = await fetch(`${API_BASE}/api/sam/ask`, {
+      method: "POST", headers, signal: ctl.signal,
+      body: JSON.stringify({ text: String(text ?? ""), context: _contextFields(context) }),
+    });
+    if (!res.ok || !String(res.headers.get("content-type") || "").startsWith("text/event-stream")) {
+      const body = await res.json().catch(() => ({}));
+      const code = res.status === 401 ? "unauthorized" : body?.error && FAILURES[body.error] ? body.error
+        : res.status === 429 ? "one_at_a_time" : res.status === 503 ? "busy" : res.status === 400 ? "bad_request" : "unreachable";
+      return failure(code);
+    }
+    let outcome = null;
+    const parser = createSseParser((ev) => {
+      if (outcome || ev.comment !== undefined) return;
+      let data = null;
+      try { data = JSON.parse(ev.data || "null"); } catch { /* a malformed event is skipped */ }
+      if (ev.event === "received") { try { opts.onReceipt?.(); } catch (e) { console.warn("[sam] onReceipt failed:", e); } }
+      else if (ev.event === "progress") { try { opts.onProgress?.(normalizeAgents(data?.agents)); } catch (e) { console.warn("[sam] onProgress failed:", e); } }
+      else if (ev.event === "answer") outcome = _normalizePayload(data);
+      else if (ev.event === "error") outcome = failure(data?.code, data?.message);
+    });
+    const reader = res.body.getReader();
+    const dec = new TextDecoder("utf-8");
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      quiet();                                   // any bytes, keep-alives included, mean the route is alive
+      parser.push(dec.decode(value, { stream: true }));
+      if (outcome) { ctl.abort(); break; }
+    }
+    if (!outcome) { parser.push(dec.decode()); parser.end(); }
+    return outcome ?? failure("unreachable");
   } catch (err) {
-    console.warn("[sam] offline:", err.message);
-    return { offline: true };
-  } finally { clearTimeout(timer); }
+    if (err?.name !== "AbortError") console.warn("[sam] chat route unreachable:", err?.message);
+    return failure("unreachable");
+  } finally {
+    clearTimeout(silence);
+  }
 }

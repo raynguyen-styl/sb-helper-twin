@@ -17,7 +17,6 @@ import { openSubsidy } from './subsidy-window.js';
 import { ROLES } from './roles.js';
 import { openPlayback, setPlaybackMonth } from './playback-window.js';
 import { authUser, logout } from './auth.js';
-import { initSolace } from './solace/solace.js';
 import { initSam } from './sam/samClient.js';
 import { initSamPanel, setChatOpen, isChatOpen, replay as chatReplay } from './sam/samPanel.js';
 import { openWindow, closeAll, openIds, setViewMonth, info, esc } from './windowing.js';
@@ -338,14 +337,13 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// Snapshot of dashboard state sent with each SAM query (role + what's open).
+// Snapshot of dashboard state sent with each question (the month, the role, what's open). The chat route
+// rebuilds the orchestrator's context hint from these fields only (central-specs capability chat-bridge).
 function buildSamContext() {
     return {
-        source: 'smart-buddy-frontend',
-        scope: curMonth ? `month ${curMonth}` : 'no data loaded',
+        month: curMonth || undefined,
         role: role || 'all',
         viewing: { school: samActive.school, stall: samActive.stall, terminal: samActive.terminal },
-        hash: location.hash || null,
     };
 }
 // A school's exact name or code (ignoring case) → its id, for the chat's links (sam-chat spec). Rebuilt per month.
@@ -757,9 +755,8 @@ function openUnmapped() {
 }
 
 /* ---------- SMART Buddy chat (the agents on the mesh, which read Redshift; month-aware context) ---------- */
-// Additive + fully optional: with no VITE_SOLACE_*/VITE_SAM_* env set, the chat
-// opens and simply shows "offline" — the rest of the app is unaffected.
-initSolace();
+// The chat asks the backend's chat route (central-specs decision 0007); the page holds no broker login. With no
+// VITE_SB_API_URL, or the route down, the chat opens and shows "offline" — the rest of the app is unaffected.
 initSam();
 initSamPanel(buildSamContext, { askButton: document.getElementById('ask-btn'), resolvePlace, onPlace: (sid) => window.SB.focusSchool(sid) });
 document.addEventListener('smartbuddy:sam-ask', () => tick('sam'));

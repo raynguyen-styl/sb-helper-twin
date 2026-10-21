@@ -25,9 +25,8 @@
 #     container — so the shared nginx-proxy is NOT touched.
 #   • `sb-net` + the shared external `backend` net (to reach smartbuddy-api)
 #
-# SAM chat transport: with no VITE_SOLACE_* set, the build targets the shared local Solace that
-# atlantic-platform/common runs on every box (ws://localhost:8008, VPN + client-username `default`,
-# see common/README.md — not secrets). Set the four values (bootstrap-env.sh does) to use another broker.
+# The chat asks the backend's chat route (/smartbuddy-api/api/sam/ask, central-specs decision 0007): the
+# bundle carries no broker URL, login or topic. The broker login lives in backend/.env.
 
 name: smartbuddy
 
@@ -39,7 +38,7 @@ networks:
     name: ${BACKEND_NETWORK:-solace-pubsub-geo-filtering_backend}
 
 services:
-  # ── frontend (Vite → nginx). Every window reads sb-api; the chat reaches the agents over Solace ──
+  # ── frontend (Vite → nginx). Every window reads sb-api; so does the chat (its streamed route) ──
   smartbuddy-frontend:
     build:
       context: .                            # the repository root (.dockerignore keeps every .env* out)
@@ -54,18 +53,6 @@ services:
         # Path of this container's token proxy (relative to the base); empty = keycloak-js calls the
         # token endpoint directly (a public client).
         VITE_KEYCLOAK_TOKEN_PROXY: ${VITE_KEYCLOAK_TOKEN_PROXY:-auth/token}
-        # SAM chat transport. Defaults = the box's shared local Solace (atlantic-platform/common);
-        # the values are baked into the browser bundle, so only ever low-privilege demo creds here.
-        VITE_SOLACE_URL: ${VITE_SOLACE_URL:-ws://localhost:8008}
-        VITE_SOLACE_VPN: ${VITE_SOLACE_VPN:-default}
-        VITE_SOLACE_USER: ${VITE_SOLACE_USER:-default}
-        VITE_SOLACE_PASSWORD: ${VITE_SOLACE_PASSWORD:-default}
-        # The chat's Solace topics — one set (central-specs capability sam-chat). Empty = the code's
-        # default: STYL/iot/smartbuddy-live/system/shared/v1/sam/chat/{request,response,error}, the
-        # topics the Redshift agent's gateway rule answers on today. See DEPLOY.md "The chat".
-        VITE_SAM_TOPIC_REQUEST: ${VITE_SAM_TOPIC_REQUEST:-}
-        VITE_SAM_TOPIC_RESPONSE: ${VITE_SAM_TOPIC_RESPONSE:-}
-        VITE_SAM_TOPIC_ERROR: ${VITE_SAM_TOPIC_ERROR:-}
     container_name: smartbuddy-frontend
     restart: always
     # RUNTIME settings of the /auth/token proxy (docker/40-keycloak-token-proxy.sh): the

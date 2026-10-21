@@ -46,34 +46,29 @@ container (§4) — never a build argument; the backend's secrets are in `backen
 | `VITE_KEYCLOAK_TOKEN_PROXY` | the token proxy's path, relative to the base (default `auth/token`); empty → keycloak-js calls the token endpoint directly (a public client) |
 | `KEYCLOAK_CLIENT_SECRET` | **runtime only**: `demo-application`'s secret, added by the `/auth/token` proxy. Not baked in: change it with `docker compose up -d`, no rebuild. The bootstrap keeps it across re-runs and marks it MISSING when unset |
 | `KEYCLOAK_TOKEN_ENDPOINT` | runtime only: where the proxy forwards (default the CIAM `demo` realm's token endpoint) |
-| `VITE_SOLACE_URL` / `VITE_SOLACE_VPN` / `VITE_SOLACE_USER` / `VITE_SOLACE_PASSWORD` | the SAM chat transport — see "Solace defaults" |
-| `VITE_SAM_TOPIC_REQUEST` / `VITE_SAM_TOPIC_RESPONSE` / `VITE_SAM_TOPIC_ERROR` | the chat's Solace topics — see "The chat" |
 | `BACKEND_NETWORK` | the shared external docker network (default `solace-pubsub-geo-filtering_backend`) |
 
-**Solace defaults.** With none of the four set, the build targets the shared local Solace that
-`atlantic-platform/common` runs on every box: `ws://localhost:8008` (its Web Messaging port, published
-on loopback), message VPN and client-username `default` (the broker image's built-in demo identity,
-documented in `common/README.md` — not a secret). The same values hold wherever the common stack runs
-beside this repository, so a box running both needs no Solace configuration. `bootstrap-env.sh`
-resolves the four values in this order: already exported in the environment → an existing `.env` →
-the pre-split monorepo's `.env` (`SB_LEGACY_ENV`, default `/data/smart-buddy-data/.env`) → those
-defaults; its checklist names the source of each. Two limits to know: a browser that is not on the box
-cannot reach `localhost:8008`, and an `https` page cannot open a `ws://` socket — so UAT keeps the
-broker values it uses today (the bootstrap preserves them from the legacy `.env`). Point the four
-values at another broker to use it. They ship in the browser bundle: low-privilege demo credentials
-only, scoped to the smartbuddy chat topics. There is no proxy for the broker in this nginx, by
-decision (`central-specs`, change `split-sb-helper-repos`, D12).
+**No broker value here** (central-specs decision `0007`, change `chat-through-backend`). The chat asks
+the backend's chat route; the bundle carries no broker URL, login or topic, and the page opens no
+broker connection. The broker login, the mesh's topics and the wait live in `backend/.env`
+(`backend/DEPLOY.md` §3).
 
-**The chat.** One topic set (central-specs capability `sam-chat`): the chat publishes each question as
-`{correlationId, text, context, ts}` on `VITE_SAM_TOPIC_REQUEST` and takes the reply from
-`VITE_SAM_TOPIC_RESPONSE` (errors from `VITE_SAM_TOPIC_ERROR`), matched by `correlationId`. The
-defaults are `STYL/iot/smartbuddy-live/system/shared/v1/sam/chat/request`, `…/response`, `…/error` —
-the topics the Redshift agent's gateway rule answers on (`backend/DEPLOY.md` §7). When the orchestrator
-of `central-specs/docs/sb_helper_agent_system.md` exists, the mesh owner points that rule at it; the
-twin does not change. The older `VITE_SAM_QUERY_TOPIC` / `VITE_SAM_RESPONSE_TOPIC` / `VITE_SAM_ERROR_TOPIC`
-still override. `bootstrap-env.sh` resolves each key from the environment → an existing `.env`'s same
-key → that file's pre-October `VITE_SAM_LIVE_TOPIC_*` → the default, so a box keeps the topics it used,
-and its checklist names the source. There is no Demo | Live toggle and no `#mode=` any more
+The former `VITE_SOLACE_*` and `VITE_SAM_TOPIC_*` keys are retired. **Moving off them is ordered:**
+run `backend/bootstrap-env.sh` first, which copies them from this repository's `.env` into
+`backend/.env` once. This repository's `bootstrap-env.sh` then drops them, and refuses to run while
+`backend/.env` has no `SB_SAM_SOLACE_URL` yet, so the values are never lost. The previous file stays in
+`.env.bak.*`. `VITE_SAM_TIMEOUT_MS` and `VITE_SAM_ENDPOINT` are gone too.
+
+**The chat** (central-specs capabilities `sam-chat` and `chat-bridge`). The chat posts each question to
+`/smartbuddy-api/api/sam/ask` with the viewer's CIAM token and `{text, context}`. The context holds
+the month, the role, the open school, stall or terminal, and for a retry `retryOnly`. The route answers
+with an event stream:
+- `received`: the mesh has the question;
+- `progress` `{agents}`: the agents are working;
+- then either `answer` (the reply) or `error` `{code, message}`.
+
+`smartbuddy-api` publishes the question to the mesh, matches and checks the reply, and owns the wait
+(150 s, 300 s for a report question). There is no Demo | Live toggle and no `#mode=` any more
 (`central-specs/decisions/0002`).
 
 The reply (central-specs capability `agent-system`, decision `0006`) is `{correlationId, reply,
@@ -88,26 +83,36 @@ actions, kind?, agents?, report?, suggestions?, steps?}`:
 - An answer with `report` null or brief and exactly one specialist `done` is that specialist's bubble;
   any other is the orchestrator's. `kind: "refusal"` is styled as a refusal; `suggestions[]` are chips.
 
-While a question waits the chat shows Sent → Received → Answered with the seconds; a message with the
-same `correlationId`, `status: "working"` and no `reply` is progress: the routing card (one row per
-specialist in `agents[]`) replaces the steps and the wait restarts. The gateway's own "Request received
-by gateway…" frame is a receipt: it marks Received and the question keeps waiting. The wait is
-`VITE_SAM_TIMEOUT_MS` (default 60 s), doubled for a question that asks for a report; with no reply or
-progress in that time the chat shows "offline" and the rest of the dashboard is unaffected. A
-specialist marked `failed` or `timeout` gets a Retry chip that re-sends the question with
-`retry: ask only <agent_name>` in the context hint. Registering the agents:
+While a question waits, the chat shows Sent → Received → Answered with the seconds.
+- `received` marks Received.
+- `progress` replaces the steps with the routing card (one row per specialist in `agents[]`).
+- A specialist marked `failed` or `timeout` gets a Retry chip, which re-sends the question with
+  `retryOnly` set to that specialist. The route turns it into `retry: ask only <agent_name>` in the
+  context hint.
+
+The chat keeps no wait of its own: it ends a stream only after 30 s with nothing on it, which is twice
+the route's keep-alive.
+
+A failed question says why, from the route's code:
+
+| Code | What the chat says | Offline badge |
+|---|---|---|
+| `timeout` | no answer within the wait | no |
+| `broker_down`, or the route unreachable | SMART Buddy offline | **yes** |
+| `reply_unmatched`, `wrong_question` | the agents answered another question: a setup fault on their side, e.g. the entry point's template | no |
+| `invalid_reply` | the agents' answer could not be read | no |
+| `mesh_error` | the agents' error, with its text | no |
+| 401 | sign in again (no Retry chip) | no |
+| 429 / 503 | one question at a time, too many a minute, or busy | no |
+
+The rest of the dashboard is never affected. Registering the agents:
 `central-specs/docs/sb_helper_agent_mesh_setup.md`.
 
-**Is the mesh working?** Eight tests publish on the chat's topics exactly as the dashboard does and
-check each reply against the contract (the runbook's §10.1): one per specialist, each reached alone
-through the retry hint in the context, and three for the orchestrator (one, two and three
-specialists). From this root, `node --env-file=.env scripts/mesh-tests.mjs` (the live entry point),
-`--test` for the test entry point, `--only 1,3` for some, `--out replies.jsonl` to keep the raw
-replies, `--direct` to print the messages for asking a specialist directly in the mesh. It uses the
-dashboard's own `VITE_SOLACE_*` values and prints only the broker's host; exit code 0 when all eight
-pass. The tests and their expected figures are in `scripts/mesh-tests.json`.
+**Is the mesh working?** The eight mesh tests moved to the backend with the broker login. Run them
+inside the API container: `docker exec smartbuddy-api node scripts/mesh-tests.mjs`
+(`backend/DEPLOY.md` §8).
 
-To render a captured exchange without the broker (debugging), in the browser console:
+To render a captured exchange without the backend (debugging), in the browser console:
 `SB.chatReplay({ question, progress: [...], reply })` — `progress` holds working messages or the
 gateway's receipt; without `reply` the question is left waiting. For example:
 `SB.chatReplay({ question: 'Top 5 schools by spend', reply: { reply: '**MGSP** led.', agents: [{ name: 'sb_spend', status: 'done' }], report: { mode: 'brief', kpis: [{ label: 'Top school', value: 74602, unit: 'SGD' }], charts: [{ kind: 'bar', title: 'Spend by school', unit: 'SGD', series: [{ name: 'Spend', points: [['MGSP', 74602], ['RGPS', 26281]] }] }] }, steps: [{ agent: 'sb_spend', text: 'Ranked schools by spend.' }] } })`.
@@ -117,9 +122,12 @@ gateway's receipt; without `reply` the question is left waiting. For example:
 ONE hostname: the ALB maps it to this container and nginx same-origin-routes the rest, so the shared
 platform nginx-proxy is untouched:
 - `/` → the static SPA (the STYL CIAM login in the browser via keycloak-js, §4);
-- `/smartbuddy-api/` → `smartbuddy-api:3320` — the only backend route, **not token-checked**
+- `/smartbuddy-api/` → `smartbuddy-api:3320` — the only backend, **not token-checked by nginx**
   (`central-specs/decisions/0003`: the shared `jwt-validator` trusts only the old `styl-iot` realm, and
-  the browser login is the only gate). Anyone who can reach the hostname can read it;
+  the browser login is the only gate). Anyone who can reach the hostname can read the data routes;
+- `POST /smartbuddy-api/api/sam/ask` → the same upstream, as an unbuffered event stream (HTTP/1.1,
+  read timeout 330 s; any other method → 403): the chat route. `smartbuddy-api` checks the CIAM token
+  on it itself (decision `0007`);
 - `POST /auth/token` → the CIAM token endpoint, with the client secret added (§4); any other method → 403;
 - `/healthz` → 200.
 
@@ -169,7 +177,10 @@ not work here.
 - In the browser: the CIAM login page; after signing in, the map renders; a reload does not go back to
   CIAM; the ☰ menu shows "Signed in as …" and Sign out returns to the login page; the map renders (OneMap tiles need outbound internet); the month picker shows
   the seeded months (or the drawer says "No data yet" before the seed); Playback animates (needs the
-  backend); SAM chat answers (needs the broker + the agent; "offline" otherwise).
+  backend); SAM chat answers (needs `smartbuddy-api`, its broker and the agents; a failure names its
+  reason). DevTools → Network shows the chat as one `POST …/api/sam/ask` per question and no WebSocket.
+- `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8097/smartbuddy-api/api/sam/ask` → 403
+  (POST only); a POST without a token → 401.
 
 The full end-to-end list is `backend/DEPLOY.md` §8.
 
