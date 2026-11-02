@@ -6,7 +6,7 @@
 # referenced above.
 #
 # SMART Buddy — the digital twin: the dashboard a viewer sees (Vite → nginx), deployed on the shared VM
-# alongside the platform. Everything behind it — the read API over the Postgres serving store — lives in
+# alongside the platform. Everything behind it — the read API over Redshift — lives in
 # the sibling `backend` repository with its own compose file. Both repositories declare compose project
 # `smartbuddy`, so containers, images and networks keep the names they had when this was one repository.
 # This stack therefore sees the backend's container as an "orphan" and compose warns — expected; NEVER

@@ -20,7 +20,7 @@ const NARROW = matchMedia('(max-width: 1099px)');
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 // The source systems each view draws on (central-specs decision 0004; the same mapping as the Source
-// column of backend/postgres/SEEDING.md §1). Keyed by window id, or by its prefix for school/stall/term.
+// column of backend/redshift/SEEDING.md §1). Keyed by window id, or by its prefix for school/stall/term.
 const SOURCES = {
     overview: 'iSchool', schools: 'iSchool', eng: 'iSchool', items: 'iSchool', stalls: 'iSchool', route: 'iSchool',
     school: 'iSchool', stall: 'iSchool', term: 'iSchool',

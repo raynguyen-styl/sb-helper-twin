@@ -74,7 +74,7 @@ const markerEls = new Map();
 const markers = new Map();
 let mapReady = false;
 
-/* ---------- per-month data (fetched from the read API over the Postgres serving store) ---------- */
+/* ---------- per-month data (fetched from the read API over Redshift's serving tables) ---------- */
 // These start empty and are (re)filled by loadMonth() from the insight bundles. Windows receive
 // them as arguments at open time, so switching month + reopening a view shows the new month.
 let GLOBAL = {}, SCHOOLS = {}, FEB = null, STALLS = { stalls: [], terminals: [] }, ITEMS = null, SAVINGS = null, SUBSIDY = null;
@@ -637,9 +637,9 @@ boot();
 function openNoData() {
     const body = openWindow({ id: 'nodata', title: 'No data yet', sub: 'The store holds no month', chips: [] });
     if (!body) return;
-    body.innerHTML = `<div class="empty-note">The dashboard reads the Postgres serving store through the read API, and no month
-      was returned. Either the store has not been seeded yet (an operator fills it following
-      <code>backend/postgres/SEEDING.md</code>) or the API is not reachable. Reload once a month has been seeded.</div>`;
+    body.innerHTML = `<div class="empty-note">The dashboard reads its serving tables in Redshift through the read API, and no month
+      was returned. Either they have not been seeded yet (an operator fills them following
+      <code>backend/redshift/SEEDING.md</code>) or the API cannot reach Redshift. Reload once a month has been seeded.</div>`;
 }
 
 function open(sid) {

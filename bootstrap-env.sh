@@ -4,7 +4,7 @@
 # smartbuddy-frontend build args and runtime settings) and .env.development.local (Vite reads it after
 # .env in dev mode only; it switches the login off). Both are gitignored, and .dockerignore keeps both
 # out of the image. It generates NO secrets and carries no
-# backend credential: the Postgres password and the chat's broker login live in backend/.env
+# backend credential: the Redshift login and the chat's broker login live in backend/.env
 # (backend/bootstrap-env.sh).
 #
 # The chat asks the backend's chat route (central-specs decision 0007), so the twin holds NO broker value

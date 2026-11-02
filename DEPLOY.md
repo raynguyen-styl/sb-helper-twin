@@ -2,9 +2,8 @@
 
 This repository deploys one container: **`smartbuddy-frontend`** (Vite build served by nginx), the
 only published service of SMART Buddy helper (host port **8097**; the ALB maps
-`smartbuddy-helper-uat.styl.solutions/*` to it). Everything behind it — `smartbuddy-api` and the
-Postgres serving store it reads — is deployed from the sibling **backend** repository and
-`atlantic-platform/common`. The whole-stack runbook, including seeding and the one-time VM **cutover**
+`smartbuddy-helper-uat.styl.solutions/*` to it). Everything behind it — `smartbuddy-api`, which reads
+Redshift — is deployed from the sibling **backend** repository. The whole-stack runbook, including seeding and the one-time VM **cutover**
 from the old monorepo checkout, is **`backend/DEPLOY.md`**: read it first on a VM that still runs
 `/data/smart-buddy-data`, and never `git pull` there.
 

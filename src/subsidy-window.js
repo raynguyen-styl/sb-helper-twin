@@ -1,5 +1,5 @@
 // SSS Subsidies — how much of the month's canteen spend the subsidy system (SSS) paid for, where and when, and the
-// SSS schemes live in the month. Reads the precomputed `subsidy` bundle (backend/postgres/seed_from_csv.py; shape:
+// SSS schemes live in the month. Reads the precomputed `subsidy` bundle (backend/redshift/seed_from_csv.py; shape:
 // central-specs change cover-three-source-systems, D2). Aggregates only: no card, student or scheme name ever
 // reaches this view. Shared anatomy (central-specs capability dashboard-views).
 import { openWindow, info, esc } from './windowing.js';

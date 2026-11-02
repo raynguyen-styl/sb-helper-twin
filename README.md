@@ -3,7 +3,7 @@
 The **twin** repository of SMART Buddy helper: what a viewer sees. It holds the interactive insights
 dashboard (Vite + MapLibre/OneMap, plain ES modules) at its root, and the `smartbuddy-frontend`
 container that serves it (nginx) — the only published service of the stack. Everything behind it lives in the
-sibling **backend** repository (the read API over the Postgres serving store, the seeding runbook, the
+sibling **backend** repository (the read API over Redshift, the seeding runbook, the
 retained offline tooling); design, decisions and the handover live in **central-specs**. Workspace:
 `presales-prototypes/atlantic-platform/sb-helper/` (decisions `central-specs/decisions/0001`, `0002`).
 
@@ -13,17 +13,16 @@ retained offline tooling); design, decisions and the handover live in **central-
 
 ## What it shows
 
-One mode (decision `0002`): the months present in the Postgres serving store, switched in the top
-bar and read per month through api-service (nothing is bundled). An OneMap map of the 332 schools
+One mode (decision `0002`): the months present in the dashboard's serving tables in Redshift
+(decision `0010`), switched in the top bar and read per month through api-service (nothing is bundled). An OneMap map of the 332 schools
 (dots sized by spend, coloured by level / error rate / speed; PBS bookstore and stamp-point layers) and
 eight views — Overview, Schools, Terminals (with a service route planner), Subsidies, Purchases,
 Savings, Wearables and Playback — plus each school, stall and terminal. The chat ("SMART Buddy", the
-orchestrator of the specialist agents on the mesh, asked through the backend's chat route) answers from Redshift with Markdown,
-brief visuals or full reports, and shows which agent answered (so the chat and the dashboard can
-disagree: `central-specs/decisions/0002`). Compare up to four schools, stalls or terminals; workspaces
+orchestrator of the specialist agents on the mesh, asked through the backend's chat route) answers from the same Redshift
+with Markdown, brief visuals or full reports, and shows which agent answered. Compare up to four schools, stalls or terminals; workspaces
 (F&B / Engineering / Management) in the menu; opt-in tours; keyboard-usable; deep links; one frame
 from a 360 px phone to a wide screen (central-specs change `overhaul-dashboard-and-agent-replies`).
-There is no upload and no sync: the store is seeded by an operator (`backend/postgres/SEEDING.md`);
+There is no upload and no sync: the serving tables are seeded by an operator (`backend/redshift/SEEDING.md`);
 until it is, the dashboard says "No data yet". Details: "The dashboard" below.
 
 ## Run it
@@ -38,8 +37,8 @@ the second switches the login off, since the dev server has no token proxy). Wit
 runs with no login and no API base.
 
 It needs a reachable api-service to show data (without one the basemap renders and the drawer says
-"No data yet"): run the backend stack against the common Postgres, seeded with real rows or the
-synthetic fixture (`backend/postgres/SEEDING.md` §5). The chat asks `smartbuddy-api`'s chat route
+"No data yet"): run the backend stack against Redshift, seeded with real rows or the synthetic fixture
+(`backend/redshift/SEEDING.md` §5). The chat asks `smartbuddy-api`'s chat route
 (`VITE_SB_API_URL` + `/api/sam/ask`; central-specs decision `0007`), which holds the broker login. The
 page holds none. Without the route the chat shows "offline". To try it without the mesh, run
 `backend/api-service`'s `scripts/fake-mesh.mjs` beside it (`backend/README.md`).
@@ -175,11 +174,12 @@ To render a captured exchange without the backend, in the browser console:
 
 ### Data
 
-Read per month (**Feb + March 2026** once seeded) from the Postgres serving store via api-service:
-the `insights` table holds each month's precomputed bundles (`global`, `schools`, `stalls`, +
-`wearable` / `items` / `savings` where present) in the shapes `backend/ingestion-service/build_insights.py`
-defines, and the `pb_*` tables the Playback series (`backend/postgres/SEEDING.md` §1 is the contract).
-The chat's agents read Redshift, not this store (`central-specs/decisions/0002`). How the map view is
+Read per month (**August + September 2026** once seeded) from Redshift via api-service (decision
+`0010`): `sb_dashboard.insights` holds each month's precomputed bundles (`global`, `schools`, `stalls`,
+`subsidy`, + `items` / `wearable` / `savings` where present) in the shapes
+`backend/ingestion-service/build_insights.py` defines, and the `pb_*` tables the Playback series
+(`backend/redshift/SEEDING.md` §1 is the contract). The chat's agents query the same Redshift's iSchool
+tables. How the map view is
 built: `central-specs/design/MAP_DATA_FLOW.png`; runbooks: `DEPLOY.md` (this frontend) and
 `backend/DEPLOY.md` (the whole stack).
 Exclusions from spend: STYL vendor test terminals, "Retrieve…" stalls (real sales at machines later pulled —
@@ -191,13 +191,13 @@ own prices don't contradict it; generic-named stalls are **Unclassified** (price
 No price-based category guessing. March receipts show what each stall actually sells, but never
 assign a food category.
 
-To refresh the data: an operator re-seeds the month (`backend/postgres/SEEDING.md`); the dashboard
+To refresh the data: an operator re-seeds the month (`backend/redshift/SEEDING.md`); the dashboard
 picks it up on the next load.
 
 
 ## Related
 
-- **backend** — `../backend/README.md`, `../backend/DEPLOY.md`, `../backend/postgres/SEEDING.md`
+- **backend** — `../backend/README.md`, `../backend/DEPLOY.md`, `../backend/redshift/SEEDING.md`
 - **central-specs** — `../central-specs/README.md` (repository map, data facts, findings),
   `../central-specs/HANDOVER.md`, `../central-specs/decisions/`,
   `../central-specs/design/MAP_DATA_FLOW.png` (how the map view is built),
