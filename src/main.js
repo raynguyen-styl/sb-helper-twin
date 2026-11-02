@@ -2,7 +2,15 @@
 // (month, search, Ask, menu), one list of views (the rail on wide and compact screens, the tab bar and More on
 // phones), and the views in the drawer (windowing.js). Workspaces filter the list of views (F&B / Engineering /
 // Management); everything is deep-linkable and cross-linked (school ↔ stall ↔ machine).
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';   // the version the bundle uses, not a CDN pin
+// MapLibre 6 is ESM-only and derives its worker's URL from its own module URL at runtime (`<module
+// dir>/maplibre-gl-worker.mjs`), which neither the bundle (no worker file beside it) nor the dev server (a
+// pre-bundled copy with no worker beside it) satisfies: "Worker failed to load". So Vite bundles the package's
+// worker file as its own script (`?worker&url`, as the worker entry: a side-effect import of it would be
+// tree-shaken, the package being marked side-effect free) and its URL is handed over before any map exists.
+import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+maplibregl.setWorkerUrl(mapWorkerUrl);
 import { fetchMonths, fetchBundle, monthLabel } from './sbData.js';
 import { ST, LV_COLOR, C, token } from './charts.js';
 import { openSchool } from './school-window.js';

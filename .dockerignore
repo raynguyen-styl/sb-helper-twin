@@ -17,3 +17,7 @@ dist
 bootstrap-env.sh
 scripts
 docker-compose.yml
+# CI and its deploy script (central-specs decision 0009) — not part of the app
+deploy
+.gitlab-ci.yml
+sonar-project.properties

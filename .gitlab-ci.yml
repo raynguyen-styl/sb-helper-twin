@@ -1,0 +1,185 @@
+# SMART Buddy twin CI, the shape of Sodexo Office's twin pipeline (itself Passage 3.0's abt-server's; central-specs
+# change ci-deploy-pipeline, decision 0009).
+#
+#   test           twin:test (npm test, the build), twin:audit, SAST, secret detection
+#   scan           twin:sonarqube (only where SONAR_COMMUNITY_TOKEN is set)
+#   package        twin:image (Kaniko; pushed from the default branch)
+#   deploy         deploy_staging: the shared deploy-ssh-build component
+#   verify-deploy  verify_staging: waits for smartbuddy-frontend's healthcheck (the image's HEALTHCHECK on /healthz)
+#
+# Runner: the Presales Prototypes PoC group runner (gitrunner-poc, Kata VMs, 2 GB RAM / 2 vCPU per job). Every job
+# carries the four tags below through `default`. Tool images that ship their own entrypoint use the long `image:`
+# form with `entrypoint: [""]`. Images are built with Kaniko, never docker-in-docker.
+#
+# The VM cannot reach GitLab: the runner ships this checkout to STAGING_APP_PATH (/data/sb-helper/twin) over SSH and
+# the VM builds the image there. Its .env is rendered in the deploy job from the group's CI/CD variables
+# (deploy/render-env.sh) and shipped with the checkout; it replaces the .env that bootstrap-env.sh wrote by hand. The
+# GitHub mirror and the VM's `git pull` are the by-hand fallback only (DEPLOY.md).
+#
+# Both sb-helper compose files declare project `smartbuddy`, so `docker compose up -d --build smartbuddy-frontend`
+# on the VM warns that smartbuddy-api is an orphan: expected. The component only ever runs `up -d --build <service>`;
+# nothing here passes --remove-orphans, which would stop the backend (CLAUDE.md).
+
+stages:
+  - test
+  - scan
+  - package
+  - deploy
+  - verify-deploy
+
+variables:
+  RUNNER_SIZE: "small"
+  SECRET_DETECTION_ENABLED: "true"
+
+default:
+  tags: [linux, docker, kata, $RUNNER_SIZE]
+  interruptible: true
+
+# One pipeline at a time per ref: a new commit cancels the interruptible jobs of the previous pipeline.
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+  # Ships the checkout to STAGING_APP_PATH on the UAT VM over SSH and runs `docker compose up -d --build
+  # smartbuddy-frontend` there (docker-compose.yml at the repo root), then waits for the container's healthcheck. The
+  # .env comes from deploy/render-env.sh (the group's KEYCLOAK_* variables). CI/CD variables: the UAT EC2's login
+  # (STAGING_SSH_HOST, STAGING_SSH_USER, STAGING_SSH_HOST_KEY, AWS_DEPLOY_PEM); the presales-prototypes group's
+  # KEYCLOAK_*; this project's STAGING_APP_PATH, and optionally STAGING_HOST_PORT, SHARED_NETWORK_NAME and
+  # TWIN_PUBLIC_URL (DEPLOY.md, "By CI").
+  # Pinned to the commit Sodexo Office pins, reviewed on 26 Oct 2026 (it receives the deploy key): move it on purpose,
+  # after reading the component's diff, never by following a branch.
+  - component: $CI_SERVER_FQDN/presales-prototypes/gitlab-profile/deploy-ssh-build@88c17863a612c10dfb4835eba3b073fcf1282118
+    inputs:
+      environment_url: '$TWIN_PUBLIC_URL'
+      service: smartbuddy-frontend
+      ssh_key_variable: AWS_DEPLOY_PEM
+      compose_dir: '.'
+      env_script: 'deploy/render-env.sh'
+      # The checkout is unpacked over the previous one, so a file deleted in git stays on the host unless its folder
+      # is listed here and removed first. Code only, and only what the image's `COPY . .` would pick up: no data lives
+      # in this repository's folders. The leftover client/ of the flattened layout is left alone (DEPLOY.md §1).
+      clean_paths: 'dist docker public src test'
+      ship_excludes: 'node_modules dist .vite .playwright-mcp .cache .npm .sonar'
+
+# The template jobs get the runner tags from `default`; their stages are pinned here so they sit with the other checks.
+sast:
+  stage: test
+
+secret_detection:
+  stage: test
+
+# ----------------------------------------------------------------- twin -----
+
+.node:
+  image: node:24-bookworm-slim
+  variables:
+    npm_config_cache: "$CI_PROJECT_DIR/.npm"
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm]
+
+# Everything that runs without a browser: the pure tests (the chat's reply normalisers, the Markdown renderer, the
+# event-stream parser, the fixtures) and the production build.
+twin:test:
+  extends: .node
+  stage: test
+  script:
+    - npm ci --no-audit --no-fund
+    - npm test
+    - npm run build
+  artifacts:
+    when: on_failure
+    expire_in: 1 week
+    paths:
+      - dist/
+
+# Constitution II (dependency security): what ships in the bundle, scanned for known vulnerabilities on every push.
+# Dev tools (Vite) are build-time only and are not in the page.
+twin:audit:
+  extends: .node
+  stage: test
+  needs: []
+  script:
+    - npm audit --omit=dev --audit-level=high
+
+# Community instance (sonar.stylstack.com), not the licensed sonardev (DevOps, 2026-09-25: demo and POC code must not
+# consume licence lines). Runs only where the token is available; the token is read through its own variable.
+twin:sonarqube:
+  stage: scan
+  image:
+    name: sonarsource/sonar-scanner-cli:12.3.0.4285_8.1.0
+    entrypoint: [""]
+  needs: []
+  variables:
+    SONAR_HOST_URL: "https://sonar.stylstack.com"
+    SONAR_TOKEN: "$SONAR_COMMUNITY_TOKEN"
+  rules:
+    - if: $SONAR_COMMUNITY_TOKEN
+  script:
+    - sonar-scanner
+
+# Kaniko, not docker-in-docker. Pushes to the project's registry from the default branch when the registry is enabled
+# (CI_REGISTRY_IMAGE set); otherwise builds without pushing, which still proves the Dockerfile builds.
+.kaniko:
+  stage: package
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    # A literal block, not a folded one (abt-server, pipeline 67298). Kaniko's output also goes to image.log, kept with
+    # the job; each build stops after 45 minutes; compressed layers are not kept in memory.
+    - |
+      set -o pipefail
+      if [ -n "$CI_REGISTRY_IMAGE" ] && [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        auth="$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')"
+        printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY" "$auth" > /kaniko/.docker/config.json
+        timeout 2700 /kaniko/executor --context "$CI_PROJECT_DIR/$IMAGE_CONTEXT" --dockerfile "$CI_PROJECT_DIR/$IMAGE_DOCKERFILE" \
+          --snapshot-mode=redo --compressed-caching=false \
+          --destination "$CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHORT_SHA" \
+          --destination "$CI_REGISTRY_IMAGE/$IMAGE_NAME:latest" 2>&1 | tee image.log
+      else
+        timeout 2700 /kaniko/executor --context "$CI_PROJECT_DIR/$IMAGE_CONTEXT" --dockerfile "$CI_PROJECT_DIR/$IMAGE_DOCKERFILE" \
+          --snapshot-mode=redo --compressed-caching=false --no-push 2>&1 | tee image.log
+      fi
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - image.log
+
+twin:image:
+  extends: .kaniko
+  needs: ["twin:test"]
+  variables:
+    IMAGE_CONTEXT: "."
+    IMAGE_DOCKERFILE: Dockerfile
+    IMAGE_NAME: smartbuddy-frontend
+
+# --------------------------------------------------------------- deploy -----
+
+# The component's jobs take the runner tags from `default`. They run on the default branch only once this project
+# has STAGING_APP_PATH, so a pipeline before the VM is wired stays green. No `needs`: stage order is the gate.
+# Both jobs take the component's SSH setup and add keepalives to the connection to the VM, as Lantern's pipelines do:
+# a build step that prints nothing for a minute let a quiet connection drop unseen there (28 Oct 2026), and the VM's
+# exit status never reached the runner. A keepalive every 15 s keeps it from going quiet, and four missed answers end
+# ssh with an error instead of a wait. The timeout is the backstop: a deploy takes a few minutes.
+deploy_staging:
+  timeout: 20m
+  before_script:
+    - !reference [.ssh_build_setup]
+    - printf '  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' >> ~/.ssh/config
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $STAGING_APP_PATH
+
+verify_staging:
+  timeout: 10m
+  before_script:
+    - !reference [.ssh_build_setup]
+    - printf '  ServerAliveInterval 15\n  ServerAliveCountMax 4\n' >> ~/.ssh/config
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $STAGING_APP_PATH

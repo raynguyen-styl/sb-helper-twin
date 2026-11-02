@@ -46,12 +46,16 @@ page holds none. Without the route the chat shows "offline". To try it without t
 
 ## Build and deploy
 
+Push to `main`: GitLab CI (`.gitlab-ci.yml`) tests, audits, scans and builds the twin, then deploys it
+to the UAT VM through the group's `deploy-ssh-build` component with a `.env` rendered from CI/CD
+variables (`DEPLOY.md` §1 "By CI"; central-specs decision `0009`). Locally, or by hand as the fallback:
+
 ```
 ./bootstrap-env.sh              # .env + .env.development.local; see DEPLOY.md
 docker compose up -d --build    # smartbuddy-frontend → host :8097
 ```
 
-Frontend runbook: **DEPLOY.md** (env, the chat, routing, the STYL CIAM login). Whole
+Frontend runbook: **DEPLOY.md** (the deploy, env, the chat, routing, the STYL CIAM login). Whole
 stack, seeding and the one-time VM cutover: **`backend/DEPLOY.md`**.
 
 ## Layout

@@ -8,7 +8,48 @@ Postgres serving store it reads — is deployed from the sibling **backend** rep
 from the old monorepo checkout, is **`backend/DEPLOY.md`**: read it first on a VM that still runs
 `/data/smart-buddy-data`, and never `git pull` there.
 
-## 1 · Build and run
+## 1 · Deploy
+
+### By CI (the way to deploy)
+
+Push to `main`. GitLab CI (`.gitlab-ci.yml`, the shape of Sodexo Office's twin pipeline; central-specs
+decision `0009`) runs:
+1. **test**: `twin:test` (`npm ci`, `npm test`, `npm run build`), `twin:audit`
+   (`npm audit --omit=dev --audit-level=high`), SAST and secret detection;
+2. **scan**: `twin:sonarqube`, where `SONAR_COMMUNITY_TOKEN` is set;
+3. **package**: `twin:image`, a Kaniko build pushed to the project's registry;
+4. **deploy**: `deploy_staging`, the shared `presales-prototypes/gitlab-profile/deploy-ssh-build`
+   component: it ships this checkout to `STAGING_APP_PATH` (`/data/sb-helper/twin`) on the VM over SSH
+   (host key pinned), removes the host's `src`, `public`, `docker`, `test` and `dist` first so no
+   deleted file reaches the image, and runs `docker compose up -d --build smartbuddy-frontend` there.
+   Its `.env` is written in the job by `deploy/render-env.sh` from the CI/CD variables below and shipped
+   with the checkout (never committed; `.dockerignore` keeps it out of the image); **it replaces the
+   `.env` that `bootstrap-env.sh` wrote by hand**;
+5. **verify-deploy**: `verify_staging` waits for the container's healthcheck (`/healthz`).
+
+The VM cannot reach GitLab and never pulls. The deploy jobs run on `main` only once `STAGING_APP_PATH`
+is set, so a pipeline before the VM is wired stays green. Compose warns that the backend's container is
+an "orphan" (both repositories use project `smartbuddy`): expected; the component only runs
+`up -d --build smartbuddy-frontend` and never passes `--remove-orphans`, and **neither may you**: it
+would stop the backend.
+
+| Variable | Where | Used for |
+|---|---|---|
+| `STAGING_SSH_HOST`, `STAGING_SSH_USER`, `STAGING_SSH_HOST_KEY`, `AWS_DEPLOY_PEM` | the UAT EC2's login, the values Passage 3.0's `abt-server` deploys with: inherited where a shared group holds them, else set on this project; `AWS_DEPLOY_PEM` protected and masked | the SSH deploy |
+| `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT`, `KEYCLOAK_SECRET` | `presales-prototypes` group (inherited) | the login (§4): `VITE_KEYCLOAK_OIDC_CONFIG_URL` and `KEYCLOAK_TOKEN_ENDPOINT` from the issuer, `VITE_KEYCLOAK_CLIENT_ID`, and the runtime `KEYCLOAK_CLIENT_SECRET` |
+| `STAGING_APP_PATH` | this project | `/data/sb-helper/twin`; set it last, after the backend's first CI deploy |
+| `STAGING_HOST_PORT` | this project, optional | the published host port (`SB_FRONTEND_PORT`; 8097 when unset, where the ALB rule points) |
+| `SHARED_NETWORK_NAME` | optional | `BACKEND_NETWORK`; the platform's `solace-pubsub-geo-filtering_backend` when unset |
+| `TWIN_PUBLIC_URL` | optional | the Environments link |
+| `SONAR_COMMUNITY_TOKEN` | optional | the Sonar job |
+
+The render also writes `VITE_SB_API_URL=/smartbuddy-api`, `VITE_KEYCLOAK_ENABLED=true` and
+`VITE_KEYCLOAK_TOKEN_PROXY=auth/token`, and no broker value (§2). **Before the first CI deploy**, diff
+the VM's `/data/sb-helper/twin/.env` against this table so no value is lost when the rendered file
+replaces it. **Rollback:** re-run the `deploy_staging` job of an earlier pipeline (CI/CD > Pipelines),
+or revert the commit on `main`.
+
+### By hand (fallback)
 
 ```bash
 cd /data/sb-helper/twin        # the twin checkout on the VM (locally: wherever you cloned it)
@@ -16,10 +57,10 @@ cd /data/sb-helper/twin        # the twin checkout on the VM (locally: wherever 
 docker compose up -d --build   # smartbuddy-frontend
 ```
 
-A frontend-only change is: commit → push `origin` + `github` → on the VM `git pull` **here** → the
-command above. The container is recreated in place under the same name. Compose warns that the
-backend's container is an "orphan" (both repositories use project `smartbuddy`): expected — **never
-pass `--remove-orphans`**, it would stop the backend.
+A frontend-only change by hand is: commit → push `origin` + `github` → on the VM `git pull` **here** →
+the command above. The container is recreated in place under the same name. The `.env` on the host is
+the one CI rendered last: the bootstrap rewrites it (and backs it up), and the next CI deploy overwrites
+it again.
 
 **Once, after the pull that flattened this repository** (the app used to sit in `client/`; change
 `flatten-twin-repo`): `client/` is left holding only ignored files (an old `client/.env`, maybe
@@ -52,6 +93,10 @@ container (§4) — never a build argument; the backend's secrets are in `backen
 the backend's chat route; the bundle carries no broker URL, login or topic, and the page opens no
 broker connection. The broker login, the mesh's topics and the wait live in `backend/.env`
 (`backend/DEPLOY.md` §3).
+
+**Nothing from a CDN.** The map library (`maplibre-gl` 6.x, since change `ci-deploy-pipeline`) and its
+stylesheet are bundled from the package, so the page loads no script or stylesheet from a third-party
+host; beyond this origin it reaches only CIAM (the login) and OneMap (the basemap tiles).
 
 The former `VITE_SOLACE_*` and `VITE_SAM_TOPIC_*` keys are retired. **Moving off them is ordered:**
 run `backend/bootstrap-env.sh` first, which copies them from this repository's `.env` into

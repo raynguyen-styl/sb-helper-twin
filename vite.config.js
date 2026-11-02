@@ -6,4 +6,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
     server: { port: 5188, strictPort: true },
     preview: { port: 5189, strictPort: true },
+    // The MapLibre worker (main.js imports the package's worker file with `?worker&url`) is a module
+    // worker: emit it as an ES module, as MapLibre loads it (`new Worker(url, { type: 'module' })`).
+    worker: { format: 'es' },
 });
